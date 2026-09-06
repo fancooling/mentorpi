@@ -1,0 +1,22 @@
+# Ignore large disk images
+*.img
+*.iso
+*.dmg
+
+# Ignore local build archives
+*.tar.gz
+*.tar
+*.zip
+
+# Ignore ROS 2 transient build artifacts
+**/build/
+**/install/
+**/log/
+__pycache__/
+*.pyc
+
+# Ignore agent and git directories
+.agents/
+.git/
+**/.git/
+**/.git

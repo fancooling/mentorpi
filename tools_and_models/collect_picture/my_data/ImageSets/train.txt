@@ -1,0 +1,16 @@
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_36.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_29.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_33.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_2.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_4.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_38.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_1.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_5.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_35.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_37.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_8.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_7.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_34.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_9.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_10.jpg
+/home/ubuntu/software/collect_picture/my_data/JPEGImages/image_31.jpg

@@ -1,0 +1,76 @@
+# MentorPi Robot Tank Project Context
+
+This file provides persistent architecture and safety context for agents and
+developers. Read it with `CONVERSATION_MEMORY.md` before changing the repository.
+The root `README.md` is the canonical build and deployment guide.
+
+## Current architecture
+
+- Target: Hiwonder MentorPi Tank with Raspberry Pi 5 ARM64, STM32 chassis
+  controller, Oradar MS200 LiDAR, and Aurora/Astra depth camera.
+- Preserve the vendor Raspberry Pi OS and its factory `MentorPi` container.
+- The factory container remains the only owner of hardware devices, drivers,
+  odometry, TF, and motion control.
+- Deploy one independent customization sidecar: image
+  `mentorpi-fan:latest`, container `MentorPiFan`, Compose project
+  `mentorpi-fan`.
+- The sidecar contains only Nginx and static browser assets. It has no ROS
+  runtime, controller, navigation, teleoperation, driver, or actuator code.
+
+## Source of truth
+
+`MentorPi_T1_20260822.img` is the authoritative vendor disk image and is mounted
+at `/mnt/rpi-rootfs` when inspected. Repository source directories are reference
+or separately supplied material; do not assume they exactly match the software
+running in the factory container.
+
+The factory image locally tagged `ros:humble` inside the vendor disk is an
+imported ARM64 Ubuntu/ROS filesystem, not the public Docker Hub base with the
+same tag. Never pull, retag, replace, or rebuild it as part of sidecar deployment.
+
+## Repository layout
+
+- `docker/customization/`: sidecar Dockerfile, Nginx configuration, and web UI.
+- `docker/docker-compose.yml`: the sole Compose definition; it manages only
+  `MentorPiFan`.
+- `docker/deploy.sh`: builds/tests locally or transfers and starts only the
+  sidecar on an existing vendor Pi.
+- `mentorpi/src/`: vendor-supplied high-level ROS source retained for behavior
+  and interface research; excluded from the sidecar image.
+- `third_party_src/`: extracted drivers and SDKs retained for comparison;
+  excluded from the sidecar image.
+- `tools_and_models/`: calibration and model assets retained for future
+  perception work; excluded from the sidecar image.
+- `docs/MENTORPI_FAN_DESIGN.md`: detailed ownership, interface, and security
+  design.
+
+The former reconstructed full-stack Dockerfile, privileged Compose service,
+host installers, and container environment files were removed. Do not
+reintroduce them into the customization deployment.
+
+## Runtime interfaces
+
+- Factory `web_video_server`: port 8080. Nginx exposes it read-only under
+  `http://ROBOT_IP:8081/video/`.
+- Factory rosbridge: port 9090. The browser connects directly and the bundled
+  JavaScript sends only `subscribe` and `unsubscribe` operations.
+- Custom dashboard: port 8081, the only port owned by `MentorPiFan`.
+- Default topics: RGB
+  `/ascamera/camera_publisher/rgb0/image`, LiDAR `/scan_raw`, odometry `/odom`,
+  and battery `/ros_robot_controller/battery`.
+
+The factory rosbridge remains a complete bidirectional ROS interface. Keep the
+robot on a trusted network. Port 8081 must not proxy rosbridge.
+
+## Deployment constraints
+
+- Build for `linux/arm64` from the digest-pinned public Nginx base.
+- Never include `MentorPi_T1_20260822.img` in a Docker build context.
+- Never configure `privileged`, `/dev` mounts, bind mounts, or added Linux
+  capabilities for the sidecar.
+- Keep the root filesystem read-only, drop all capabilities, use the non-root
+  `nginx` user, and retain `no-new-privileges`.
+- Remote deployment must verify the factory `MentorPi` container is running and
+  must never stop, recreate, or modify it.
+
+Run `./docker/deploy.sh help` for the supported local, remote, and test commands.

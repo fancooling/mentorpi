@@ -1,0 +1,9 @@
+names:
+- turn_around
+- fengshan
+- right
+- mouse
+- duck
+nc: 5
+train: /home/ubuntu/software/collect_picture/my_data/ImageSets/train.txt
+val: /home/ubuntu/software/collect_picture/my_data/ImageSets/val.txt

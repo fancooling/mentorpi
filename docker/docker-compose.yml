@@ -1,0 +1,31 @@
+# MentorPi Fan is an observer-only sidecar. This Compose project deliberately
+# does not define or manage the factory MentorPi container.
+name: mentorpi-fan
+
+services:
+  mentorpi-fan:
+    build:
+      context: ./customization
+      dockerfile: Dockerfile
+    image: mentorpi-fan:latest
+    pull_policy: never
+    platform: linux/arm64
+    container_name: MentorPiFan
+    restart: unless-stopped
+    network_mode: host
+    init: true
+    user: nginx
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 3s
+      retries: 3

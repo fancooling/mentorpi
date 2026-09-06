@@ -1,0 +1,30 @@
+# Large disk images
+*.img
+*.iso
+*.dmg
+
+# Third-party driver and SDK reference source
+third_party_src/
+
+# ROS 2 and Python transient build artifacts
+**/build/
+**/install/
+**/log/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Core dumps and temporary artifacts
+tools_and_models/**/core
+core.[0-9]*
+
+# Local archives and editor files
+*.tar.gz
+*.tar
+*.zip
+.codex/
+.DS_Store
+
+# Large neural network models and oversized simulation meshes
+*.pt
+mentorpi/src/simulations/mentorpi_description/meshes/tank/wheel_link.stl
