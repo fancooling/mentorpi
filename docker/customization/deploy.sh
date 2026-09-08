@@ -6,10 +6,9 @@ set -Eeuo pipefail
 # container.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
-CUSTOMIZATION_DIR="$SCRIPT_DIR/customization"
 IMAGE_NAME="mentorpi-fan:latest"
 CONTAINER_NAME="MentorPiFan"
-REMOTE_PROJECT_DIR="mentorpi-fan/docker"
+REMOTE_PROJECT_DIR="mentorpi-fan/docker/customization"
 EXPECTED_IMAGE_ID=""
 
 usage() {
@@ -245,11 +244,11 @@ copy_runtime_files() {
     ssh -- "$target" 'mkdir -p "$HOME/mentorpi-fan/docker/customization/web"'
     scp -- "$COMPOSE_FILE" "$target:$REMOTE_PROJECT_DIR/docker-compose.yml"
     scp -- \
-        "$CUSTOMIZATION_DIR/Dockerfile" \
-        "$CUSTOMIZATION_DIR/README.md" \
-        "$CUSTOMIZATION_DIR/nginx.conf" \
-        "$target:$REMOTE_PROJECT_DIR/customization/"
-    scp -- "$CUSTOMIZATION_DIR/web/"* "$target:$REMOTE_PROJECT_DIR/customization/web/"
+        "$SCRIPT_DIR/Dockerfile" \
+        "$SCRIPT_DIR/README.md" \
+        "$SCRIPT_DIR/nginx.conf" \
+        "$target:$REMOTE_PROJECT_DIR/"
+    scp -- "$SCRIPT_DIR/web/"* "$target:$REMOTE_PROJECT_DIR/web/"
 }
 
 wait_for_remote_health() {
@@ -319,7 +318,7 @@ cleanup_failed_remote() {
         echo "The previous remote MentorPiFan container was not replaced and remains running." >&2
     else
         echo "Removing the failed remote sidecar rollout..." >&2
-        ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker" && docker compose -f docker-compose.yml down' || true
+        ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker/customization" && docker compose -f docker-compose.yml down' || true
     fi
     restore_remote_tag "$target" "$previous_image_id"
     if [[ -n "$previous_image_id" ]]; then
@@ -334,14 +333,14 @@ start_remote_sidecar() {
     local previous_image_id="$2"
     local previous_container_id="$3"
 
-    if ! ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker" && docker compose -f docker-compose.yml up -d --no-build' \
+    if ! ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker/customization" && docker compose -f docker-compose.yml up -d --no-build' \
         || ! wait_for_remote_health "$target" \
         || ! verify_remote_runtime "$target" "$EXPECTED_IMAGE_ID"; then
         cleanup_failed_remote "$target" "$previous_image_id" "$previous_container_id"
         return 1
     fi
 
-    ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker" && docker compose -f docker-compose.yml ps'
+    ssh -- "$target" 'cd "$HOME/mentorpi-fan/docker/customization" && docker compose -f docker-compose.yml ps'
 }
 
 deploy_remote() {

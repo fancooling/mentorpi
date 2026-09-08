@@ -31,16 +31,16 @@ backoff. The rosbridge connection also reconnects automatically.
 From the repository root:
 
 ```bash
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/customization/docker-compose.yml build
+docker compose -f docker/customization/docker-compose.yml up -d
+docker compose -f docker/customization/docker-compose.yml ps
 curl http://127.0.0.1:8081/healthz
 ```
 
 Or build, start, and wait for health with:
 
 ```bash
-./docker/deploy.sh local
+./docker/customization/deploy.sh local
 ```
 
 Open `http://localhost:8081/`. Without factory services on local ports 8080 and
@@ -55,7 +55,7 @@ does not occur on the native ARM64 Raspberry Pi kernel.
 Stop only the sidecar with:
 
 ```bash
-docker compose -f docker/docker-compose.yml down
+docker compose -f docker/customization/docker-compose.yml down
 ```
 
 This Compose file never defines or manages the factory `MentorPi` container.
@@ -69,7 +69,7 @@ factory `MentorPi` container is running. It then builds, transfers, and starts
 only the sidecar:
 
 ```bash
-./docker/deploy.sh remote pi@ROBOT_IP
+./docker/customization/deploy.sh remote pi@ROBOT_IP
 ```
 
 A failed rollout preserves the prior container if it was not replaced;

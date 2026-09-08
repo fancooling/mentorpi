@@ -1,0 +1,996 @@
+# MentorPi Native Tank Controller Design
+
+Status: Design only; no implementation or robot deployment exists yet
+
+Date: 2026-09-07
+
+Target: Hiwonder MentorPi Tank, Raspberry Pi 5 ARM64, STM32 RRC controller
+
+Host: Clean Ubuntu 26.04 LTS installation with network access and sudo
+
+Runtime: Native ROS 2 Lyrical; Docker is not used
+
+## 1. Purpose
+
+This document defines a fresh, controller-only installation for a MentorPi Tank.
+Starting from an already-installed Ubuntu 26.04 system, the operator will install
+ROS 2 Lyrical, prepare the Ubuntu host, deploy the required ROS packages, and run
+the tank controller directly on the Raspberry Pi 5.
+
+The first delivery supports only these movements:
+
+- drive forward;
+- drive backward;
+- turn left; and
+- turn right.
+
+The design deliberately reuses the existing MentorPi controller code instead of
+rewriting the STM32 protocol, motor mapping, or tank kinematics. All authored
+source, configuration defaults, host-installation templates, tests, deployment
+automation, and operator instructions will live below one repository directory:
+`ubuntu_tank/`. Production installation is a separate, versioned, root-owned
+release under `/opt/ubuntu_tank`; the robot will not run from a developer checkout
+or a user's home directory.
+
+## 2. Assumptions and scope
+
+### 2.1 Starting assumptions
+
+- Ubuntu 26.04 LTS ARM64 is already installed and booting on the Raspberry Pi 5.
+- The operator has a normal non-root account, sudo access, and Internet access.
+- The Pi boot EEPROM is new enough for Ubuntu 26.04. The deployment preflight
+  will report the EEPROM version and stop with a link to Ubuntu's update
+  procedure if it does not meet Ubuntu's published minimum.
+- The STM32 RRC controller is connected by USB serial and is expected to appear
+  as the verified `/dev/rrc` symlink at 1,000,000 baud.
+- Power wiring, board revision, polarity, and supply limits have been verified
+  against the exact hardware documentation before the motors are energized.
+- Initial motion testing is performed with the tracks raised clear of the work
+  surface and with an immediately accessible power disconnect.
+
+This design does not reinstall Ubuntu, change cloud-init, or prescribe unverified
+power-supply values. It begins after the clean operating system is installed.
+
+### 2.2 Included
+
+- Ubuntu package, locale, ROS repository, and ROS 2 Lyrical setup;
+- USB serial access for the STM32 controller;
+- MentorPi ROS message and service interfaces;
+- the vendor serial protocol implementation;
+- tank `Twist`-to-motor kinematics;
+- disarmed-by-default motor command guarding;
+- bounded command-line motion tests;
+- safe keyboard teleoperation;
+- a native systemd service; and
+- build, test, deployment, status, arm, disarm, and rollback instructions.
+
+### 2.3 Excluded from this phase
+
+- camera, LiDAR, SLAM, Nav2, localization, and obstacle avoidance;
+- AI, speech, vision, web dashboard, and rosbridge;
+- joystick support;
+- servo positioning and calibration applications;
+- accurate odometry or TF publication; and
+- Docker or compatibility with the factory container runtime.
+
+The reused controller currently publishes command-integrated `odom_raw`. That
+output is not wheel-encoder odometry and is not an acceptance criterion for this
+controller-only phase.
+
+### 2.4 Mutually exclusive target modes
+
+This native Ubuntu controller is a separate target mode from the vendor
+Raspberry Pi OS plus factory `MentorPi` container. It is installed only on a
+clean Ubuntu 26.04 system; it must never be installed beside, started beside, or
+given devices concurrently with the factory stack or either Docker workflow.
+Before physical testing, preserve a verified restorable copy of the vendor image
+on separate media. Application `rollback` changes `/opt/ubuntu_tank` releases;
+it does not restore the vendor operating system. Platform rollback requires the
+robot to be powered down and the verified vendor image/media restored before the
+factory stack again owns hardware.
+
+## 3. Safety invariants
+
+The controller is an actuator system. The following are design requirements,
+not optional enhancements:
+
+1. The STM32 bridge must never receive normal motor commands except through the
+   motor guard.
+2. The motor guard starts disarmed after every launch, crash, service restart,
+   reboot, or explicit disarm.
+3. Arming is an explicit operator action and is never persisted.
+4. Only a complete command containing unique motor IDs 1 through 4, finite RPS
+   values, and values within the configured limit may reach the bridge.
+5. A command older than 250 ms causes the guard to disarm and repeatedly publish
+   four zero motor values.
+6. Invalid input, teleop loss, process exit, SIGINT, SIGTERM, serial loss, or
+   launch failure must result in repeated zero commands where communication is
+   still possible and must shut down the controller graph.
+7. Keyboard motion is lease-to-run. Each recognized key event authorizes a
+   short motion interval, and failure to receive a fresh event produces zero.
+8. Motion-test commands are finite and self-terminating. The instructions must
+   not use an unbounded nonzero `ros2 topic pub --rate` command.
+9. No on-ground testing is allowed until raised-track tests include measured
+   stop latency and a separately proven STM32 behavior after host or serial loss.
+10. Production DDS discovery is localhost-only, security enforcement is
+    fail-closed, and only protected service/operator enclaves may arm or publish
+    accepted motion commands.
+11. Command freshness uses monotonic time at both the guard and serial-bridge
+    boundaries. Loss of either process heartbeat makes systemd stop the complete
+    graph; no wall-clock adjustment can extend a motion lease.
+
+ROS topic remapping and publisher-count checks are not access-control boundaries.
+Tests must inspect the running graph, fail if any node other than the motor guard
+publishes the actuator-facing topic, and separately prove the enforced SROS2
+permissions with unauthorized participants.
+
+## 4. Source-reuse plan
+
+The relevant files in `mentorpi/src/` are reuse candidates, not an authoritative
+statement of what the factory robot currently runs. Before any copy is accepted,
+implementation must compare each candidate with the active files in the mounted
+vendor image at `/mnt/rpi-rootfs`, record both revisions and hashes, and explain
+every difference. The source manifest retains that evidence so later changes are
+auditable.
+
+| Delivered component | Existing source | Reuse decision | Required adaptation |
+| --- | --- | --- | --- |
+| `ros_robot_controller_msgs` | `mentorpi/src/driver/ros_robot_controller_msgs/` | Copy the complete package without reducing its message/service set | Add meaningful metadata only if licensing permits; retain all generated interfaces required by the bridge |
+| `ros_robot_controller` | `mentorpi/src/driver/ros_robot_controller/` | Copy the complete package, including `ros_robot_controller_sdk.py` | Add controller-only mode that exposes no non-motor command APIs; parameterize machine type, serial device, and baud rate; complete dependency metadata; implement signal-safe zero and serial close |
+| `controller` | `mentorpi/src/driver/controller/` | Reuse the complete Python module directory and required package scaffolding, including `ackermann.py` | Do not install legacy launch/config surfaces that require Nav2 or peripherals; export only the controller executable needed here; remove environment/path assumptions; parameterize geometry and correction values; complete dependency metadata |
+| `ubuntu_tank_safety` | New safety package; no guard implementation exists in the current repository | New code only because the reused vendor stack has no adequate command watchdog or arming boundary | Implement the narrowly specified validation, timeout, repeated-zero, state reporting, and access-control behavior in this design, with complete tests |
+| `ubuntu_tank_supervisor` | New minimal process supervisor | New code only because systemd cannot AND-gate independent child health by itself | Launch the graph, receive separate non-ROS monotonic guard/bridge heartbeats, notify systemd only while both are fresh, and fail closed |
+| `ubuntu_tank_teleop` | `mentorpi/src/peripherals/peripherals/teleop_key_control.py` | Reuse the keyboard mapping, terminal polling, and ROS message logic in a controller-only package | Replace latched commands with a short renewable motion lease, publish periodic fresh commands and zero on timeout/signals, and remove unused servo behavior |
+| `ubuntu_tank_bringup` | New integration package | New code only where no reusable controller-only package exists | Own launch, configuration, graph shutdown policy, and operator-facing services |
+| `deploy.sh` | New native-host workflow | Reuse only applicable shell hardening and validation patterns from current repository scripts | Implement idempotent Ubuntu/ROS installation, build, test, systemd installation, and safe operations without Docker |
+
+The standalone `mentorpi/src/driver/sdk` package is not required: the STM32
+`Board` implementation used by the bridge is already contained in
+`ros_robot_controller`. The full `peripherals` package is also excluded because
+most of it belongs to cameras, LiDAR, IMU visualization, or joystick support.
+Only the relevant keyboard-control logic is carried forward.
+
+Before redistribution, the implementation milestone must resolve the vendor
+packages' current `TODO` license declarations. Source reuse does not imply
+permission to redistribute unknown-license code.
+
+## 5. Source, build, and production filesystem layout
+
+The repository workspace and production installation have different purposes.
+`ubuntu_tank/` is the self-contained source and build root. A packaged release
+is installed below `/opt/ubuntu_tank` and activated through a stable `current`
+symlink. Nothing in the running controller may depend on the repository location,
+the build tree, `mentorpi/`, `docker/`, the factory image, or
+`/home/ubuntu/software`.
+
+### 5.1 Repository and build workspace
+
+```text
+ubuntu_tank/
+├── README.md                         # Canonical operator guide
+├── deploy.sh                         # Single deployment and operations entrypoint
+├── VERSION                           # Release version input
+├── versions.lock                     # Pinned ROS/Ubuntu dependency inputs and hashes
+├── source-manifest.txt               # Reused-source paths, revisions, and hashes
+├── config/
+│   ├── controller.yaml               # Version-controlled production defaults
+│   └── sros2/                        # Deny-by-default governance/policy templates
+├── host/
+│   ├── 99-mentorpi-rrc.rules         # Restricted and verified serial symlink
+│   ├── mentorpi-tank.service         # Native systemd unit
+│   └── mentorpi-tank.env             # Non-secret runtime environment
+├── scripts/
+│   ├── install_ros2.sh               # Ubuntu and ROS repository/package setup
+│   ├── build_workspace.sh            # rosdep and colcon build
+│   ├── check_host.sh                 # Read-only OS, architecture, power, and device checks
+│   ├── recover_activation.sh         # Boot-time write-ahead transaction recovery
+│   └── verify_runtime.sh             # ROS graph, topic ownership, and zero-state checks
+├── src/
+│   ├── ros_robot_controller_msgs/    # Complete reused vendor package
+│   ├── ros_robot_controller/         # Complete reused package plus narrow porting patch
+│   ├── controller/                   # Reused Python controller core; legacy launch excluded
+│   ├── ubuntu_tank_safety/            # New guarded actuator boundary
+│   ├── ubuntu_tank_supervisor/        # New AND-gated process/heartbeat supervisor
+│   ├── ubuntu_tank_teleop/           # Safe adaptation of vendor keyboard teleop
+│   └── ubuntu_tank_bringup/          # Native controller launch and configuration
+├── tests/
+│   ├── test_source_boundary.sh
+│   ├── test_dependency_closure.sh
+│   ├── test_launch_graph.sh
+│   └── test_shutdown_behavior.sh
+├── dist/                              # Generated release artifacts; never committed
+├── .work/                             # Disposable packaging root; never committed
+└── build/ install/ log/               # Generated by colcon; never committed
+```
+
+The checkout may be placed anywhere the deployment operator can write. Examples
+use `/path/to/mentorpi/ubuntu_tank` deliberately: the checkout location is not a
+runtime interface. Colcon `build/`, `install/`, and `log/` directories are local
+build products, not the production installation.
+
+### 5.2 Target Pi production installation
+
+```text
+/opt/ros/lyrical/                         # ROS installation managed by apt
+/opt/ubuntu_tank/
+├── libexec/
+│   └── recover-activation              # Release-independent boot recovery runner
+├── current -> releases/<release-id>      # Atomically selected active release
+└── releases/
+    └── <release-id>/                     # Immutable after successful install
+        ├── bin/
+        │   └── mentorpi-tank-run         # Non-interactive ROS launch wrapper
+        ├── install/                      # Colcon install tree used at runtime
+        ├── src/                          # Deployed source and license/provenance copy
+        ├── config/
+        │   └── controller.yaml           # Release configuration default/schema
+        ├── host/
+        │   ├── 99-mentorpi-rrc.rules     # Matching udev asset
+        │   ├── mentorpi-tank.service     # Matching systemd asset
+        │   ├── mentorpi-tank-recover.service
+        │   └── mentorpi-tank.env         # Matching environment default
+        ├── deploy.sh                     # Matching recovery/inspection entrypoint
+        ├── README.md                     # Matching operator instructions
+        ├── source-manifest.txt           # Reused-source revisions and hashes
+        └── release-manifest.txt          # Release contents, ABI, prefix, and checksums
+/etc/opt/ubuntu_tank/
+├── controller.yaml                       # Host-specific controller configuration
+├── mentorpi-tank.env                     # Non-secret service environment
+└── sros2/                                # Host-generated keys and policies
+/var/opt/ubuntu_tank/
+├── ros-log/                              # ROS file logs
+└── deployment/
+    ├── activation-journal                # Current/previous release and transaction state
+    └── snapshots/<transaction-id>/       # Root-only config and host-asset snapshots
+/run/ubuntu_tank/                         # Volatile service runtime state
+/run/lock/ubuntu_tank/deploy.lock         # Root-owned deployment/recovery lock
+/etc/systemd/system/mentorpi-tank.service
+/etc/systemd/system/mentorpi-tank-recover.service
+/etc/tmpfiles.d/ubuntu-tank.conf
+/etc/udev/rules.d/99-mentorpi-rrc.rules
+```
+
+This follows the conventional separation for add-on software: static package
+content under `/opt`, host-specific configuration under `/etc/opt`, persistent
+mutable data under `/var/opt`, and ephemeral process state under `/run`. ROS 2
+Lyrical itself remains apt-managed under `/opt/ros/lyrical`.
+
+The production service invokes `/opt/ubuntu_tank/current/bin/mentorpi-tank-run`
+and runs only installed artifacts from `/opt/ubuntu_tank/current/install`; it
+must not import Python modules or launch files from the deployed `src/`
+provenance copy. Build intermediates and colcon logs are not included in a
+release. Service output goes to journald, while any ROS file logs are explicitly
+directed to `/var/opt/ubuntu_tank/ros-log`.
+
+### 5.3 Ownership, activation, and rollback
+
+- Each release directory is installed by root and becomes non-writable to the
+  service account before it can be activated.
+- The service runs as a dedicated non-root `ubuntu-tank` account with only the
+  dedicated device-group access required for `/dev/rrc`; it does not run as root
+  or as the deployment operator.
+- `current` is changed with an atomic symlink replacement only after release
+  structure, ownership, manifest checksums, ROS dependencies, and configuration
+  have passed validation.
+- Installation and activation are distinct. Installing a release does not start
+  the service, select that release, or arm the motors.
+- Activation records the previous release and transitions to the new release in
+  a stopped, disarmed state. Matching systemd and udev assets are staged with
+  the release, backed up, and applied only as part of activation. Rollback
+  restores those host assets and atomically restores the previous symlink, then
+  also remains stopped and disarmed until an explicit `start`.
+- A release ID is unique and path-safe, derived from the project version plus a
+  source revision. Existing release content is never overwritten with different
+  bytes.
+- A colcon install tree is not assumed to be relocatable. Packaging builds and
+  tests it with its final absolute prefix,
+  `/opt/ubuntu_tank/releases/<release-id>/install`, inside a clean ARM64 Ubuntu
+  26.04 disposable build root. That root is materialized below the repository's
+  ignored `ubuntu_tank/.work/rootfs/` directory and entered with a documented
+  `systemd-nspawn` workflow; its internal `/opt` is therefore not the host's
+  `/opt`. Packaging may use `sudo` only to create and enter this isolated root;
+  compilation and tests run there as an unprivileged build account. It never
+  mounts host `/opt`, `/etc`, `/var/opt`, `/run`, or devices. Source is mounted
+  read-only inside it, and only `dist/` is copied out. The installer extracts the
+  artifact at the same absolute prefix seen inside the build root and rejects a
+  host whose architecture or ROS ABI does not match the artifact. Tests reject
+  setup hooks, metadata, or shebangs that retain checkout, `.work`, or temporary
+  paths.
+- Configuration is preserved across releases and is never silently overwritten.
+  Before activation, root records the current configuration, environment,
+  security policy, systemd unit, and udev rule in a checksummed transaction
+  snapshot under `/var/opt/ubuntu_tank/deployment/snapshots`. A changed schema
+  requires an explicit, validated forward migration and downgrade path. The
+  activation journal's commit marker is written only after the new release
+  passes all non-starting validation; failure or rollback restores the prior
+  compatible snapshot. Live health is checked later by explicit `start`.
+
+Activation is a crash-consistent transaction, not an assumption that several
+`/etc` writes are atomic together. Its required order is:
+
+1. acquire the release-independent `/run/lock/ubuntu_tank/deploy.lock`, then
+   validate the candidate, migration/downgrade paths, and available rollback;
+2. snapshot the current symlink target and host state; `fsync` every snapshot
+   file and directory; then write and `fsync` a `PREPARED` transaction record
+   and its containing directory;
+3. disarm, send repeated zero, stop the service, and confirm it is inactive;
+4. stage and `fsync` candidate host files on their destination filesystems, then
+   replace each file and reload udev/systemd;
+5. atomically replace and `fsync` the `current` symlink, run non-starting release
+   structure/import/config-policy validation, and leave the service stopped; and
+6. write and `fsync` the committed journal state, then release the lock.
+
+The root-owned `mentorpi-tank-recover.service` runs the release-independent
+`/opt/ubuntu_tank/libexec/recover-activation` before the controller at boot. It
+uses the same deployment lock. If it finds `PREPARED` or `ACTIVATING` rather
+than a committed transaction, it restores the previous symlink and checksummed
+host snapshot, reloads host assets, and leaves the controller stopped and
+disarmed until recovery validates. Installation tests interrupt activation after
+every durable boundary and prove this recovery path does not depend on
+`current` or any versioned release executable.
+
+## 6. Ubuntu 26.04 and ROS 2 Lyrical setup
+
+The eventual `deploy.sh` host-preparation commands will perform the following
+documented operations idempotently. `README.md` will also show them for manual
+recovery.
+
+### 6.1 Host preflight
+
+The read-only preflight must verify:
+
+```bash
+test "$(dpkg --print-architecture)" = "arm64"
+. /etc/os-release
+test "${VERSION_ID}" = "26.04"
+uname -m                            # expected: aarch64
+rpi-eeprom-update                  # report current bootloader version
+```
+
+It must also report free disk space, time synchronization, the current kernel,
+and whether another process already owns `/dev/rrc`. It must detect Docker when
+present and reject factory `MentorPi`, `MentorPiFan`, replacement containers,
+factory boot units, or any conflicting ROS/hardware-owner process. The same
+mutual-exclusion check runs immediately before install, activation, start, and
+arm so a stale earlier preflight cannot authorize a changed host. It must not
+alter the host.
+
+### 6.2 Base Ubuntu environment
+
+The installed Ubuntu image is an explicit external baseline, not a bit-for-bit
+artifact produced by this project. `./deploy.sh prepare-host` updates it from its
+configured official Ubuntu repositories, installs the base prerequisites, and
+records before/after apt sources, package manifests, image metadata, kernel, and
+timestamp. This step is intentionally a security-current baseline operation; it
+may produce newer Ubuntu package versions on a later date and is not described
+as reproducible. It starts no robot service.
+
+Follow the ROS 2 Lyrical Ubuntu instructions rather than assuming the image
+already knows about the ROS repositories:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y locales software-properties-common curl
+sudo locale-gen en_US en_US.UTF-8
+sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+sudo add-apt-repository universe
+```
+
+If this baseline operation creates `/run/reboot-required`, the workflow stops
+and requires a reboot plus a fresh `check-host` before continuing. After the
+baseline is accepted, the ROS/application dependency lock and release manifest
+record exactly which host baseline they were validated against.
+
+Install the `ros2-apt-source` package for Ubuntu Resolute using the version and
+SHA-256 recorded in `versions.lock`, following the procedure published by ROS.
+`install-ros` parses the lock as data; it does not execute it as shell code:
+
+```bash
+./deploy.sh verify-lock
+curl --fail --location --output /tmp/ros2-apt-source.deb "${PINNED_ROS_APT_SOURCE_URL}"
+printf '%s  %s\n' "${PINNED_ROS_APT_SOURCE_SHA256}" /tmp/ros2-apt-source.deb | sha256sum --check --strict
+sudo dpkg -i /tmp/ros2-apt-source.deb
+sudo apt update
+```
+
+The displayed variables are values printed by `verify-lock` for manual recovery;
+they are not fetched from a `latest` endpoint. The script aborts on a missing
+lock value, failed download, checksum mismatch, or different Ubuntu codename.
+Refreshing the lock is a separate reviewed operation, never a side effect of
+installation.
+
+### 6.3 ROS and controller dependencies
+
+`./deploy.sh install-ros` installs the supported ROS base and development
+tooling at the exact versions in `versions.lock`; no second undocumented install
+command exists.
+
+The lock covers the complete apt dependency closure (package name, version,
+architecture, repository identity, and available-package hash), not only the
+four top-level packages. It also records the rosdep rules/index revision used to
+derive that closure. It includes `ros-lyrical-ros-base`, `ros-dev-tools`,
+Python serial/YAML dependencies, SROS2 policy/keystore tooling, EEPROM inspection
+tooling, `zstd`, and the selected `systemd-nspawn`/Ubuntu-rootfs tooling used by
+packaging. Installation fails rather than silently selecting a different
+version. If the official repositories no longer retain the lock, a deliberate
+lock refresh and full revalidation are required; the design does not claim an
+unprovided immutable Ubuntu/ROS archive.
+
+Do not install NumPy, pygame, OpenCV, Nav2, or perception packages unless a later
+milestone introduces a demonstrated controller dependency.
+
+Initialize rosdep once, then resolve dependencies from the copied package
+manifests and cross-check every apt result against `versions.lock`:
+
+```bash
+sudo rosdep init                 # skip only when already initialized
+source /opt/ros/lyrical/setup.bash
+cd /path/to/mentorpi/ubuntu_tank
+./deploy.sh install-deps
+rosdep check --from-paths src --ignore-src --rosdistro lyrical
+```
+
+Every retained ROS package must declare accurate build, execution, and test
+dependencies before rosdep is treated as a reliable installation mechanism.
+`install-deps` uses rosdep for resolution but installs only the locked explicit
+package versions and a downloaded rosdep index matching the locked revision and
+hash; it fails on an unresolved key or dependency absent from the lock instead
+of letting apt choose an unrecorded version.
+After any base upgrade, `install-ros` checks `/run/reboot-required` and stops
+before ROS installation, build, service installation, or activation until the
+operator reboots and reruns `check-host`.
+
+### 6.4 Persistent runtime environment
+
+Interactive shells may source ROS for convenience, but production must not rely
+on `.bashrc`. A non-interactive launch wrapper will source, in order:
+
+1. `/opt/ros/lyrical/setup.bash`;
+2. `/opt/ubuntu_tank/current/install/setup.bash`.
+
+The installed systemd unit will use
+`EnvironmentFile=/etc/opt/ubuntu_tank/mentorpi-tank.env`, pass
+`/etc/opt/ubuntu_tank/controller.yaml` to bringup, and run as the dedicated
+`ubuntu-tank` service account. The environment file will contain only non-secret
+settings such as `ROS_DOMAIN_ID=0` and
+`ROS_LOG_DIR=/var/opt/ubuntu_tank/ros-log`. Production also sets
+`ROS_LOCALHOST_ONLY=1`, `ROS_SECURITY_ENABLE=true`, and
+`ROS_SECURITY_STRATEGY=Enforce`; the matching SROS2 keystore and permissions live
+under `/etc/opt/ubuntu_tank/sros2`. Controller, guard, bridge, teleop/operator,
+and read-only status processes use distinct enclaves and credentials; there is
+no shared "service" credential. The controller may subscribe only to the accepted
+`Twist` input and publish only to the guard input. The guard alone may subscribe
+to that input, expose arm/disarm and state, and publish guarded motor output. The
+bridge may subscribe only to guarded motor output and may not publish or call
+arming/motion interfaces. Teleop/operator credentials, readable only by members
+of a dedicated `ubuntu-tank-operators` group, may call arm/disarm and publish to
+the accepted `Twist` input but not the guard input or output. Status credentials
+are read-only. All unlisted actions are denied.
+After porting, `MACHINE_TYPE` will be a ROS parameter and is not required as an
+environment variable. The installer creates the persistent
+`/var/opt/ubuntu_tank` hierarchy, while systemd creates `/run/ubuntu_tank` for
+each service run; both have narrowly scoped ownership. Service stdout and stderr
+go to journald.
+
+Localhost-only discovery prevents LAN participants from joining this
+controller-only graph; it does not authorize local users. SROS2 permissions and
+filesystem protection of enclave keys provide the local authorization boundary.
+Installation and acceptance tests must prove that an uncredentialed local ROS
+process cannot discover protected interfaces, arm, disarm, publish accepted
+motion, or publish directly to the actuator-facing topic.
+
+### 6.5 systemd confinement and supervision
+
+The production unit is a security and motion-safety boundary. Its reviewed
+baseline will include:
+
+- empty capability and ambient-capability sets, `NoNewPrivileges=yes`,
+  `RestrictSUIDSGID=yes`, and a non-root service identity;
+- `ProtectSystem=strict`, `ProtectHome=yes`, private temporary storage, protected
+  kernel tunables/modules/control groups, and write access only to the exact
+  `/var/opt/ubuntu_tank` and `/run/ubuntu_tank` paths;
+- a closed device policy permitting read/write only to the verified RRC character
+  device, without general `/dev` access;
+- only the Unix and localhost IP address families required by the selected DDS,
+  with non-loopback networking denied in addition to `ROS_LOCALHOST_ONLY=1`;
+- a bounded stop timeout, escalation that cannot leave a stuck process alive,
+  restart-rate limits, and restart-on-failure only into a disarmed state;
+- `Type=notify` with `NotifyAccess=main`, where only the main
+  `ubuntu_tank_supervisor` can notify systemd after AND-gating separate guard and
+  bridge health heartbeats; and
+- conservative resource limits validated not to starve the watchdog or serial
+  zero path.
+
+Exact directives and limits are implementation outputs because they must be
+tested with Lyrical's DDS and `/dev/rrc`. Automated gates use
+`systemd-analyze security`, inspect the effective unit properties, attempt
+forbidden filesystem/device/network access, and exercise stop timeout, forced
+kill, heartbeat loss, and restart throttling.
+
+## 7. STM32 serial setup
+
+The mounted factory image identifies the RRC USB serial device with vendor ID
+`1a86`, product ID `55d4`, a `ttyACM*` kernel name, and a `/dev/rrc` symlink. The
+new rule will preserve the interface while reducing permissions:
+
+```udev
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="<verified-serial>", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc", ENV{ID_MM_PORT_IGNORE}="1"
+```
+
+Before installing the rule, `check-host` must use `udevadm info` to confirm the
+actual device attributes and substitute a persistent serial number. If the board
+does not expose one, the reviewed rule must use a stable physical-path
+discriminator. If neither discriminator is available or more than one matching
+device exists, deployment stops; VID/PID uniqueness observed once is not enough.
+
+Host installation will:
+
+1. create the dedicated `mentorpi-rrc` group and non-login `ubuntu-tank` service
+   account, adding that account only to the device group;
+2. install the reviewed rule from the repository's `ubuntu_tank/host/`;
+3. reload and trigger udev;
+4. avoid adding human operators to `mentorpi-rrc`; any exceptional direct serial
+   diagnostic requires an explicit temporary administrative procedure while the
+   service is stopped;
+5. verify that `/dev/rrc` resolves to exactly one character device; and
+6. verify read/write access without changing the device to world-writable mode.
+
+The ROS bridge will receive `serial_device:=/dev/rrc` and
+`baud_rate:=1000000` as parameters. Missing, ambiguous, or inaccessible serial
+hardware is a launch failure and must leave the guard disarmed.
+
+## 8. Minimal code adaptations
+
+### 8.1 `ros_robot_controller_msgs`
+
+Copy the whole package. Its existing `CMakeLists.txt` generates the complete set
+of messages and services imported by `ros_robot_controller_node.py`; pruning the
+package would create import or build failures.
+
+### 8.2 `ros_robot_controller`
+
+Preserve the existing binary framing, CRC8 implementation, 1 Mbaud default,
+motor IDs, and STM32 command encoding. Limit changes to portability and safety:
+
+- declare and consume `machine_type`, `serial_device`, `baud_rate`,
+  `servo_config_file`, and `load_servo_offsets` parameters;
+- construct `Board` from the declared serial parameters;
+- remove the hard dependency on `os.environ['MACHINE_TYPE']`;
+- add a default-on `controller_only` mode that does not create LED, buzzer,
+  OLED, RGB, PWM-servo, bus-servo, gamepad, or SBUS command endpoints;
+- skip servo-offset loading in controller-only mode;
+- publish repeated four-motor zero commands on orderly shutdown;
+- close the serial port in a `finally` path;
+- fail clearly on serial-open and serial-write errors; and
+- declare all imported ROS and Python dependencies in `package.xml`.
+
+The bridge's private `set_motor` subscription is remapped to the guarded output.
+It must not subscribe directly to user or teleop motor commands.
+
+### 8.3 `controller`
+
+Preserve the existing `Twist` handling, tank motor polarity, message construction,
+and `MecanumChassis` conversion. Limit changes to:
+
+- consume `machine_type` from a ROS parameter;
+- parameterize wheelbase, track width, and wheel diameter;
+- add a controller-only mode that creates exactly one `Twist` subscription,
+  `/controller/cmd_vel`, and no `/app/cmd_vel`, `/cmd_vel`, servo, pose-reset, or
+  other legacy command surfaces;
+- start from the values instantiated by the current vendor node: `0.1368 m`,
+  `0.1446 m`, and `0.075 m`, while requiring raised-track validation;
+- replace `/home/ubuntu/software/chassis_adjustment/robot_correction_factors.yaml`
+  with declared left/right correction parameters whose version-controlled
+  defaults ship in the package and whose host-specific values are loaded from
+  `/etc/opt/ubuntu_tank/controller.yaml`;
+- apply or remove every exposed correction factor so no configuration value is
+  silently ineffective;
+- document that `odom_raw` is command integration, not measured odometry; and
+- declare all imported dependencies in `package.xml`.
+
+Reuse the complete Python module directory because `odom_publisher_node.py`
+imports other modules from it even when only Tank mode is selected. Do not carry
+the vendor `controller.launch.py` or unrelated launch/config files into the
+installed runtime: they import `nav2_common`, `robot_localization`, and the
+excluded `peripherals` package. The adapted `setup.py` exports only
+`odom_publisher`; servo-oriented `init_pose` is not an installed executable in
+this phase.
+
+### 8.4 Motor guard, authorization, and topic ownership
+
+Implement `ubuntu_tank_safety` because the current repository has no reusable
+guard that meets these requirements. Keep this new package narrow: it owns only
+arming state, motor-message validation, freshness timeout, repeated zeroing,
+read-only state reporting, and safe shutdown. All lease ages and watchdog
+deadlines use a steady monotonic clock, never ROS time or wall time. The launch
+graph will remap topics so the command path is explicit:
+
+```text
+safe teleop or bounded CLI test
+          |
+          v  geometry_msgs/msg/Twist
+ /controller/cmd_vel
+          |
+          v
+ controller/odom_publisher
+          |
+          v  ros_robot_controller_msgs/msg/MotorsState
+ /ubuntu_tank_safety/motor_input
+          |
+          v
+ ubuntu_tank_safety/motor_guard   [disarmed by default; 250 ms timeout]
+          |
+          v
+ /ros_robot_controller/set_motor_guarded
+          |
+          v
+ ros_robot_controller bridge -> /dev/rrc -> STM32 -> motors
+```
+
+The bringup launch must shut down the complete graph if the guard or bridge exits.
+The bridge also enforces an independent monotonic 250 ms freshness deadline on
+guarded motor messages from a dedicated watchdog thread; expiry sends repeated
+four-motor zero commands and closes the command path. Guard and bridge emit
+independent non-ROS heartbeats over separate inherited file descriptors or
+credential-checked Unix sockets. The main `ubuntu_tank_supervisor` maintains a
+monotonic deadline for each and notifies systemd only while both are fresh; one
+healthy child cannot mask the other's hang. Only this main process receives
+systemd's notify socket. A missed deadline stops the graph. The guard's maximum
+RPS will initially be conservative and raised only after bench evidence. Arming
+clears any cached command, so the operator must provide a new command after
+arming. The guard will publish its armed/disarmed state as a transient-local
+`std_msgs/msg/Bool` topic so `deploy.sh status` can query state without mutating
+it.
+
+These host layers mitigate a hung guard or ROS executor, but cannot prove a stop
+if the bridge process, kernel, USB stack, or host hangs after the STM32 accepts a
+nonzero command. The STM32's independent stale-command behavior remains a
+physical acceptance gate, and on-ground operation is forbidden until it is
+measured and accepted.
+
+### 8.5 Keyboard teleop
+
+Reuse the W/A/S/D mapping, terminal polling, and Twist publisher from the vendor
+keyboard node, but do not preserve its latched linear command behavior. A raw
+terminal reports characters and timeouts, not reliable key-up or focus-change
+events, so the adapted node uses a short renewable command lease rather than
+claiming direct release detection. It must:
+
+- give every recognized key event a lease shorter than the 250 ms motor timeout;
+- publish at a fixed rate while the lease is valid so the guard sees fresh input;
+- publish zero as soon as the lease expires, including when terminal input or
+  focus disappears;
+- publish zero on exception, SIGINT, and SIGTERM;
+- restore terminal state in `finally`; and
+- contain no servo, camera, joystick, pygame, or OpenCV dependency.
+
+Holding a key relies on terminal key-repeat behavior and may pause before repeat
+begins; that is safe because an expired lease stops the tank. A future true
+hold-to-run implementation would require key-up events from an input API such as
+evdev and is outside this phase.
+
+## 9. Build and deployment interface
+
+`ubuntu_tank/deploy.sh` will be the only supported automation entrypoint. It
+must be safe to rerun and must show help without modifying the host. Commands
+that write system paths use `sudo` only for their exact destinations; build and
+test commands run as the invoking user. `package` is the sole exception: it may
+use `sudo` to manage its isolated `systemd-nspawn` root below `.work/`, while the
+build itself remains unprivileged and never writes the host's system paths.
+
+| Command | Contract |
+| --- | --- |
+| `./deploy.sh help` | List commands, prerequisites, effects, and safety requirements |
+| `./deploy.sh check-host` | Read-only Ubuntu, ARM64, EEPROM, disk, ROS, serial, user, and process checks |
+| `./deploy.sh verify-lock` | Read-only validation of pinned repository/package identities, versions, architectures, URLs, and hashes |
+| `./deploy.sh prepare-host` | Update and record the explicit Ubuntu baseline, install base prerequisites, and stop if reboot is required |
+| `./deploy.sh install-ros` | Verify the accepted host baseline, configure the pinned official ROS repository package, and install locked Lyrical/build dependencies |
+| `./deploy.sh install-deps` | Resolve rosdep keys, require every apt result in `versions.lock`, install exact locked versions, and verify closure |
+| `./deploy.sh build` | Source Lyrical and run a clean, reproducible colcon build under `ubuntu_tank/` |
+| `./deploy.sh test` | Run unit, launch, package-import, topic-ownership, and signal-shutdown tests without motor hardware |
+| `./deploy.sh package` | Create an ignored disposable ARM64 root below `ubuntu_tank/.work/`, build there for the final release prefix, reject leaked build paths, and emit a checksummed architecture-specific artifact in `ubuntu_tank/dist/` |
+| `./deploy.sh install <artifact>` | Validate and install a new immutable release, stage its host assets, and create missing service prerequisites without changing active host assets or `current`, starting the service, or arming |
+| `./deploy.sh activate <release-id>` | Acquire the deployment lock, stop/disarm, execute the write-ahead activation transaction, validate without starting, and leave the service stopped |
+| `./deploy.sh rollback` | Restore the recorded release and host snapshot transactionally, validate without starting, and leave the service stopped |
+| `./deploy.sh start` | Start the native systemd service in the disarmed state |
+| `./deploy.sh stop` | Disarm, request repeated zero, and stop the service |
+| `./deploy.sh status` | Show service, serial, ROS graph, guard state, and actuator-topic ownership |
+| `./deploy.sh logs` | Show bounded recent journal output |
+| `./deploy.sh arm --ack-tracks-raised` | Arm only after current raised-track acknowledgment and successful preflight |
+| `./deploy.sh disarm` | Disarm and publish repeated zero immediately |
+| `./deploy.sh bench --ack-tracks-raised` | Run finite low-speed forward, reverse, left, right, and stop tests |
+
+Every mutating host or release command takes the root-owned
+`/run/lock/ubuntu_tank/deploy.lock` before preflight and holds it through journal
+commit or rollback. Its directory is created independently of the controller
+unit and is never removed by service stop. A second deployment, activation,
+rollback, start/stop, arm/disarm, or bench operation fails closed rather than
+racing the first.
+
+The normal operator sequence after implementation will be:
+
+```bash
+cd /path/to/mentorpi/ubuntu_tank
+./deploy.sh check-host
+./deploy.sh prepare-host
+# Reboot and rerun check-host here if prepare-host requires it.
+./deploy.sh verify-lock
+./deploy.sh install-ros
+./deploy.sh install-deps
+./deploy.sh build
+./deploy.sh test
+./deploy.sh package
+./deploy.sh install dist/ubuntu-tank-1.0.0-gabcdef-arm64.tar.zst
+./deploy.sh activate 1.0.0-gabcdef
+./deploy.sh start
+./deploy.sh status
+```
+
+`activate` and `rollback` always leave the service stopped, even if it was
+running beforehand. The explicit `start` command performs live startup and
+health checks and leaves the guard disarmed. Physical testing is a separate,
+explicit operation after the non-motion gates pass.
+
+Packaging records the release ID, project version, source revision, source and
+install-tree checksums, build platform, ROS distribution, and test result. The
+manifest also records the absolute install prefix used at build time. The
+installer rejects malformed paths, checksum mismatches, an incompatible host or
+ROS ABI, a prefix mismatch, or an existing release ID whose contents differ. It
+copies configuration defaults only when no host configuration exists; upgrades
+never silently replace accepted tank calibration. At least the active and
+previous verified releases remain installed so rollback does not depend on the
+repository checkout or network access.
+
+## 10. Verification and acceptance gates
+
+### 10.1 Hardware-free gates
+
+- Source manifest contains every reused path, revision, local patch, and hash.
+- Repository source and generated build state remain below `ubuntu_tank/` until
+  the explicit install step writes only the documented `/opt/ubuntu_tank`,
+  `/etc/opt/ubuntu_tank`, `/var/opt/ubuntu_tank`, `/run/ubuntu_tank`, systemd,
+  and udev targets.
+- `rosdep install` resolves successfully on Ubuntu 26.04 ARM64.
+- All packages build from a clean `build/`, `install/`, and `log/` state.
+- Every console script imports and `--help`/startup behavior is tested on Lyrical.
+- A packaged release installs with matching checksums, contains no `build/` or
+  `log/` tree, and cannot be modified by the service account.
+- Installed setup hooks and metadata contain the final release prefix rather than
+  a checkout, temporary staging, or packaging path.
+- `current` resolves to exactly one complete release, and the service sources
+  only `/opt/ros/lyrical` plus that release's `install/` tree.
+- Runtime tests prove the service writes nothing under `/opt`; host configuration
+  remains under `/etc/opt`, persistent mutable data under `/var/opt`, temporary
+  state under `/run`, and logs in journald.
+- Activation and rollback atomically select the expected release, journal each
+  transaction, restore schema-compatible checksummed configuration/host-asset
+  snapshots, and return the service to a disarmed state.
+- Motor guard tests cover disarmed startup, four-motor validation, NaN/Inf,
+  duplicate/missing IDs, speed limits, timeout, re-arm, and repeated zero.
+- Fault-injection tests cover wall-clock jumps, ROS-time pause, executor
+  starvation, a hung guard, a missed bridge heartbeat, and a forced service kill;
+  measured results distinguish host mitigations from the still-unproven STM32
+  stale-command behavior.
+- Launch tests prove that only the guard owns the bridge-facing motor topic and
+  that the bridge exposes no non-motor command endpoints in controller-only mode.
+- Launch tests prove that the controller exposes only `/controller/cmd_vel` as a
+  motion input and no legacy `/app/cmd_vel`, `/cmd_vel`, servo, or pose-reset
+  command surfaces.
+- DDS security tests prove that an uncredentialed local participant and a
+  credentialed read-only status participant cannot arm or command motion.
+- Guard-state tests verify transient-local armed/disarmed reporting without
+  calling the mutating arm service.
+- SIGINT, SIGTERM, node crash, and service-stop tests exercise the zero path.
+
+### 10.2 Target-Pi gates without motor power
+
+- Ubuntu/ARM64/EEPROM preflight passes.
+- Installed release files are root-owned and not writable by `ubuntu-tank`;
+  service identity, supplementary groups, and systemd paths match the design.
+- `/dev/rrc` is unique, stable across reconnect/reboot, and accessible only to
+  the intended group.
+- Serial open, close, reconnect failure, and service restart are observable and
+  leave the controller disarmed.
+- A logic analyzer or equivalent observation confirms the expected serial
+  framing before motor power is enabled, where practical.
+
+### 10.3 Raised-track motion gates
+
+- Physical acknowledgment is current and the emergency power disconnect is in
+  reach.
+- Low-speed forward, reverse, left, and right motion matches the command signs.
+- Each test is bounded and ends with repeated zero commands.
+- Keyboard lease expiry, terminal loss, teleop crash, guard crash, bridge crash,
+  service stop, serial disconnect, and host shutdown behavior are exercised.
+- Stop latency is measured and recorded for every failure case.
+- Motor RPS and geometry limits are accepted only after observing the exact tank.
+
+No on-ground motion is authorized by completion of this design or by a successful
+software-only test. It requires a separate decision after the STM32 stale-command
+behavior and raised-track stop latency are proven.
+
+## 11. Trackable implementation milestones
+
+All implementation tasks are currently incomplete. Checkboxes are updated only
+when their exit criteria and evidence are recorded.
+
+### Milestone 1 — Repository scaffold and provenance
+
+- [ ] Create the proposed `ubuntu_tank/` directory structure.
+- [ ] Copy the complete messages and bridge packages plus the required complete
+  controller Python module directory into `ubuntu_tank/src/`.
+- [ ] Compare every reuse candidate against the active mounted-image copy under
+  `/mnt/rpi-rootfs` and record revisions, hashes, and explained differences.
+- [ ] Create the narrowly scoped `ubuntu_tank_safety` package and its tests,
+  documenting why new code is required.
+- [ ] Create the minimal `ubuntu_tank_supervisor` and document why one trusted
+  AND-gating systemd notifier is required.
+- [ ] Create `ubuntu_tank_teleop` from the relevant vendor keyboard node.
+- [ ] Record source revisions, file hashes, and local adaptations.
+- [ ] Resolve and document redistribution licenses for all reused source.
+- [ ] Define the version-plus-revision release ID and release-manifest schema.
+- [ ] Add ignores for colcon-generated `build/`, `install/`, `log/`, `dist/`, and
+  disposable `.work/` output.
+
+Exit criterion: every delivered source file has provenance, the source boundary
+test passes, and no camera/LiDAR/AI code is in the runtime dependency closure.
+
+### Milestone 2 — Ubuntu and ROS installation workflow
+
+- [ ] Implement idempotent `check-host`, `prepare-host`, `verify-lock`, and
+  `install-ros` commands.
+- [ ] Validate Ubuntu 26.04, ARM64, EEPROM, locale, disk, and time preconditions.
+- [ ] Configure the official `ros2-apt-source` package for Resolute.
+- [ ] Reject factory/sidecar/replacement containers, factory boot units, and
+  conflicting ROS/device owners before install, activation, start, or arm.
+- [ ] Record and accept the security-current Ubuntu baseline separately from the
+  locked ROS/application dependency closure.
+- [ ] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling
+  dependency closure; never resolve a `latest` release during installation.
+- [ ] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only
+  other demonstrated dependencies at locked versions.
+- [ ] Stop for a required reboot after base upgrades and re-run host preflight.
+- [ ] Add clear recovery behavior for partial apt or network failures.
+- [ ] Test the instructions from a clean Ubuntu 26.04 Raspberry Pi image.
+
+Exit criterion: a clean Pi can install ROS and pass `check-host` by following only
+`ubuntu_tank/README.md` and `deploy.sh`.
+
+### Milestone 3 — Lyrical port and dependency closure
+
+- [ ] Complete `package.xml` metadata for every retained package.
+- [ ] Remove `MACHINE_TYPE` environment dependencies from both controller nodes.
+- [ ] Parameterize serial device, baud, geometry, and correction settings.
+- [ ] Remove hardcoded `/home/ubuntu/software` paths.
+- [ ] Make bridge serial shutdown and zeroing signal-safe.
+- [ ] Add an independent monotonic bridge freshness watchdog and guard/bridge
+  health heartbeats for service supervision.
+- [ ] Make the supervisor track both child deadlines independently and ensure
+  only it can send systemd watchdog notifications.
+- [ ] Build from a clean workspace with rosdep on Ubuntu 26.04 ARM64.
+- [ ] Test every installed console-script import on ROS 2 Lyrical.
+
+Exit criterion: clean rosdep, colcon build, package import, and installed-launch
+parse tests pass without legacy environment variables or paths.
+
+### Milestone 4 — Guarded bringup and safe teleop
+
+- [ ] Create `ubuntu_tank_bringup` with the guarded topic graph.
+- [ ] Configure disarmed startup, 250 ms freshness, and conservative RPS limits.
+- [ ] Shut down the graph when the guard or hardware bridge exits.
+- [ ] Disable every non-motor bridge command endpoint in controller-only mode.
+- [ ] Remove the controller's legacy `/app/cmd_vel`, `/cmd_vel`, servo, and
+  pose-reset command surfaces in controller-only mode.
+- [ ] Add a read-only transient-local guard-state topic for status reporting.
+- [ ] Configure localhost-only DDS and distinct deny-by-default SROS2 enclaves
+  for controller, guard, bridge, operator controls, and read-only status.
+- [ ] Implement renewable keyboard leases and periodic fresh commands.
+- [ ] Add invalid-command, timeout, signal, crash, and topic-ownership tests.
+- [ ] Add wall-clock-jump, ROS-time-pause, executor-starvation, hung-process, and
+  one-child-healthy/one-child-hung heartbeat fault-injection tests.
+- [ ] Test that uncredentialed local/LAN participants and each credentialed
+  non-owner enclave cannot arm, bypass the guard, or command forbidden topics.
+- [ ] Prove that no normal launch path bypasses the guard.
+
+Exit criterion: all hardware-free safety regressions pass and every tested exit
+path publishes repeated four-motor zero commands.
+
+### Milestone 5 — Native host deployment and operations
+
+- [ ] Implement the hardened udev rule with a dedicated `mentorpi-rrc` group and
+  a persistent serial-number or physical-path identity discriminator.
+- [ ] Create the dedicated non-login `ubuntu-tank` service account with narrowly
+  scoped serial and filesystem access.
+- [ ] Implement the native systemd service using
+  `/opt/ubuntu_tank/current/install`, `/etc/opt/ubuntu_tank`,
+  `/var/opt/ubuntu_tank`, and `/run/ubuntu_tank`.
+- [ ] Apply and test capability, filesystem, device, network, privilege,
+  resource, watchdog, stop-timeout, restart, and restart-rate confinement.
+- [ ] Implement checksummed packaging and immutable installation into
+  `/opt/ubuntu_tank/releases/<release-id>`.
+- [ ] Implement the disposable ARM64 build root below `ubuntu_tank/.work/`, use
+  the final internal install prefix, and reject leaked checkout/staging paths.
+- [ ] Implement build, test, package, install, activate, rollback, start, stop,
+  status, logs, arm, disarm, and finite bench commands.
+- [ ] Serialize every mutating operation with the release-independent root-owned
+  `/run/lock/ubuntu_tank/deploy.lock`.
+- [ ] Ensure install never activates, starts, or arms the controller and never
+  silently overwrites host configuration.
+- [ ] Make `current` activation atomic and validate root ownership and release
+  integrity before switching it.
+- [ ] Retain and record the previous verified release for offline rollback.
+- [ ] Journal activation and keep root-only checksummed snapshots of compatible
+  configuration, environment, security policy, systemd, and udev state.
+- [ ] Implement write-ahead transaction ordering, fsync points, boot-time
+  interrupted-activation recovery, and failure rollback.
+- [ ] Install the recovery runner at the release-independent
+  `/opt/ubuntu_tank/libexec/recover-activation` path and fault-inject interruption
+  after every durable transaction boundary.
+- [ ] Implement and test explicit configuration-schema forward migrations and
+  downgrade restoration.
+- [ ] Test upgrades and rollback of releases, configuration, udev, and systemd
+  assets.
+- [ ] Test reboot, service restart, failed launch, and clean shutdown behavior.
+
+Exit criterion: deployment is repeatable, the service always returns disarmed,
+production runs only the selected immutable install tree, and rollback restores
+the last known working release and host configuration without a checkout or
+network connection.
+
+### Milestone 6 — Raised-track controller acceptance
+
+- [ ] Verify the exact board revision, power path, USB identity, and emergency
+  disconnect before energizing motors.
+- [ ] Run finite forward, reverse, left, and right tests with tracks raised.
+- [ ] Confirm motor polarity and tune conservative velocity/RPS limits.
+- [ ] Measure stop latency for keyboard lease expiry, guard timeout, crash,
+  service stop, serial loss, and host shutdown.
+- [ ] Determine and record STM32 behavior after host-command loss.
+- [ ] Record accepted geometry and correction values for this tank.
+- [ ] Update the operator guide with reproducible evidence and limitations.
+
+Exit criterion: the four requested motions work on raised tracks, every tested
+stop condition meets an explicitly accepted bound, and the controller remains
+disarmed after restart. This milestone still does not authorize on-ground use.
+
+## 12. Definition of done for this phase
+
+The controller-only phase is complete when:
+
+- a clean Ubuntu 26.04 Pi 5 can be prepared using only files under
+  `ubuntu_tank/`;
+- ROS 2 Lyrical and dependencies install reproducibly;
+- the reused MentorPi packages build and run natively;
+- an audited artifact installs as a root-owned versioned release below
+  `/opt/ubuntu_tank/releases`, and production runs only through
+  `/opt/ubuntu_tank/current/install`;
+- host configuration, persistent state, and runtime state remain separated under
+  `/etc/opt/ubuntu_tank`, `/var/opt/ubuntu_tank`, and `/run/ubuntu_tank`;
+- activation and offline rollback are atomic, preserve configuration, and return
+  the service disarmed;
+- localhost-only discovery and enforced SROS2 policy prevent uncredentialed LAN
+  or local processes from arming or commanding motion;
+- the only enabled actuator command path is motor output through the
+  disarmed-by-default guard;
+- forward, backward, left, right, and stop succeed in bounded raised-track tests;
+- command loss and process failures stop within a measured, accepted latency;
+- systemd startup is disarmed and safe across reboot; and
+- `ubuntu_tank/README.md` contains the exact install, deploy, operate, recover,
+  and rollback procedures with recorded validation status.
+
+Quantitative RAM, boot-time, storage, reliability, and on-ground safety claims
+must not be made until they have been measured on the target Pi and tank.
+
+## 13. Normative installation references
+
+- [ROS 2 Lyrical installation](https://docs.ros.org/en/lyrical/Installation.html)
+  is authoritative for supported platforms and choosing Debian packages.
+- [ROS 2 Lyrical Ubuntu binary installation](https://docs.ros.org/en/lyrical/Installation/Alternatives/Ubuntu-Install-Binary.html)
+  is authoritative for Ubuntu 26.04 ARM64 prerequisites and repository setup.
+- [Filesystem Hierarchy Standard 3.0: `/opt`](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s13.html)
+  defines the `/opt`, `/etc/opt`, and `/var/opt` separation used by this design.
+
+The implementation must pin or record the exact instructions and package
+versions it validates. Links labelled `latest` or content from an active ROS
+release may change after this document is written.

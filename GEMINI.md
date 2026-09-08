@@ -4,7 +4,7 @@ This file provides persistent architecture and safety context for agents and
 developers. Read it with `CONVERSATION_MEMORY.md` before changing the repository.
 The root `README.md` is the canonical build and deployment guide.
 
-## Current architecture
+## Factory-image and sidecar mode
 
 - Target: Hiwonder MentorPi Tank with Raspberry Pi 5 ARM64, STM32 chassis
   controller, Oradar MS200 LiDAR, and Aurora/Astra depth camera.
@@ -16,6 +16,26 @@ The root `README.md` is the canonical build and deployment guide.
   `mentorpi-fan`.
 - The sidecar contains only Nginx and static browser assets. It has no ROS
   runtime, controller, navigation, teleoperation, driver, or actuator code.
+- A separate opt-in replacement candidate is documented for `docker/original`,
+  but that directory is absent from the current checkout. If restored, its
+  `runtime-core` image remains mutually exclusive with the factory stack and
+  does not supersede the factory container or rollback baseline until all
+  acceptance gates pass.
+
+## Native Ubuntu 26.04 controller mode (design only)
+
+`docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a
+clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. No implementation or physical
+deployment exists yet. This mode is controller-only and uses a guarded native
+service for bounded forward, reverse, left, and right motion.
+
+The native mode is not installed on the vendor Raspberry Pi OS and must never
+run beside the factory `MentorPi` container, the observer sidecar, or a restored
+replacement container. Preserve the verified vendor image on separate media;
+transition between platform modes only while powered down. In native mode,
+application releases live below `/opt/ubuntu_tank`, configuration below
+`/etc/opt/ubuntu_tank`, and the dedicated service is the sole `/dev/rrc` owner.
+Its application rollback does not restore the vendor OS.
 
 ## Source of truth
 
@@ -30,11 +50,11 @@ same tag. Never pull, retag, replace, or rebuild it as part of sidecar deploymen
 
 ## Repository layout
 
-- `docker/customization/`: sidecar Dockerfile, Nginx configuration, and web UI.
-- `docker/docker-compose.yml`: the sole Compose definition; it manages only
-  `MentorPiFan`.
-- `docker/deploy.sh`: builds/tests locally or transfers and starts only the
-  sidecar on an existing vendor Pi.
+- `docker/customization/`: complete sidecar deployment, including its Dockerfile,
+  Compose definition, deployment script, Nginx configuration, and web UI. The
+  Compose project manages only `MentorPiFan`.
+- `docker/original/`: reserved path for the isolated replacement workflow; it
+  is absent from the current checkout, so do not run or cite it as available.
 - `mentorpi/src/`: vendor-supplied high-level ROS source retained for behavior
   and interface research; excluded from the sidecar image.
 - `third_party_src/`: extracted drivers and SDKs retained for comparison;
@@ -46,7 +66,8 @@ same tag. Never pull, retag, replace, or rebuild it as part of sidecar deploymen
 
 The former reconstructed full-stack Dockerfile, privileged Compose service,
 host installers, and container environment files were removed. Do not
-reintroduce them into the customization deployment.
+reintroduce them into the customization deployment or confuse them with the
+currently absent opt-in replacement workflow documented for `docker/original`.
 
 ## Runtime interfaces
 
@@ -73,4 +94,11 @@ robot on a trusted network. Port 8081 must not proxy rosbridge.
 - Remote deployment must verify the factory `MentorPi` container is running and
   must never stop, recreate, or modify it.
 
-Run `./docker/deploy.sh help` for the supported local, remote, and test commands.
+Run `./docker/customization/deploy.sh help` for the supported local, remote, and
+test commands.
+
+For replacement work, first verify that `docker/original/` has been deliberately
+restored. Only then use its documented help. Never run a replacement cutover
+until its acceptance file is complete, a verified factory backup exists, the
+live device/bind contracts have been checked, and the tracks-raised physical
+safety acknowledgment is valid.

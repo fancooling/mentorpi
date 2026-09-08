@@ -25,6 +25,11 @@ core.[0-9]*
 .codex/
 .DS_Store
 
+# Private allowlisted input captured from the factory container
+docker/original/.source/
+docker/original/.source.previous.*/
+docker/original/.source.tmp.*/
+
 # Large neural network models and oversized simulation meshes
 *.pt
 mentorpi/src/simulations/mentorpi_description/meshes/tank/wheel_link.stl

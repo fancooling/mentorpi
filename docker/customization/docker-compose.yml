@@ -5,7 +5,7 @@ name: mentorpi-fan
 services:
   mentorpi-fan:
     build:
-      context: ./customization
+      context: .
       dockerfile: Dockerfile
     image: mentorpi-fan:latest
     pull_policy: never

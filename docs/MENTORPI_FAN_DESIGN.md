@@ -413,8 +413,8 @@ Version 0.1.0 is implemented in:
 - `docker/customization/Dockerfile`
 - `docker/customization/nginx.conf`
 - `docker/customization/web/`
-- `docker/docker-compose.yml`
-- `docker/deploy.sh`
+- `docker/customization/docker-compose.yml`
+- `docker/customization/deploy.sh`
 
 The local ARM64 build, Nginx configuration, HTTP health endpoint, Compose
 project isolation, and container security settings were validated on
