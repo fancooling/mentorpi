@@ -1,0 +1,6 @@
+# MentorPi Tank STM32 RRC udev serial rule template
+# Restricted and verified character device ownership for STM32 RRC chassis controller
+# Vendor: 1a86 (QinHeng CH343/CH342), Product: 55d4
+# Grants read/write access solely to mentorpi-rrc group, ignores ModemManager probes.
+
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc", ENV{ID_MM_PORT_IGNORE}="1"

@@ -1,0 +1,75 @@
+# MentorPi Tank Native Controller - Dependency Scope Specification (Draft for Milestone 2 Lock)
+# Target: Ubuntu 26.04 LTS ARM64 (Raspberry Pi 5)
+# ROS Distribution: ROS 2 Lyrical
+# Schema: lockfile-v1 (Draft specification)
+# Status: Defines direct package scopes and perception exclusions for Milestone 1.
+# Authoritative pinned package versions, apt repository snapshots, and package hashes
+# will be resolved and locked in Milestone 2 (via ./deploy.sh install-ros / verify-lock).
+
+meta:
+  format_version: "1.0.0-draft"
+  status: "draft_specification"
+  target_os: "Ubuntu 26.04 LTS"
+  target_arch: "arm64"
+  ros_distro: "lyrical"
+  controller_mode: "controller-only"
+
+packages:
+  core_ros:
+    - name: "ros-lyrical-ros-base"
+      scope: "system_base"
+    - name: "ros-dev-tools"
+      scope: "build_tools"
+
+  workspace_direct_ros:
+    - name: "rclpy"
+      scope: "runtime"
+    - name: "std_msgs"
+      scope: "runtime"
+    - name: "std_srvs"
+      scope: "runtime"
+    - name: "geometry_msgs"
+      scope: "runtime"
+    - name: "nav_msgs"
+      scope: "runtime"
+    - name: "sensor_msgs"
+      scope: "runtime_non_perception"
+      allowed_types: ["Imu", "Joy", "JointState"]
+    - name: "ros_robot_controller_msgs"
+      scope: "runtime_interfaces"
+    - name: "launch"
+      scope: "runtime_launch"
+    - name: "launch_ros"
+      scope: "runtime_launch"
+
+  workspace_system_deps:
+    - name: "python3-serial"
+      scope: "runtime_serial"
+    - name: "python3-yaml"
+      scope: "runtime_config"
+    - name: "python3-setuptools"
+      scope: "build"
+    - name: "python3-pytest"
+      scope: "test"
+
+  excluded_perception:
+    - name: "sensor_msgs/Image"
+      status: "forbidden"
+    - name: "sensor_msgs/LaserScan"
+      status: "forbidden"
+    - name: "sensor_msgs/PointCloud2"
+      status: "forbidden"
+    - name: "cv_bridge"
+      status: "forbidden"
+    - name: "image_transport"
+      status: "forbidden"
+    - name: "laser_geometry"
+      status: "forbidden"
+    - name: "nav2_*"
+      status: "forbidden"
+    - name: "robot_localization"
+      status: "forbidden"
+    - name: "torch"
+      status: "forbidden"
+    - name: "opencv2"
+      status: "forbidden"

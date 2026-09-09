@@ -1,0 +1,36 @@
+# MentorPi Tank Native Controller Configuration Defaults
+# Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC)
+# Runtime: ROS 2 Lyrical Native Controller
+
+controller:
+  machine_type: "MentorPi_Tank"
+  wheelbase: 0.1368         # meters (tread ground contact length)
+  track_width: 0.1446       # meters (center-to-center track distance)
+  wheel_diameter: 0.075     # meters (sprocket diameter)
+  max_linear_speed: 0.5     # m/s (conservative raised-track initial limit)
+  max_angular_speed: 2.0    # rad/s
+  correction_factor:
+    left: 1.0
+    right: 1.0
+
+serial_bridge:
+  serial_device: "/dev/rrc"
+  baud_rate: 1000000
+  controller_only: true
+  freshness_timeout_sec: 0.250
+
+motor_guard:
+  max_rps: 2.0              # Revolutions per second limit per motor
+  timeout_sec: 0.250        # Freshness timeout (250 ms monotonic)
+  check_rate_hz: 50.0       # Watchdog check frequency
+  heartbeat_interval_sec: 0.200
+
+supervisor:
+  guard_deadline_sec: 1.0
+  bridge_deadline_sec: 1.0
+  check_interval_sec: 0.200
+
+teleop:
+  linear_speed: 0.2         # m/s
+  angular_speed: 0.8        # rad/s
+  lease_duration_sec: 0.150 # 150 ms renewable lease (< 250 ms guard timeout)

@@ -163,17 +163,20 @@ configuration lives under `/etc/opt/ubuntu_tank`, persistent mutable state under
 `/var/opt/ubuntu_tank`, and volatile state under `/run/ubuntu_tank`. A dedicated
 non-root `ubuntu-tank` account runs the systemd service. Install, activation,
 rollback, start, and arming are separate operations; activation/rollback use a
-write-ahead recovery journal and leave the service stopped and disarmed. No
-implementation exists yet.
+write-ahead recovery journal and leave the service stopped and disarmed. A
+hardware-free Milestone 1 scaffold exists; native installation, full graph
+bringup, and physical deployment are not implemented yet.
 
 The design copies the complete `ros_robot_controller_msgs`,
 `ros_robot_controller`, and the complete controller Python module directory from
-`mentorpi/src` after comparing those candidates against authoritative active
-copies under `/mnt/rpi-rootfs`; legacy controller launch surfaces that require
-Nav2 or peripherals are excluded. No reusable guard exists in the current
-worktree, so the design calls for one narrowly scoped new `ubuntu_tank_safety`
-package plus a minimal AND-gating heartbeat supervisor. It adapts only the
-relevant vendor keyboard logic into renewable, timeout-bounded motion leases.
+`mentorpi/src`, which is the primary code reference for this native target;
+legacy controller launch surfaces that require Nav2 or peripherals are excluded.
+`/mnt/rpi-rootfs` is a documented fallback only for required missing,
+hardware-specific, or contradictory facts, and every use must record its reason,
+path, and hash. No reusable guard exists in the current worktree, so the design
+calls for one narrowly scoped new `ubuntu_tank_safety` package plus a minimal
+AND-gating heartbeat supervisor. It adapts only the relevant vendor keyboard
+logic into renewable, timeout-bounded motion leases.
 Narrow porting changes remove environment and
 absolute-path assumptions, complete dependency metadata, parameterize the serial
 and kinematic contract, disable unused bridge and controller command endpoints,
@@ -183,6 +186,39 @@ each command boundary. Camera, LiDAR, navigation, AI, joystick, Docker runtime,
 and on-ground motion are outside this phase. Six trackable milestones
 cover repository provenance, clean-host ROS installation, the Lyrical port,
 guarded bringup, versioned native deployment, and raised-track acceptance.
+
+On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented and validated:
+- Created the `ubuntu_tank/` directory layout with tracked scaffold files: `config/controller.yaml`,
+  `config/sros2/README.md`, `host/99-mentorpi-rrc.rules`, `host/mentorpi-tank.service`,
+  `host/mentorpi-tank.env`, `scripts/install_ros2.sh`, `scripts/build_workspace.sh`,
+  `scripts/check_host.sh`, `scripts/recover_activation.sh`, and `scripts/verify_runtime.sh`.
+- Reused vendor packages `ros_robot_controller_msgs`, `ros_robot_controller`, and `controller` from
+  `mentorpi/src` (Git baseline `ca32e0c`) with 0 fallbacks to `/mnt/rpi-rootfs`, completing direct package
+  metadata declarations in `package.xml`.
+- Created safety and control packages:
+  - `ubuntu_tank_safety`: Disarmed-by-default motor guard enforcing monotonic freshness (250 ms timeout),
+    valid 4-motor commands, and finite/bounded speed limits.
+  - `ubuntu_tank_supervisor`: Trusted AND-gating systemd watchdog supervisor validating separate guard
+    and bridge monotonic heartbeats via inherited kernel pipes or socket credentials (`SO_PASSCRED`).
+    Under the documented single-owner threat model, owner-approved same-UID processes are trusted, and
+    credential checks catch accidental senders or configuration mistakes.
+  - `ubuntu_tank_teleop`: Keyboard teleoperation emitting renewable 150 ms velocity leases, halting
+    motion within the configured lease after key repeat ceases or terminal focus is lost.
+- Added dependency specifications and verification tools:
+  - `versions.lock`: Draft dependency scope specification for Milestone 2.
+  - `docs/DEPENDENCY_CLOSURE.md`: Direct runtime dependency declarations, AST verification, allowlist,
+    and target transitive closure specification.
+  - `docs/RELEASE_MANIFEST_SPEC.md`: Version-plus-revision release ID and manifest schema.
+  - `source-manifest.txt`: 100% provenance coverage for all 92 delivered payload files out of 93 Git-tracked
+    files (`source-manifest.txt` intentionally self-excluding).
+- Implemented comprehensive automated boundary and regression gates:
+  - `tests/test_source_boundary.sh`: 5-stage verification (manifest provenance against `git ls-files`,
+    Git-tracked layout assertion, 0 rootfs fallbacks, 100% direct AST import coverage including cross-workspace
+    dependencies, controller-only allowlist enforcement, and zero perception/camera/LiDAR/AI code or tokens).
+  - `tests/test_negative_boundary.sh`: Automated negative regression suite verifying that omitting
+    cross-workspace or external dependencies triggers immediate gate failure with exact error reporting.
+- Validation: `./ubuntu_tank/deploy.sh test` passed all 5 boundary stages, 2 negative regression tests,
+  and 41 modular unit/integration tests (11 safety, 22 supervisor, 8 teleop).
 
 ## Codex continuity
 

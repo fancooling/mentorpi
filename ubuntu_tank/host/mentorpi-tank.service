@@ -1,0 +1,32 @@
+[Unit]
+Description=MentorPi Tank Native Motion Controller
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=ubuntu-tank
+Group=mentorpi-rrc
+WorkingDirectory=/opt/ubuntu_tank/current
+EnvironmentFile=/etc/opt/ubuntu_tank/mentorpi-tank.env
+ExecStart=/opt/ubuntu_tank/current/bin/mentorpi-tank-run
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=5s
+WatchdogSec=2s
+
+# Hardened sandboxing constraints
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+DeviceAllow=/dev/rrc rw
+DevicePolicy=closed
+ReadWritePaths=/var/opt/ubuntu_tank /run/ubuntu_tank
+
+[Install]
+WantedBy=multi-user.target

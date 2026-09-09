@@ -1,0 +1,702 @@
+# Ubuntu Tank Source and Provenance Manifest
+# Format: key: value
+# Verified against upstream commit ca32e0c (mentorpi/src)
+
+destination: ubuntu_tank/README.md
+origin: authored
+destination_sha256: 792196bd5a6f0a79bb19081a2b6b02167d34c981adb7fbddd1273fc1f90a4725
+status: new
+rationale: Canonical operator guide for the native tank controller.
+
+destination: ubuntu_tank/VERSION
+origin: authored
+destination_sha256: 59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03
+status: new
+rationale: Root semantic version definition for native release packaging.
+
+destination: ubuntu_tank/config/controller.yaml
+origin: authored
+destination_sha256: 08102a501f07701a8c2ff6cb21fe7e2dda7f7b89addd261f6fdbf4ad788a9f83
+status: new
+rationale: Version-controlled production kinematic and safety defaults for native controller
+
+destination: ubuntu_tank/config/sros2/README.md
+origin: authored
+destination_sha256: be5764af4181e5b87c58de83a197b86de27aed498bbed6d7b6a1406cc1e7dc77
+status: new
+rationale: SROS2 security governance and enclave access control specification placeholder
+
+destination: ubuntu_tank/deploy.sh
+origin: authored
+destination_sha256: 58bda3420b92aa692128211f9d4585c548852dc55f8a74323392e24f21e51262
+status: new
+rationale: Unified deployment and operations entrypoint for the native controller workspace.
+
+destination: ubuntu_tank/docs/DEPENDENCY_CLOSURE.md
+origin: authored
+destination_sha256: e7c2a9663d550a1091ff36e691f43743db79c91e941ecac1671ce35f76aec00a
+status: new
+rationale: Specification of direct runtime dependencies, AST import audit, controller allowlist, and target closure
+
+destination: ubuntu_tank/docs/RELEASE_MANIFEST_SPEC.md
+origin: authored
+destination_sha256: d2cdef878bf9120d29d54ac952bc026abadcdb05c361581bd7cbf4906ead3d6e
+status: new
+rationale: Normative specification for release ID schema and release manifest format.
+
+destination: ubuntu_tank/host/99-mentorpi-rrc.rules
+origin: authored
+destination_sha256: 24088766efc2e1b6c0ea64f3a218be1c9ae5f21425da8af0133762f735cb28c6
+status: new
+rationale: Restricted and verified udev serial character device ownership rule template
+
+destination: ubuntu_tank/host/mentorpi-tank.env
+origin: authored
+destination_sha256: c4f09c675a9d399106da06bb16a25a6f2a899b7e634b554fbda0fd2194ae9574
+status: new
+rationale: Pinned non-secret runtime environment defaults template for systemd service
+
+destination: ubuntu_tank/host/mentorpi-tank.service
+origin: authored
+destination_sha256: e3f1bf3d8176db021e792b9b73b8da4272bf6c71e9bce59aaef0242db3946a00
+status: new
+rationale: Hardened native systemd service unit template with Type=notify and sandboxing
+
+destination: ubuntu_tank/scripts/build_workspace.sh
+origin: authored
+destination_sha256: 09e5d438b6469a20062340fd3c7b2812ee46dbd3334b108950d625e7059b1636
+status: new
+rationale: Host colcon build and rosdep resolution script scaffold
+
+destination: ubuntu_tank/scripts/check_host.sh
+origin: authored
+destination_sha256: 02527baefb7f6706c8afee05046f9c75554efacd0b7ccb60027e4e99a8496371
+status: new
+rationale: Read-only host OS, architecture, EEPROM, and device preflight script scaffold
+
+destination: ubuntu_tank/scripts/install_ros2.sh
+origin: authored
+destination_sha256: 722115d73b195ac9dff8706dcf6be95d71963458aef1e531d75d833a720ebb86
+status: new
+rationale: Ubuntu and ROS 2 Lyrical package repository and installation script scaffold
+
+destination: ubuntu_tank/scripts/recover_activation.sh
+origin: authored
+destination_sha256: e1fc1c1a95b3d59b729c684df0119572d5732494a376b59515047cd8d9eaeb6d
+status: new
+rationale: Boot-time write-ahead transaction recovery runner script scaffold
+
+destination: ubuntu_tank/scripts/verify_runtime.sh
+origin: authored
+destination_sha256: e57dbf7265220e12ae7900f80efafa12f338b3b9a7107146e042842708f60e48
+status: new
+rationale: ROS graph, topic ownership, and guard state runtime verification script scaffold
+
+destination: ubuntu_tank/src/controller/controller/__init__.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/__init__.py
+source_commit: ca32e0c
+source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+destination_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/controller/ackermann.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/ackermann.py
+source_commit: ca32e0c
+source_sha256: 725a71c7ca6ba8e42c26c9d9099c8d7c03f376a01fb9287c4ec97193ef260568
+destination_sha256: 725a71c7ca6ba8e42c26c9d9099c8d7c03f376a01fb9287c4ec97193ef260568
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/controller/cp.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/cp.py
+source_commit: ca32e0c
+source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
+destination_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/controller/init_pose.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/init_pose.py
+source_commit: ca32e0c
+source_sha256: e6ee14c136af7e6a70ea012d084041f027ece1843272fd9924aa0b23f9757e59
+destination_sha256: e6ee14c136af7e6a70ea012d084041f027ece1843272fd9924aa0b23f9757e59
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/controller/mecanum.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/mecanum.py
+source_commit: ca32e0c
+source_sha256: c44b094d0bad26568fb7946327955131680679c438c1539ab9df1ce550f88fa9
+destination_sha256: c44b094d0bad26568fb7946327955131680679c438c1539ab9df1ce550f88fa9
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/controller/odom_publisher_node.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/controller/odom_publisher_node.py
+source_commit: ca32e0c
+source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
+destination_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/package.xml
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/package.xml
+source_commit: ca32e0c
+source_sha256: d764c9f63f942ac3fe932de0e544e531e749af58f8c137681630a2ae7673d456
+destination_sha256: 24f5d247ed237351aa5452ba4945ff5059f8a7672e2a9b378d77d9376822a9f8
+status: adapted
+adaptations: Declare complete runtime ROS and Python dependencies (rclpy, geometry_msgs, nav_msgs, sensor_msgs, std_srvs, ros_robot_controller_msgs, python3-yaml) in package.xml
+
+destination: ubuntu_tank/src/controller/resource/controller
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/resource/controller
+source_commit: ca32e0c
+source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+destination_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/setup.cfg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/setup.cfg
+source_commit: ca32e0c
+source_sha256: b597b1bf63b00077421e6d232041aaf6fcc74d52c333a80533688ed2bf4283e0
+destination_sha256: b597b1bf63b00077421e6d232041aaf6fcc74d52c333a80533688ed2bf4283e0
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/setup.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/setup.py
+source_commit: ca32e0c
+source_sha256: 8557221396045252f9640ae631a2295745a6be263c89ddfafc42fae8d04607c5
+destination_sha256: c38585adb46a5a39b0059accbd75e456e4b8bac14b56362d54a26b84fddb5ff1
+status: adapted
+adaptations: Export only odom_publisher console script; omit legacy launch and config files that pull in Nav2, robot_localization, and peripherals.
+
+destination: ubuntu_tank/src/controller/test/test_copyright.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/test/test_copyright.py
+source_commit: ca32e0c
+source_sha256: 977a2313a0ae218ef9e2b944347d2b8f7aba43447283d2a832391f9904fd37e9
+destination_sha256: 977a2313a0ae218ef9e2b944347d2b8f7aba43447283d2a832391f9904fd37e9
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/test/test_flake8.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/test/test_flake8.py
+source_commit: ca32e0c
+source_sha256: 37a813a0507f0ce51a2d0b57312d2cc078a0307a3ca85580ea801b0d2f9755d2
+destination_sha256: 37a813a0507f0ce51a2d0b57312d2cc078a0307a3ca85580ea801b0d2f9755d2
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/controller/test/test_pep257.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/controller/test/test_pep257.py
+source_commit: ca32e0c
+source_sha256: e8b88d49ee296987b1b40069f81019b5fa09b1aa1bfee9a1faae45bb5cf53eda
+destination_sha256: e8b88d49ee296987b1b40069f81019b5fa09b1aa1bfee9a1faae45bb5cf53eda
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/launch/ros_robot_controller.launch.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/launch/ros_robot_controller.launch.py
+source_commit: ca32e0c
+source_sha256: 440b10cd831f715f488f461e3b6cfd2551960c0daa328205427e0dfc99890403
+destination_sha256: 440b10cd831f715f488f461e3b6cfd2551960c0daa328205427e0dfc99890403
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/package.xml
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/package.xml
+source_commit: ca32e0c
+source_sha256: 1d8f07beaa393496a5d57ccfe25d43ebae39d28f7ef5123f02919fe0d5e2ea44
+destination_sha256: 1b4c43188320cd5f6d94ae7468272b7c568f62dc0f6a651a6d29ae0e3382ab59
+status: adapted
+adaptations: Declare complete runtime ROS and Python dependencies (rclpy, std_msgs, std_srvs, sensor_msgs, ros_robot_controller_msgs, launch, launch_ros, python3-serial, python3-yaml) in package.xml
+
+destination: ubuntu_tank/src/ros_robot_controller/resource/ros_robot_controller
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/resource/ros_robot_controller
+source_commit: ca32e0c
+source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+destination_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/ros_robot_controller/__init__.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/__init__.py
+source_commit: ca32e0c
+source_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+destination_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/ros_robot_controller/ros_robot_controller_node.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_node.py
+source_commit: ca32e0c
+source_sha256: 455e6362c71a2d8ba7dacf7db3a81d42183f371b7a04b6364d360fc37fb339d9
+destination_sha256: 455e6362c71a2d8ba7dacf7db3a81d42183f371b7a04b6364d360fc37fb339d9
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py
+source_commit: ca32e0c
+source_sha256: 8799515186fe6f2a914759ad42d4988c45489646edc00aa5b38fb034e8f89ce6
+destination_sha256: 8799515186fe6f2a914759ad42d4988c45489646edc00aa5b38fb034e8f89ce6
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/scripts/99-ttyACM0.rules
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/scripts/99-ttyACM0.rules
+source_commit: ca32e0c
+source_sha256: ea5b82b9dd155209523acdef10e099287298216c35bd7eaabc792ccd217779d0
+destination_sha256: ea5b82b9dd155209523acdef10e099287298216c35bd7eaabc792ccd217779d0
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/scripts/create_udev_rules.sh
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/scripts/create_udev_rules.sh
+source_commit: ca32e0c
+source_sha256: a1a6ab47775f904feaf0b1a5f6b0e84ef68a4e4108a33867d5578ecfdfa6b837
+destination_sha256: a1a6ab47775f904feaf0b1a5f6b0e84ef68a4e4108a33867d5578ecfdfa6b837
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/setup.cfg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/setup.cfg
+source_commit: ca32e0c
+source_sha256: bda18552ca9306b6864c558449298c258a6e5cde039381000bae80da8228d2bf
+destination_sha256: bda18552ca9306b6864c558449298c258a6e5cde039381000bae80da8228d2bf
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/setup.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/setup.py
+source_commit: ca32e0c
+source_sha256: 5f224475228e0a75d9b621788f0942d577b8854d5170b2d8bb0ed3b7a586da83
+destination_sha256: 5f224475228e0a75d9b621788f0942d577b8854d5170b2d8bb0ed3b7a586da83
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/test/test_copyright.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/test/test_copyright.py
+source_commit: ca32e0c
+source_sha256: 977a2313a0ae218ef9e2b944347d2b8f7aba43447283d2a832391f9904fd37e9
+destination_sha256: 977a2313a0ae218ef9e2b944347d2b8f7aba43447283d2a832391f9904fd37e9
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/test/test_flake8.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/test/test_flake8.py
+source_commit: ca32e0c
+source_sha256: 37a813a0507f0ce51a2d0b57312d2cc078a0307a3ca85580ea801b0d2f9755d2
+destination_sha256: 37a813a0507f0ce51a2d0b57312d2cc078a0307a3ca85580ea801b0d2f9755d2
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller/test/test_pep257.py
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller/test/test_pep257.py
+source_commit: ca32e0c
+source_sha256: e8b88d49ee296987b1b40069f81019b5fa09b1aa1bfee9a1faae45bb5cf53eda
+destination_sha256: e8b88d49ee296987b1b40069f81019b5fa09b1aa1bfee9a1faae45bb5cf53eda
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/CMakeLists.txt
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/CMakeLists.txt
+source_commit: ca32e0c
+source_sha256: 922ccfffc56cab9a278b2989cb64f452ed4485d17909815016b96a8f4b5826de
+destination_sha256: 922ccfffc56cab9a278b2989cb64f452ed4485d17909815016b96a8f4b5826de
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/BusServoState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/BusServoState.msg
+source_commit: ca32e0c
+source_sha256: 04bc3baa9b86e730da6e017453dbaae9cdd8c6675d16b5884c8fe56d2f7448b4
+destination_sha256: 04bc3baa9b86e730da6e017453dbaae9cdd8c6675d16b5884c8fe56d2f7448b4
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/ButtonState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/ButtonState.msg
+source_commit: ca32e0c
+source_sha256: 7bcb5bb802452582223b6f78941bc8cea3881cc782a4f73ff83c4791e21eef12
+destination_sha256: 7bcb5bb802452582223b6f78941bc8cea3881cc782a4f73ff83c4791e21eef12
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/BuzzerState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/BuzzerState.msg
+source_commit: ca32e0c
+source_sha256: 1f5c59b5d8b5060fde5100709fe651efe6078200811222062fd187f8ad6a0506
+destination_sha256: 1f5c59b5d8b5060fde5100709fe651efe6078200811222062fd187f8ad6a0506
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/GetBusServoCmd.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/GetBusServoCmd.msg
+source_commit: ca32e0c
+source_sha256: 15bf265159c353e949acafe0aeb6248f7f3793480d6bb6191488155ef76b8e3b
+destination_sha256: 15bf265159c353e949acafe0aeb6248f7f3793480d6bb6191488155ef76b8e3b
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/GetPWMServoCmd.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/GetPWMServoCmd.msg
+source_commit: ca32e0c
+source_sha256: dd81c43ea0dd141c37b8c72f98351b1d42c0c0876978973498da97a6261fa79a
+destination_sha256: dd81c43ea0dd141c37b8c72f98351b1d42c0c0876978973498da97a6261fa79a
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/LedState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/LedState.msg
+source_commit: ca32e0c
+source_sha256: f8fdc30a8e03c0756c6a8b34072fe23533f83e13f2493c85877dabca5020f356
+destination_sha256: f8fdc30a8e03c0756c6a8b34072fe23533f83e13f2493c85877dabca5020f356
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/MotorState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/MotorState.msg
+source_commit: ca32e0c
+source_sha256: 92d7f91754832cac3b9fa5bf093580de04d82b9b93718b29e299d24c16088dbe
+destination_sha256: 92d7f91754832cac3b9fa5bf093580de04d82b9b93718b29e299d24c16088dbe
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/MotorsState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/MotorsState.msg
+source_commit: ca32e0c
+source_sha256: bec61b7c51a458836ff08b5c9b7876792588198ebf177815a089cb0f196348d3
+destination_sha256: bec61b7c51a458836ff08b5c9b7876792588198ebf177815a089cb0f196348d3
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/OLEDState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/OLEDState.msg
+source_commit: ca32e0c
+source_sha256: 72b8d9f6c8c725f7481624f6019b4f4133c8b5fcfc24fc6125c3ff7c092c5e39
+destination_sha256: 72b8d9f6c8c725f7481624f6019b4f4133c8b5fcfc24fc6125c3ff7c092c5e39
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/PWMServoState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/PWMServoState.msg
+source_commit: ca32e0c
+source_sha256: f58cc16399a6ba73649b17e6595fe95cb3bcbec7d5bbf0e98c3835cffb5cc418
+destination_sha256: f58cc16399a6ba73649b17e6595fe95cb3bcbec7d5bbf0e98c3835cffb5cc418
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/RGBState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/RGBState.msg
+source_commit: ca32e0c
+source_sha256: bc946c9d27a02d58903b982729e9b3a113351b27dbdda9e70af838e7a9c9438c
+destination_sha256: bc946c9d27a02d58903b982729e9b3a113351b27dbdda9e70af838e7a9c9438c
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/RGBStates.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/RGBStates.msg
+source_commit: ca32e0c
+source_sha256: 217a25f06c63fe269b8c5d4ae83102ca72eb8efc4356730fc462cab44e856d91
+destination_sha256: 217a25f06c63fe269b8c5d4ae83102ca72eb8efc4356730fc462cab44e856d91
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/Sbus.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/Sbus.msg
+source_commit: ca32e0c
+source_sha256: ee0683ae623189776d2a5d46d0d7d7bfa9617cea7616f461a05468c80da17318
+destination_sha256: ee0683ae623189776d2a5d46d0d7d7bfa9617cea7616f461a05468c80da17318
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/ServoPosition.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/ServoPosition.msg
+source_commit: ca32e0c
+source_sha256: 7bea5297466782ef075d6e804ab5c839c0cd00a13cc71c2119f83f97239e0fac
+destination_sha256: 7bea5297466782ef075d6e804ab5c839c0cd00a13cc71c2119f83f97239e0fac
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/ServoState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/ServoState.msg
+source_commit: ca32e0c
+source_sha256: df20ba05cd40cdeffb109987894e41ddce6070c25138ad1a607c18f961378084
+destination_sha256: df20ba05cd40cdeffb109987894e41ddce6070c25138ad1a607c18f961378084
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/ServosPosition.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/ServosPosition.msg
+source_commit: ca32e0c
+source_sha256: 4bba4db31431e2b0515a66a8a9eaf0d952c715988f7b12e1361b49b5351b4ea6
+destination_sha256: 4bba4db31431e2b0515a66a8a9eaf0d952c715988f7b12e1361b49b5351b4ea6
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/SetBusServoState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/SetBusServoState.msg
+source_commit: ca32e0c
+source_sha256: bf3cc4b33dfebbf48f5cbfaae8d6c1acb6c6adda04c474e44b59ba361f765a30
+destination_sha256: bf3cc4b33dfebbf48f5cbfaae8d6c1acb6c6adda04c474e44b59ba361f765a30
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/msg/SetPWMServoState.msg
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/msg/SetPWMServoState.msg
+source_commit: ca32e0c
+source_sha256: 4cd0bee66eb31eddbbfb174ceb47ab931b3644b037cfd7610596d8abe8398208
+destination_sha256: 4cd0bee66eb31eddbbfb174ceb47ab931b3644b037cfd7610596d8abe8398208
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/package.xml
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/package.xml
+source_commit: ca32e0c
+source_sha256: b43ed726e69ce7f4be47693e0327ebcb26facf430477f13766e953c11ecab993
+destination_sha256: b43ed726e69ce7f4be47693e0327ebcb26facf430477f13766e953c11ecab993
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/srv/GetBusServoState.srv
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/srv/GetBusServoState.srv
+source_commit: ca32e0c
+source_sha256: 7652d211f72830154d5cb8a06eeddbdb56433e548163cd73f4a8dc6e4e7d5569
+destination_sha256: 7652d211f72830154d5cb8a06eeddbdb56433e548163cd73f4a8dc6e4e7d5569
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ros_robot_controller_msgs/srv/GetPWMServoState.srv
+origin: mentorpi/src
+source_path: mentorpi/src/driver/ros_robot_controller_msgs/srv/GetPWMServoState.srv
+source_commit: ca32e0c
+source_sha256: 66af61d64375fdc7b16780b72ff3edb8fac29e5703e4e11e21dcbbea4d8b50f4
+destination_sha256: 66af61d64375fdc7b16780b72ff3edb8fac29e5703e4e11e21dcbbea4d8b50f4
+status: identical
+adaptations: none
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/package.xml
+origin: authored
+destination_sha256: 191fa37849e58e232d7ae4a3bb620495668ab3a4793e0693330d3e92c6154729
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/resource/ubuntu_tank_safety
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/setup.cfg
+origin: authored
+destination_sha256: edeb54c7717edbe8e4d6e2e978e48b6467c4d8b44c1a98877c98c4df40a44287
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/setup.py
+origin: authored
+destination_sha256: 849814672290b657926d8d12d521e723bcab8b84046cf113fc6d556f3482c7a4
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/test/test_motor_guard.py
+origin: authored
+destination_sha256: 192887816e9f5c1bca1cf6e021981a2194fc003695d166154272dbbdf076b457
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/__init__.py
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/motor_guard.py
+origin: authored
+destination_sha256: 0d7b36f75612835862618acb9c28a7db69fab102ef7b763894f0f6717d24e13b
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/motor_guard_node.py
+origin: authored
+destination_sha256: be53ace000d5a417c562926acd35c09180df71e832cafd691eb9c4553fa972dd
+status: new
+rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/package.xml
+origin: authored
+destination_sha256: 4fd6382dce61a08321c21cf3a4d1bf26661fedb54f518c546c14b66046169043
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/resource/ubuntu_tank_supervisor
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/setup.cfg
+origin: authored
+destination_sha256: ee41119b95bc68bf8c5d05d9cd131a47712bc2db1e25b268ef7f53bf94099638
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/setup.py
+origin: authored
+destination_sha256: 8118b9bf0bad58d49f78a20794b2867c13ac2975d79a8a709659cad38ea8ab82
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/test/test_supervisor.py
+origin: authored
+destination_sha256: 23a16b962c880055884d5a333c760d8715cb8753d6ace4978161bdab672a8e6e
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/test/test_supervisor_spoofing.py
+origin: authored
+destination_sha256: 4fa7f8f8ff589fa9c9ad8ff51c490a21341ce56d952c8c628d4b49054ff4942d
+status: new
+rationale: Integration test verifying supervisor credential PID mismatch rejection and trusted pipes
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/__init__.py
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/heartbeat.py
+origin: authored
+destination_sha256: 3fe40fa5b37a6d0a237221cf99da26171b1bbf060a547a7d84d2e50fd05aeb79
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/supervisor.py
+origin: authored
+destination_sha256: 15950ba2a7e0f65b04f2798c6f95770c6b879637933298e9b21665c72d62ccb4
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/supervisor_node.py
+origin: authored
+destination_sha256: d3a0f0e922481cf5bae9f14974652cb2ef0bcbce4934f1663ec04610a6905d25
+status: new
+rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/package.xml
+origin: authored
+destination_sha256: 5bc751e8acf335e9cebe59d30e268812dce2eb28673e306363eba8535c5218ba
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/resource/ubuntu_tank_teleop
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/setup.cfg
+origin: authored
+destination_sha256: 5c687ee0bb53655adeb65be7bfcfc9d83f264142c04546097bb93b0fb28472ed
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/setup.py
+origin: authored
+destination_sha256: f90521981dff312b65fa5c33e31692dc9ffc9035e9e4c4476724249334744087
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/test/test_teleop_lease.py
+origin: authored
+destination_sha256: 368452c894c12154bfe7049aac5516cafd362707b681ce59a6778d935bf374a5
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/ubuntu_tank_teleop/__init__.py
+origin: authored
+destination_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/ubuntu_tank_teleop/lease.py
+origin: authored
+destination_sha256: 6b428c69ffed9fd5363bf7e2e92c8ea95c76a7efe524f59f9d6c1f0c3d15fcd5
+status: new
+rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
+
+destination: ubuntu_tank/src/ubuntu_tank_teleop/ubuntu_tank_teleop/teleop_key_node.py
+origin: mentorpi/src
+source_path: mentorpi/src/peripherals/peripherals/teleop_key_control.py
+source_commit: ca32e0c
+source_sha256: 33cf2a768b7851c245f8b3918c61dc69a363c8db7341827bf95a31502aa7ddd2
+destination_sha256: 26ce05ce37b76bb77f9d1cecdf72dd15d4c84625ace55805b48a4b6d85d54a72
+status: adapted
+adaptations: Replaced latched linear commands with 150 ms renewable leases; periodic 20 Hz publishing; auto-zero on lease expiry/SIGINT/SIGTERM; removed unused servo and camera code.
+
+destination: ubuntu_tank/tests/test_negative_boundary.sh
+origin: authored
+destination_sha256: 8983ab68a678e4f606ee1c4f00bec7d57b431045a763ba2e7ca0d0026737ed9e
+status: new
+rationale: Negative regression test verifying that test_source_boundary.sh rejects omitted cross-workspace and external dependencies.
+
+destination: ubuntu_tank/tests/test_source_boundary.sh
+origin: authored
+destination_sha256: d57be2e678f5c5cc6c89583bfb8be71cc6543edfe52a20c6d66d4525de501086
+status: new
+rationale: Automated source boundary gate validating workspace provenance, Git baseline integrity, and dependency closure.
+
+destination: ubuntu_tank/versions.lock
+origin: authored
+destination_sha256: 30b681eae2cb5628e744bd8d0b61ec9b32e37a8d351c256b7ad1f442b87539c7
+status: new
+rationale: Draft dependency scope specification for Ubuntu 26.04 and ROS 2 Lyrical runtime closure (Milestone 2 lock)

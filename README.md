@@ -15,11 +15,13 @@ The custom image contains only Nginx and a static browser dashboard. It has no
 ROS runtime, controller, navigation, teleoperation, hardware driver, actuator
 API, device mount, or privileged capability.
 
-A second, design-only target for a clean Ubuntu 26.04 Pi 5 and native ROS 2
-Lyrical is specified in
+A second target for a clean Ubuntu 26.04 Pi 5 and native ROS 2 Lyrical is
+specified in
 [`docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md`](docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md).
-It is not implemented. It must use separate boot media and must never coexist
-with the factory-image, sidecar, or replacement modes on a running robot.
+Its hardware-free Milestone 1 scaffold exists, but native installation, full
+controller bringup, and physical deployment are not implemented. It must use
+separate boot media and must never coexist with the factory-image, sidecar, or
+replacement modes on a running robot.
 
 ## Architecture
 

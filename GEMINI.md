@@ -25,9 +25,20 @@ The root `README.md` is the canonical build and deployment guide.
 ## Native Ubuntu 26.04 controller mode (design only)
 
 `docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a
-clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. No implementation or physical
-deployment exists yet. This mode is controller-only and uses a guarded native
+clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. A hardware-free Milestone 1
+scaffold exists, but the native ROS build, host installation, and physical
+deployment do not. This mode is controller-only and uses a guarded native
 service for bounded forward, reverse, left, and right motion.
+
+This is a personal, single-owner robot. The owner controls the Ubuntu image and
+all software, services, and user accounts installed on it. Treat owner-approved
+local software, including processes running as the dedicated service account,
+as trusted. A malicious or compromised same-UID process is outside the native
+controller threat model. Local PID/UID heartbeat checks need only catch
+accidental senders and configuration mistakes; they are not required to provide
+hostile same-user isolation. This trust assumption does not relax motion-safety
+requirements for stale commands, crashed or hung processes, serial loss, or
+unexpected service restarts.
 
 The native mode is not installed on the vendor Raspberry Pi OS and must never
 run beside the factory `MentorPi` container, the observer sidecar, or a restored
@@ -43,6 +54,13 @@ Its application rollback does not restore the vendor OS.
 at `/mnt/rpi-rootfs` when inspected. Repository source directories are reference
 or separately supplied material; do not assume they exactly match the software
 running in the factory container.
+
+That precedence applies to investigations of the factory image and its active
+runtime. For the native Ubuntu controller design and implementation,
+`mentorpi/src/` is the primary code reference. Use `/mnt/rpi-rootfs` only when
+repository code and direct inspection of the clean Ubuntu target cannot resolve
+a required missing, hardware-specific, or contradictory fact, and record each
+fallback explicitly.
 
 The factory image locally tagged `ros:humble` inside the vendor disk is an
 imported ARM64 Ubuntu/ROS filesystem, not the public Docker Hub base with the

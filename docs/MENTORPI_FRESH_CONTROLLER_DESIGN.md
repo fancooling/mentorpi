@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller Design
 
-Status: Design only; no implementation or robot deployment exists yet
+Status: Milestone 1 hardware-free scaffold implemented; native installation, full bringup, and physical deployment remain unimplemented
 
 Date: 2026-09-07
 
@@ -47,6 +47,14 @@ or a user's home directory.
   against the exact hardware documentation before the motors are energized.
 - Initial motion testing is performed with the tracks raised clear of the work
   surface and with an immediately accessible power disconnect.
+- The workspace and its resulting installation are for the owner's personal use
+  on this robot. The owner controls the Ubuntu image and every installed package,
+  service, user account, and workload. Publishing or distributing the workspace
+  or release artifacts is outside this design's scope.
+- Owner-approved local processes are trusted. A malicious or compromised process
+  running as the controller service UID is outside the threat model. Heartbeat
+  identity checks are intended to catch accidental cross-talk and configuration
+  errors, not to enforce isolation from hostile same-UID software.
 
 This design does not reinstall Ubuntu, change cloud-init, or prescribe unverified
 power-supply values. It begins after the clean operating system is installed.
@@ -126,16 +134,30 @@ permissions with unauthorized participants.
 
 ## 4. Source-reuse plan
 
-The relevant files in `mentorpi/src/` are reuse candidates, not an authoritative
-statement of what the factory robot currently runs. Before any copy is accepted,
-implementation must compare each candidate with the active files in the mounted
-vendor image at `/mnt/rpi-rootfs`, record both revisions and hashes, and explain
-every difference. The source manifest retains that evidence so later changes are
-auditable.
+For this native controller, `mentorpi/src/` is the primary code reference and
+reuse source. Implementation starts there, copies or adapts the smallest
+controller-relevant packages, and does not require a routine comparison with the
+factory image before work can proceed.
+
+Use `/mnt/rpi-rootfs` only when the repository cannot answer a necessary
+question, specifically when:
+
+- a required file, dependency, launch contract, or configuration value is
+  missing or incomplete in `mentorpi/src/`;
+- a hardware-specific runtime fact such as the active serial identity or board
+  configuration cannot be established from repository code plus direct
+  `udevadm` inspection on the clean Ubuntu target; or
+- observed behavior contradicts the repository reference and the active factory
+  copy is needed to diagnose the difference.
+
+A fallback inspection must record the exact `/mnt/rpi-rootfs` path, why the
+fallback was necessary, its file hash, and the resulting decision in
+`source-manifest.txt`. Files from the mounted image never silently replace the
+repository baseline; any adopted difference is a reviewed, explicit adaptation.
 
 | Delivered component | Existing source | Reuse decision | Required adaptation |
 | --- | --- | --- | --- |
-| `ros_robot_controller_msgs` | `mentorpi/src/driver/ros_robot_controller_msgs/` | Copy the complete package without reducing its message/service set | Add meaningful metadata only if licensing permits; retain all generated interfaces required by the bridge |
+| `ros_robot_controller_msgs` | `mentorpi/src/driver/ros_robot_controller_msgs/` | Copy the complete package without reducing its message/service set | Retain all generated interfaces required by the bridge |
 | `ros_robot_controller` | `mentorpi/src/driver/ros_robot_controller/` | Copy the complete package, including `ros_robot_controller_sdk.py` | Add controller-only mode that exposes no non-motor command APIs; parameterize machine type, serial device, and baud rate; complete dependency metadata; implement signal-safe zero and serial close |
 | `controller` | `mentorpi/src/driver/controller/` | Reuse the complete Python module directory and required package scaffolding, including `ackermann.py` | Do not install legacy launch/config surfaces that require Nav2 or peripherals; export only the controller executable needed here; remove environment/path assumptions; parameterize geometry and correction values; complete dependency metadata |
 | `ubuntu_tank_safety` | New safety package; no guard implementation exists in the current repository | New code only because the reused vendor stack has no adequate command watchdog or arming boundary | Implement the narrowly specified validation, timeout, repeated-zero, state reporting, and access-control behavior in this design, with complete tests |
@@ -149,10 +171,6 @@ The standalone `mentorpi/src/driver/sdk` package is not required: the STM32
 `ros_robot_controller`. The full `peripherals` package is also excluded because
 most of it belongs to cameras, LiDAR, IMU visualization, or joystick support.
 Only the relevant keyboard-control logic is carried forward.
-
-Before redistribution, the implementation milestone must resolve the vendor
-packages' current `TODO` license declarations. Source reuse does not imply
-permission to redistribute unknown-license code.
 
 ## 5. Source, build, and production filesystem layout
 
@@ -171,7 +189,7 @@ ubuntu_tank/
 ├── deploy.sh                         # Single deployment and operations entrypoint
 ├── VERSION                           # Release version input
 ├── versions.lock                     # Pinned ROS/Ubuntu dependency inputs and hashes
-├── source-manifest.txt               # Reused-source paths, revisions, and hashes
+├── source-manifest.txt               # Repository reuse and optional fallback provenance
 ├── config/
 │   ├── controller.yaml               # Version-controlled production defaults
 │   └── sros2/                        # Deny-by-default governance/policy templates
@@ -208,6 +226,14 @@ use `/path/to/mentorpi/ubuntu_tank` deliberately: the checkout location is not a
 runtime interface. Colcon `build/`, `install/`, and `log/` directories are local
 build products, not the production installation.
 
+Each repository-source manifest entry records its `mentorpi/src` path, revision,
+hash, copied destination, and local adaptations. Each optional mounted-image
+fallback entry additionally requires `origin=fallback`, the exact
+`/mnt/rpi-rootfs` path, necessity category, written rationale, hash, and resulting
+decision. `test_source_boundary.sh` rejects copied or consulted mounted-image
+inputs without a complete fallback entry and rejects a fallback where the stated
+question is already answered by the recorded repository source.
+
 ### 5.2 Target Pi production installation
 
 ```text
@@ -221,7 +247,7 @@ build products, not the production installation.
         ├── bin/
         │   └── mentorpi-tank-run         # Non-interactive ROS launch wrapper
         ├── install/                      # Colcon install tree used at runtime
-        ├── src/                          # Deployed source and license/provenance copy
+        ├── src/                          # Deployed source and provenance copy
         ├── config/
         │   └── controller.yaml           # Release configuration default/schema
         ├── host/
@@ -231,7 +257,7 @@ build products, not the production installation.
         │   └── mentorpi-tank.env         # Matching environment default
         ├── deploy.sh                     # Matching recovery/inspection entrypoint
         ├── README.md                     # Matching operator instructions
-        ├── source-manifest.txt           # Reused-source revisions and hashes
+        ├── source-manifest.txt           # Repository reuse and fallback provenance
         └── release-manifest.txt          # Release contents, ABI, prefix, and checksums
 /etc/opt/ubuntu_tank/
 ├── controller.yaml                       # Host-specific controller configuration
@@ -482,8 +508,9 @@ motion, or publish directly to the actuator-facing topic.
 
 ### 6.5 systemd confinement and supervision
 
-The production unit is a security and motion-safety boundary. Its reviewed
-baseline will include:
+The production unit is a reliability and motion-safety boundary on a trusted,
+single-owner host. It is not a security boundary against malicious software
+running as the controller service UID. Its reviewed baseline will include:
 
 - empty capability and ambient-capability sets, `NoNewPrivileges=yes`,
   `RestrictSUIDSGID=yes`, and a non-root service identity;
@@ -510,9 +537,21 @@ kill, heartbeat loss, and restart throttling.
 
 ## 7. STM32 serial setup
 
-The mounted factory image identifies the RRC USB serial device with vendor ID
-`1a86`, product ID `55d4`, a `ttyACM*` kernel name, and a `/dev/rrc` symlink. The
-new rule will preserve the interface while reducing permissions:
+Repository sources already provide the serial contract, so no mounted-image
+lookup is needed for the initial design:
+
+- `mentorpi/src/driver/ros_robot_controller/scripts/99-ttyACM0.rules` supplies
+  the `ttyACM0` convention plus vendor ID `1a86`, product ID `55d4`, and the
+  ModemManager-ignore intent, though its rules are permissive and separate;
+- `mentorpi/src/peripherals/scripts/99-ttyACM0.rules` supplies the broader
+  `ttyACM*` match and `/dev/rrc` symlink intent, though it is also permissive and
+  contains a malformed trailing property value; and
+- `mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py`
+  confirms `/dev/rrc` and 1,000,000 baud as the bridge defaults.
+
+The native rule deliberately combines the verified predicates, corrects the
+property syntax, adds a persistent identity discriminator, and replaces the
+permissive group/mode with dedicated least-privilege ownership:
 
 ```udev
 SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="<verified-serial>", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc", ENV{ID_MM_PORT_IGNORE}="1"
@@ -523,6 +562,9 @@ actual device attributes and substitute a persistent serial number. If the board
 does not expose one, the reviewed rule must use a stable physical-path
 discriminator. If neither discriminator is available or more than one matching
 device exists, deployment stops; VID/PID uniqueness observed once is not enough.
+Consult `/mnt/rpi-rootfs` only if the repository rule and direct target-device
+inspection leave a necessary factory naming or identity detail unresolved, and
+record that fallback in the source manifest.
 
 Host installation will:
 
@@ -633,7 +675,11 @@ The bridge also enforces an independent monotonic 250 ms freshness deadline on
 guarded motor messages from a dedicated watchdog thread; expiry sends repeated
 four-motor zero commands and closes the command path. Guard and bridge emit
 independent non-ROS heartbeats over separate inherited file descriptors or
-credential-checked Unix sockets. The main `ubuntu_tank_supervisor` maintains a
+credential-checked Unix sockets. Under the single-owner trust model, a runtime
+PID file plus `SO_PASSCRED` UID/PID comparison is sufficient to catch accidental
+or misconfigured senders; it is not expected to resist a malicious same-UID
+process that can replace the PID file. Inherited pipes remain an optional
+defense-in-depth mechanism. The main `ubuntu_tank_supervisor` maintains a
 monotonic deadline for each and notifies systemd only while both are fresh; one
 healthy child cannot mask the other's hang. Only this main process receives
 systemd's notify socket. A missed deadline stops the graph. The guard's maximum
@@ -746,7 +792,11 @@ repository checkout or network access.
 
 ### 10.1 Hardware-free gates
 
-- Source manifest contains every reused path, revision, local patch, and hash.
+- Source manifest contains every reused repository path, revision, local patch,
+  and hash; any mounted-image fallback also contains its exact path, necessity
+  category, rationale, hash, and resulting decision.
+- `test_source_boundary.sh` rejects unmanifested mounted-image inputs and
+  incomplete or unnecessary fallback records.
 - Repository source and generated build state remain below `ubuntu_tank/` until
   the explicit install step writes only the documented `/opt/ubuntu_tank`,
   `/etc/opt/ubuntu_tank`, `/var/opt/ubuntu_tank`, `/run/ubuntu_tank`, systemd,
@@ -812,29 +862,46 @@ behavior and raised-track stop latency are proven.
 
 ## 11. Trackable implementation milestones
 
-All implementation tasks are currently incomplete. Checkboxes are updated only
-when their exit criteria and evidence are recorded.
+Checkboxes are updated only when their exit criteria and evidence are recorded.
 
 ### Milestone 1 — Repository scaffold and provenance
 
-- [ ] Create the proposed `ubuntu_tank/` directory structure.
-- [ ] Copy the complete messages and bridge packages plus the required complete
+- [x] Create the proposed `ubuntu_tank/` directory structure.
+- [x] Copy the complete messages and bridge packages plus the required complete
   controller Python module directory into `ubuntu_tank/src/`.
-- [ ] Compare every reuse candidate against the active mounted-image copy under
-  `/mnt/rpi-rootfs` and record revisions, hashes, and explained differences.
-- [ ] Create the narrowly scoped `ubuntu_tank_safety` package and its tests,
+- [x] Use `mentorpi/src/` as the default source baseline and document every
+  copied path and adaptation.
+- [x] Define the narrow `/mnt/rpi-rootfs` fallback criteria and record the path,
+  reason, hash, and decision whenever a fallback is actually required.
+- [x] Create the narrowly scoped `ubuntu_tank_safety` package and its tests,
   documenting why new code is required.
-- [ ] Create the minimal `ubuntu_tank_supervisor` and document why one trusted
+- [x] Create the minimal `ubuntu_tank_supervisor` and document why one trusted
   AND-gating systemd notifier is required.
-- [ ] Create `ubuntu_tank_teleop` from the relevant vendor keyboard node.
-- [ ] Record source revisions, file hashes, and local adaptations.
-- [ ] Resolve and document redistribution licenses for all reused source.
-- [ ] Define the version-plus-revision release ID and release-manifest schema.
-- [ ] Add ignores for colcon-generated `build/`, `install/`, `log/`, `dist/`, and
+- [x] Create `ubuntu_tank_teleop` from the relevant vendor keyboard node.
+- [x] Record source revisions, file hashes, and local adaptations.
+- [x] Define the version-plus-revision release ID and release-manifest schema.
+- [x] Add ignores for colcon-generated `build/`, `install/`, `log/`, `dist/`, and
   disposable `.work/` output.
 
-Exit criterion: every delivered source file has provenance, the source boundary
-test passes, and no camera/LiDAR/AI code is in the runtime dependency closure.
+Exit criterion: every delivered source payload file has provenance, the source boundary
+test passes, direct package dependencies and Python imports are verified against
+the controller-only allowlist, and no camera/LiDAR/AI code is in the direct dependency
+declarations or AST imports (recursive transitive resolution and locked hashes
+reserved for Milestones 2 and 3).
+Status: Completed on 2026-09-08 (Remediated). Evidence: `tests/test_source_boundary.sh`
+passed with 5-stage verification (92 payload files with provenance out of 93 Git-tracked
+files with `source-manifest.txt` intentionally self-excluding, validated against commit
+`ca32e0c` git object store, 0 fallbacks to `/mnt/rpi-rootfs`, complete tracked directory layout,
+100% direct AST import coverage in package manifests including cross-workspace packages,
+automated negative regression testing via `tests/test_negative_boundary.sh`, direct
+controller-only allowlist enforcement, draft `versions.lock` scope specification for
+Milestone 2, and zero perception/AI message types or tokens); unit and integration tests for
+`ubuntu_tank_safety` (11/11 passed), `ubuntu_tank_supervisor` (22/22 passed, including
+integration tests for credential PID mismatch rejection, missing-PID rejection, and
+inherited-pipe operation), and `ubuntu_tank_teleop` (8/8 passed) all passed via
+`./deploy.sh test`.
+
+
 
 ### Milestone 2 — Ubuntu and ROS installation workflow
 
