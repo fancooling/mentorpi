@@ -37,27 +37,33 @@ An automated AST import scan across all `.py` files in `ubuntu_tank/src` verifie
 
 ---
 
-## 3. Target Transitive Dependency Specification (Milestones 2 & 3)
+## 3. Locked Transitive Dependency Closure (Milestone 2)
 
-In Milestone 1, verification checks direct package declarations and Python imports without invoking `rosdep` or building on the target OS. The expected transitive closure of these packages resolves within standard ROS 2 `ros-base` and Python system dependencies:
+`ubuntu_tank/versions.lock` currently records 26 pinned direct packages with versions, architectures, repository classes, and cryptographic SHA-256 hashes. Its `meta.closure_status` is `direct-only`: the clean ARM64 target's complete apt transitive artifact set has not yet been captured. `./deploy.sh verify-lock` validates this recorded state, while live `install-ros` and `install-deps` fail before host mutation unless the reviewed lock is marked `complete`. Candidate equality and lockfile validation are automated in `tests/test_dependency_closure.sh`:
 
 ```text
 [Direct ROS Packages]
-├── rclpy
+├── rclpy (ros-lyrical-rclpy)
 │   ├── rcl
 │   ├── rmw / rmw_implementation
 │   ├── rcutils / rcpputils
 │   └── rosidl_runtime_py / rosidl_runtime_c
 ├── std_msgs / std_srvs / geometry_msgs / nav_msgs / sensor_msgs
 │   ├── builtin_interfaces
-│   └── rosidl_default_runtime
-├── launch / launch_ros
+│   └── rosidl_default_runtime (ros-lyrical-rosidl-default-runtime)
+├── launch / launch_ros (ros-lyrical-launch, ros-lyrical-launch-ros)
 │   └── ament_index_python / osrf_pycommon
 └── ros_robot_controller_msgs
     └── std_msgs
+[Tooling & System Infrastructure]
+├── ros-lyrical-ros-base & ros-dev-tools
+├── ros-lyrical-sros2 (SROS2 keystore and policy enforcement)
+├── rpi-eeprom (Raspberry Pi 5 bootloader firmware verification)
+├── zstd & systemd-container (Release archive & isolated build tooling)
+└── python3-serial, python3-yaml, python3-setuptools, python3-pytest
 ```
 
-Authoritative recursive dependency resolution and lockfile generation with cryptographic package hashes take place in Milestone 2 (`install-ros` / `verify-lock`) and Milestone 3 (`rosdep check` and `colcon build`).
+Authoritative package resolution and cryptographic hashes are locked in `versions.lock` and validated with zero unpinned or `latest` references. Direct package build and rosdep validation occur in Milestone 3 on target/build-root environments.
 
 ---
 

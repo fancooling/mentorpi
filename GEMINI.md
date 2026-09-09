@@ -22,12 +22,13 @@ The root `README.md` is the canonical build and deployment guide.
   does not supersede the factory container or rollback baseline until all
   acceptance gates pass.
 
-## Native Ubuntu 26.04 controller mode (design only)
+## Native Ubuntu 26.04 controller mode (pre-deployment implementation)
 
 `docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a
-clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. A hardware-free Milestone 1
-scaffold exists, but the native ROS build, host installation, and physical
-deployment do not. This mode is controller-only and uses a guarded native
+clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. Milestones 1-3 have a
+hardware-free implementation and regression suite, but the complete target apt
+closure, native ROS build, host installation, and physical deployment do not
+yet have target-Pi acceptance. This mode is controller-only and uses a guarded native
 service for bounded forward, reverse, left, and right motion.
 
 This is a personal, single-owner robot. The owner controls the Ubuntu image and

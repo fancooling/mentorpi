@@ -4,7 +4,7 @@
 
 destination: ubuntu_tank/README.md
 origin: authored
-destination_sha256: 792196bd5a6f0a79bb19081a2b6b02167d34c981adb7fbddd1273fc1f90a4725
+destination_sha256: 5f115d0066a3cf32cbee8b72716196e9ff194f50f2f5f29f1da8603a8bdacfa8
 status: new
 rationale: Canonical operator guide for the native tank controller.
 
@@ -28,13 +28,13 @@ rationale: SROS2 security governance and enclave access control specification pl
 
 destination: ubuntu_tank/deploy.sh
 origin: authored
-destination_sha256: 58bda3420b92aa692128211f9d4585c548852dc55f8a74323392e24f21e51262
+destination_sha256: f25467d0388d18e60c3c463ac709592283612cad1d62fedfbd6551965fcb4655
 status: new
 rationale: Unified deployment and operations entrypoint for the native controller workspace.
 
 destination: ubuntu_tank/docs/DEPENDENCY_CLOSURE.md
 origin: authored
-destination_sha256: e7c2a9663d550a1091ff36e691f43743db79c91e941ecac1671ce35f76aec00a
+destination_sha256: ebc97b18a9e72470406f4c68fae92d8cfd342e2202e4091cefb03cf2081bc62f
 status: new
 rationale: Specification of direct runtime dependencies, AST import audit, controller allowlist, and target closure
 
@@ -64,21 +64,21 @@ rationale: Hardened native systemd service unit template with Type=notify and sa
 
 destination: ubuntu_tank/scripts/build_workspace.sh
 origin: authored
-destination_sha256: 09e5d438b6469a20062340fd3c7b2812ee46dbd3334b108950d625e7059b1636
+destination_sha256: 361be9f7f314b1a88f7672d5e1a9f3417ecfd1716d424ce70a68b72f01d8d0c0
 status: new
-rationale: Host colcon build and rosdep resolution script scaffold
+rationale: Host colcon build and rosdep resolution script scaffold with constrained cleanup path validation
 
 destination: ubuntu_tank/scripts/check_host.sh
 origin: authored
-destination_sha256: 02527baefb7f6706c8afee05046f9c75554efacd0b7ccb60027e4e99a8496371
+destination_sha256: 8286c366242fb9f4da3da452b64fc7084e0672c5e48f921afd98bfa6c3d15766
 status: new
 rationale: Read-only host OS, architecture, EEPROM, and device preflight script scaffold
 
 destination: ubuntu_tank/scripts/install_ros2.sh
 origin: authored
-destination_sha256: 722115d73b195ac9dff8706dcf6be95d71963458aef1e531d75d833a720ebb86
+destination_sha256: 1da6a711ba363554a30dad951a3626b9c98e7f269137c15103d6e96a3be313c4
 status: new
-rationale: Ubuntu and ROS 2 Lyrical package repository and installation script scaffold
+rationale: Ubuntu and ROS 2 Lyrical package repository, solver closure verification, and installation script scaffold
 
 destination: ubuntu_tank/scripts/recover_activation.sh
 origin: authored
@@ -115,18 +115,18 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/cp.py
 source_commit: ca32e0c
 source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-destination_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-status: identical
-adaptations: none
+destination_sha256: 57843c2b052200a527e6055303ee6c1c2649a5966df15ff12fe5b830583d1289
+status: adapted
+adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and topics; routed motor commands to the safety guard; documented dead reckoning command integration.
 
 destination: ubuntu_tank/src/controller/controller/init_pose.py
 origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/init_pose.py
 source_commit: ca32e0c
 source_sha256: e6ee14c136af7e6a70ea012d084041f027ece1843272fd9924aa0b23f9757e59
-destination_sha256: e6ee14c136af7e6a70ea012d084041f027ece1843272fd9924aa0b23f9757e59
-status: identical
-adaptations: none
+destination_sha256: f1196ee53a683916eff6262571cccc8413923c8170f415bb1959361dfdcfc7ab
+status: adapted
+adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded /home/ubuntu paths.
 
 destination: ubuntu_tank/src/controller/controller/mecanum.py
 origin: mentorpi/src
@@ -142,18 +142,18 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/odom_publisher_node.py
 source_commit: ca32e0c
 source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-destination_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-status: identical
-adaptations: none
+destination_sha256: e6f278422e55ab8859b180cbefc0c6950ecfd2ea2fc02d50e83dccc1d061dff1
+status: adapted
+adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and guarded topics; applied and validated correction factors; documented dead reckoning command integration.
 
 destination: ubuntu_tank/src/controller/package.xml
 origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/package.xml
 source_commit: ca32e0c
 source_sha256: d764c9f63f942ac3fe932de0e544e531e749af58f8c137681630a2ae7673d456
-destination_sha256: 24f5d247ed237351aa5452ba4945ff5059f8a7672e2a9b378d77d9376822a9f8
+destination_sha256: d65e8ec39719c0f9501387f663f579091fc20976928f8fe8948708cd15474d1d
 status: adapted
-adaptations: Declare complete runtime ROS and Python dependencies (rclpy, geometry_msgs, nav_msgs, sensor_msgs, std_srvs, ros_robot_controller_msgs, python3-yaml) in package.xml
+adaptations: Declare complete runtime ROS and Python dependencies (rclpy, geometry_msgs, nav_msgs, sensor_msgs, std_srvs, ros_robot_controller_msgs, python3-yaml), maintainer dev@mentorpi.local, version 1.0.0, and Apache-2.0 license.
 
 destination: ubuntu_tank/src/controller/resource/controller
 origin: mentorpi/src
@@ -178,9 +178,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/setup.py
 source_commit: ca32e0c
 source_sha256: 8557221396045252f9640ae631a2295745a6be263c89ddfafc42fae8d04607c5
-destination_sha256: c38585adb46a5a39b0059accbd75e456e4b8bac14b56362d54a26b84fddb5ff1
+destination_sha256: 509dd3b0beb2a95248474c469a2c3bcfcc0f2eb3f8aa58d3357f674d5957dcaa
 status: adapted
-adaptations: Export only odom_publisher console script; omit legacy launch and config files that pull in Nav2, robot_localization, and peripherals.
+adaptations: Export only odom_publisher console script; omit legacy launch and config files; synchronize version (1.0.0), maintainer dev@mentorpi.local, and Apache-2.0 license with package.xml.
 
 destination: ubuntu_tank/src/controller/test/test_copyright.py
 origin: mentorpi/src
@@ -214,18 +214,18 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/launch/ros_robot_controller.launch.py
 source_commit: ca32e0c
 source_sha256: 440b10cd831f715f488f461e3b6cfd2551960c0daa328205427e0dfc99890403
-destination_sha256: 440b10cd831f715f488f461e3b6cfd2551960c0daa328205427e0dfc99890403
-status: identical
-adaptations: none
+destination_sha256: 07b242b2e9a09b4d1b907275c5df9ea306f03681f33bd04b260a079f4e4b3273
+status: adapted
+adaptations: Declared launch arguments including bounded serial read, write, and receive-silence timeouts; removed vendor legacy LaunchService run invocation.
 
 destination: ubuntu_tank/src/ros_robot_controller/package.xml
 origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/package.xml
 source_commit: ca32e0c
 source_sha256: 1d8f07beaa393496a5d57ccfe25d43ebae39d28f7ef5123f02919fe0d5e2ea44
-destination_sha256: 1b4c43188320cd5f6d94ae7468272b7c568f62dc0f6a651a6d29ae0e3382ab59
+destination_sha256: 9749da107373ea2695916feb102693bb62cefe642e3bf7d952f8d3b9bcbdd9dc
 status: adapted
-adaptations: Declare complete runtime ROS and Python dependencies (rclpy, std_msgs, std_srvs, sensor_msgs, ros_robot_controller_msgs, launch, launch_ros, python3-serial, python3-yaml) in package.xml
+adaptations: Declare complete runtime ROS and Python dependencies (rclpy, std_msgs, std_srvs, sensor_msgs, ros_robot_controller_msgs, launch, launch_ros, python3-serial, python3-yaml), maintainer dev@mentorpi.local, version 1.0.0, and Apache-2.0 license.
 
 destination: ubuntu_tank/src/ros_robot_controller/resource/ros_robot_controller
 origin: mentorpi/src
@@ -250,18 +250,18 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_node.py
 source_commit: ca32e0c
 source_sha256: 455e6362c71a2d8ba7dacf7db3a81d42183f371b7a04b6364d360fc37fb339d9
-destination_sha256: 455e6362c71a2d8ba7dacf7db3a81d42183f371b7a04b6364d360fc37fb339d9
-status: identical
-adaptations: none
+destination_sha256: bf0ffa09b2c3501050bf6951230a2573f527e44b86942bcf2c92ee2ed8079a14
+status: adapted
+adaptations: Removed legacy MACHINE_TYPE and hardcoded paths; added 250ms command freshness watchdog; made serial read/write/silence failures fatal and suppress supervisor heartbeats; added dedicated 1Hz battery polling in controller_only mode; restricted topics.
 
 destination: ubuntu_tank/src/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py
 origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py
 source_commit: ca32e0c
 source_sha256: 8799515186fe6f2a914759ad42d4988c45489646edc00aa5b38fb034e8f89ce6
-destination_sha256: 8799515186fe6f2a914759ad42d4988c45489646edc00aa5b38fb034e8f89ce6
-status: identical
-adaptations: none
+destination_sha256: 471c46c09c19988151603a7e950cae879abc6d7c8ef4c849e78d1279b684331f
+status: adapted
+adaptations: Added mock mode for hardware-free testing; parameterized bounded read/write and receive-silence timeouts; exposed fatal serial read/write/silence errors; added zero_motors helper; implemented signal-safe close.
 
 destination: ubuntu_tank/src/ros_robot_controller/scripts/99-ttyACM0.rules
 origin: mentorpi/src
@@ -295,9 +295,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/setup.py
 source_commit: ca32e0c
 source_sha256: 5f224475228e0a75d9b621788f0942d577b8854d5170b2d8bb0ed3b7a586da83
-destination_sha256: 5f224475228e0a75d9b621788f0942d577b8854d5170b2d8bb0ed3b7a586da83
-status: identical
-adaptations: none
+destination_sha256: 3b8d205a87c9df1cab57477fc0932a9fde65c15a08b5effef83cdc377c41e19a
+status: adapted
+adaptations: Synchronize package version (1.0.0), maintainer dev@mentorpi.local, description, and Apache-2.0 license declaration with package.xml.
 
 destination: ubuntu_tank/src/ros_robot_controller/test/test_copyright.py
 origin: mentorpi/src
@@ -502,9 +502,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller_msgs/package.xml
 source_commit: ca32e0c
 source_sha256: b43ed726e69ce7f4be47693e0327ebcb26facf430477f13766e953c11ecab993
-destination_sha256: b43ed726e69ce7f4be47693e0327ebcb26facf430477f13766e953c11ecab993
-status: identical
-adaptations: none
+destination_sha256: 7a9b31d48b47ca028abddd936d20322d2d3bcc7d00083724a9b1f5d4e0656b2c
+status: adapted
+adaptations: Update package version to 1.0.0, description, maintainer dev@mentorpi.local, and Apache-2.0 license declaration.
 
 destination: ubuntu_tank/src/ros_robot_controller_msgs/srv/GetBusServoState.srv
 origin: mentorpi/src
@@ -691,12 +691,30 @@ rationale: Negative regression test verifying that test_source_boundary.sh rejec
 
 destination: ubuntu_tank/tests/test_source_boundary.sh
 origin: authored
-destination_sha256: d57be2e678f5c5cc6c89583bfb8be71cc6543edfe52a20c6d66d4525de501086
+destination_sha256: e0aece2083f09478c9b5e0f8d823af306d7f05710c4c3a650baf5a1cafc60e2e
 status: new
 rationale: Automated source boundary gate validating workspace provenance, Git baseline integrity, and dependency closure.
 
 destination: ubuntu_tank/versions.lock
 origin: authored
-destination_sha256: 30b681eae2cb5628e744bd8d0b61ec9b32e37a8d351c256b7ad1f442b87539c7
+destination_sha256: 59218a83acc14a6a2117c3bd941c844eb59b1f5cc64d52b2309a8d073765782b
 status: new
-rationale: Draft dependency scope specification for Ubuntu 26.04 and ROS 2 Lyrical runtime closure (Milestone 2 lock)
+rationale: Pinned direct-package specification for Ubuntu 26.04 and ROS 2 Lyrical, explicitly incomplete until clean-target closure capture
+
+destination: ubuntu_tank/tests/test_dependency_closure.sh
+origin: authored
+destination_sha256: 49c7251375dcb5ea2a17076b908dc7a9a4dba77afc108b7d362262c7ec40822a
+status: new
+rationale: Automated dependency closure, lockfile verification, and tamper detection gate.
+
+destination: ubuntu_tank/tests/test_install_workflow.py
+origin: authored
+destination_sha256: 1801cf4d76ab009d22669bd87995dace098923c1939c684e049d0a1f0b777b1f
+status: new
+rationale: Unit test suite for host preflight, mutual exclusion, lock verification, and dry-run flows.
+
+destination: ubuntu_tank/tests/test_milestone3_port.py
+origin: authored
+destination_sha256: 30fafda5054950049d3295ee577a4b23f30a19836f8f69d1bf13c33d8f81bba2
+status: new
+rationale: Unit test suite verifying Milestone 3 porting: legacy variable removal, mock SDK, serial error handling, freshness watchdogs, non-ROS supervisor heartbeats, and workspace build scripts.

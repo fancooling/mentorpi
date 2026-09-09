@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>ros_robot_controller</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="1270161395@qq.com">ubuntu</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>MentorPi STM32 hardware bridge node adapted for native Ubuntu 26.04</description>
+  <maintainer email="dev@mentorpi.local">Ubuntu Tank Maintainers</maintainer>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>

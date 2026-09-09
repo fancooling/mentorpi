@@ -7,6 +7,7 @@
 third_party_src/
 
 # ROS 2 and Python transient build artifacts
+/.venv/
 **/build/
 **/install/
 **/log/
@@ -42,3 +43,4 @@ ubuntu_tank/.work/
 
 # Temporary files
 *_review.md
+review.md

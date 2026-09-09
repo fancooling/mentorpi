@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # encoding: utf-8
-# @Author: Aiden
-# @Date: 2023/08/28
-# stm32 ros2 package
+"""ROS 2 hardware bridge with guarded motor input and fatal serial handling."""
 
 import os
+import sys
 import math
 import time
+import socket
 import rclpy
 import signal
 import threading
-import yaml  # 已导入 PyYAML
+import yaml
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from sensor_msgs.msg import Imu, Joy
@@ -23,83 +23,267 @@ from ros_robot_controller_msgs.msg import (
     RGBStates, PWMServoState
 )
 
+GUARDED_MOTOR_TOPIC = '/ros_robot_controller/set_motor_guarded'
+
+
 class RosRobotController(Node):
+    """Bridge validated motor commands and controller telemetry over `/dev/rrc`.
+
+    Controller-only mode exposes only the guarded motor subscription and battery
+    telemetry. Serial read/write failures suppress process heartbeats and stop
+    ROS so the systemd supervisor can fail the complete controller graph closed.
+    """
+
     gravity = 9.80665
 
-    def __init__(self, name):
-        rclpy.init()
+    def __init__(self, name='ros_robot_controller'):
         super().__init__(name)
-        self.board = Board()
-        self.board.enable_reception()
-        self.running = True
 
+        # Declare ROS parameters
+        self.declare_parameter('machine_type', 'MentorPi_Tank')
+        self.declare_parameter('serial_device', '/dev/rrc')
+        self.declare_parameter('baud_rate', 1000000)
+        self.declare_parameter('controller_only', True)
+        self.declare_parameter('freshness_timeout_sec', 0.250)
+        self.declare_parameter('heartbeat_interval_sec', 0.200)
+        self.declare_parameter('serial_read_timeout_sec', 0.050)
+        self.declare_parameter('write_timeout_sec', 0.100)
+        self.declare_parameter('serial_silence_timeout_sec', 0.500)
+        self.declare_parameter('servo_config_file', '/etc/opt/ubuntu_tank/servo_config.yaml')
+        self.declare_parameter('load_servo_offsets', False)
         self.declare_parameter('imu_frame', 'imu_link')
         self.declare_parameter('init_finish', False)
-        self.IMU_FRAME = self.get_parameter('imu_frame').value
+        self.declare_parameter('motor_topic', GUARDED_MOTOR_TOPIC)
 
-        self.imu_pub = self.create_publisher(Imu, '~/imu_raw', 1)
-        self.joy_pub = self.create_publisher(Joy, '~/joy', 1)
-        self.sbus_pub = self.create_publisher(Sbus, '~/sbus', 1)
-        self.button_pub = self.create_publisher(ButtonState, '~/button', 1)
+        # Retrieve parameter values
+        self.machine_type = str(self.get_parameter('machine_type').value)
+        self.serial_device = str(self.get_parameter('serial_device').value)
+        self.baud_rate = int(self.get_parameter('baud_rate').value)
+        self.controller_only = bool(self.get_parameter('controller_only').value)
+        self.freshness_timeout_sec = float(self.get_parameter('freshness_timeout_sec').value)
+        self.heartbeat_interval_sec = float(self.get_parameter('heartbeat_interval_sec').value)
+        self.serial_read_timeout_sec = float(self.get_parameter('serial_read_timeout_sec').value)
+        self.write_timeout_sec = float(self.get_parameter('write_timeout_sec').value)
+        self.serial_silence_timeout_sec = float(self.get_parameter('serial_silence_timeout_sec').value)
+        self.servo_config_file = str(self.get_parameter('servo_config_file').value)
+        self.load_servo_offsets_flag = bool(self.get_parameter('load_servo_offsets').value)
+        self.IMU_FRAME = str(self.get_parameter('imu_frame').value)
+        self.motor_topic = str(self.get_parameter('motor_topic').value)
+
+        if not math.isfinite(self.freshness_timeout_sec) or self.freshness_timeout_sec <= 0:
+            raise ValueError('freshness_timeout_sec must be finite and greater than zero')
+        if (
+            not math.isfinite(self.write_timeout_sec)
+            or self.write_timeout_sec <= 0
+            or self.write_timeout_sec >= self.freshness_timeout_sec
+        ):
+            raise ValueError('write_timeout_sec must be finite, positive, and shorter than freshness_timeout_sec')
+        if (
+            not math.isfinite(self.serial_read_timeout_sec)
+            or self.serial_read_timeout_sec <= 0
+            or not math.isfinite(self.serial_silence_timeout_sec)
+            or self.serial_silence_timeout_sec <= self.serial_read_timeout_sec
+        ):
+            raise ValueError('serial timeouts must be finite, positive, and silence must exceed read timeout')
+        if self.controller_only and self.motor_topic != GUARDED_MOTOR_TOPIC:
+            raise ValueError(f'controller_only requires motor_topic={GUARDED_MOTOR_TOPIC}')
+
+        # Initialize hardware board interface
+        self.board = Board(
+            device=self.serial_device,
+            baudrate=self.baud_rate,
+            timeout=self.serial_read_timeout_sec,
+            write_timeout=self.write_timeout_sec,
+            silence_timeout=self.serial_silence_timeout_sec,
+        )
+        self.board.enable_reception()
+        self.running = True
+        self._shutting_down = False
+        self._fatal_fault = False
+        self._motor_lock = threading.RLock()
+        self._last_motor_cmd_time = None
+
+        # Heartbeat communication channels (inherited pipe FD or UNIX domain socket)
+        bridge_fd_str = os.environ.get('UBUNTU_TANK_BRIDGE_HEARTBEAT_FD') or os.environ.get('UBUNTU_TANK_BRIDGE_PIPE_FD')
+        self.bridge_pipe_fd = int(bridge_fd_str) if bridge_fd_str and bridge_fd_str.isdigit() else None
+        self.bridge_sock_path = os.environ.get('UBUNTU_TANK_BRIDGE_SOCK', '/run/ubuntu_tank/bridge_heartbeat.sock')
+
+        bridge_pid_file = os.environ.get('UBUNTU_TANK_BRIDGE_PID_FILE', '/run/ubuntu_tank/bridge.pid')
+        if os.path.exists(os.path.dirname(bridge_pid_file)):
+            try:
+                with open(bridge_pid_file, 'w', encoding='utf-8') as pf:
+                    pf.write(str(os.getpid()))
+            except Exception:
+                pass
+
+        # Telemetry battery publisher (always available)
         self.battery_pub = self.create_publisher(UInt16, '~/battery', 1)
-        self.create_subscription(LedState, '~/set_led', self.set_led_state, 5)
-        self.create_subscription(BuzzerState, '~/set_buzzer', self.set_buzzer_state, 5)
-        self.create_subscription(OLEDState, '~/set_oled', self.set_oled_state, 5)
-        self.create_subscription(MotorsState, '~/set_motor', self.set_motor_state, 10)
-        self.create_subscription(Bool, '~/enable_reception', self.enable_reception, 1)
-        self.create_subscription(SetBusServoState, '~/bus_servo/set_state', self.set_bus_servo_state, 10)
-        self.create_subscription(ServosPosition, '~/bus_servo/set_position', self.set_bus_servo_position, 10)
-        self.create_subscription(SetPWMServoState, '~/pwm_servo/set_state', self.set_pwm_servo_state, 10)
-        self.create_service(GetBusServoState, '~/bus_servo/get_state', self.get_bus_servo_state)
-        self.create_service(GetPWMServoState, '~/pwm_servo/get_state', self.get_pwm_servo_state)
-        self.create_subscription(RGBStates, '~/set_rgb', self.set_rgb_states, 10)
 
-        self.create_service(Trigger,'~/set_machine_type',self.set_machine_type)
-        self.machine_type = os.environ['MACHINE_TYPE']
+        # Motor command subscription (remapped to guarded output by default)
+        self.create_subscription(MotorsState, self.motor_topic, self.set_motor_state, 10)
+
+        # Read-only readiness service remains available in controller-only mode.
+        self.create_service(Trigger, '~/init_finish', self.get_node_state)
+
+        if self.controller_only:
+            # Dedicated battery telemetry polling in controller-only mode (1 Hz)
+            self.board.enable_reception(True)
+            self.battery_timer = self.create_timer(1.0, self._battery_timer_callback)
+        else:
+            # Legacy peripherals publishers and subscriptions
+            self.imu_pub = self.create_publisher(Imu, '~/imu_raw', 1)
+            self.joy_pub = self.create_publisher(Joy, '~/joy', 1)
+            self.sbus_pub = self.create_publisher(Sbus, '~/sbus', 1)
+            self.button_pub = self.create_publisher(ButtonState, '~/button', 1)
+            self.create_subscription(LedState, '~/set_led', self.set_led_state, 5)
+            self.create_subscription(BuzzerState, '~/set_buzzer', self.set_buzzer_state, 5)
+            self.create_subscription(OLEDState, '~/set_oled', self.set_oled_state, 5)
+            self.create_subscription(Bool, '~/enable_reception', self.enable_reception, 1)
+            self.create_subscription(SetBusServoState, '~/bus_servo/set_state', self.set_bus_servo_state, 10)
+            self.create_subscription(ServosPosition, '~/bus_servo/set_position', self.set_bus_servo_position, 10)
+            self.create_subscription(SetPWMServoState, '~/pwm_servo/set_state', self.set_pwm_servo_state, 10)
+            self.create_service(GetBusServoState, '~/bus_servo/get_state', self.get_bus_servo_state)
+            self.create_service(GetPWMServoState, '~/pwm_servo/get_state', self.get_pwm_servo_state)
+            self.create_service(Trigger, '~/set_machine_type', self.set_machine_type)
+            self.create_subscription(RGBStates, '~/set_rgb', self.set_rgb_states, 10)
+
+            if self.load_servo_offsets_flag:
+                self.load_servo_offsets()
+            threading.Thread(target=self.pub_callback, daemon=True).start()
+
+        # Send machine type and initialize motor speed to zero
         self.motor_type = None
         self.battery_level = None
         self.send_machine_type()
-        # Load and set servo offsets from YAML file(加载并设置舵机偏移量从 YAML 文件)
-        self.load_servo_offsets()
+        self.board.zero_motors(count=2)
 
-        # Initialize motor speed(初始化电机速度)
-        self.board.set_motor_speed([[1, 0], [2, 0], [3, 0], [4, 0]])
+        # Monotonic freshness watchdog thread
+        threading.Thread(target=self._motor_watchdog_loop, daemon=True).start()
 
+        # Supervisor heartbeat emission timer
         self.clock = self.get_clock()
-        threading.Thread(target=self.pub_callback, daemon=True).start()
-        self.create_service(Trigger, '~/init_finish', self.get_node_state)
-        self.get_logger().info('\033[1;32m%s\033[0m' % 'start')
+        self.heartbeat_timer = self.create_timer(self.heartbeat_interval_sec, self._emit_heartbeat)
+
+        self.get_logger().info('ros_robot_controller initialized (controller_only=%s)' % self.controller_only)
+
+    def _battery_timer_callback(self):
+        """Poll and publish battery telemetry in controller-only mode."""
+        if not self._fatal_fault:
+            self.pub_battery_data(self.battery_pub)
+
+    def _enter_fatal_fault(self, reason):
+        """Stop supervision and the ROS graph after an unrecoverable bridge fault."""
+        with self._motor_lock:
+            if self._fatal_fault:
+                return
+            self._fatal_fault = True
+            self._last_motor_cmd_time = None
+            try:
+                self.get_logger().fatal(f"FATAL: {reason}; stopping graph")
+            except Exception:
+                pass
+            if hasattr(self, 'heartbeat_timer') and self.heartbeat_timer is not None:
+                try:
+                    self.heartbeat_timer.cancel()
+                except Exception:
+                    pass
+            self.safe_shutdown()
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
+
+    def _motor_watchdog_step(self):
+        """Check monotonic freshness and board errors; enter fatal shutdown on expiry."""
+        with self._motor_lock:
+            board_error = getattr(self.board, 'fatal_error', None)
+            if board_error is not None:
+                self._enter_fatal_fault(str(board_error))
+                return
+            if self._last_motor_cmd_time is not None:
+                elapsed = time.monotonic() - self._last_motor_cmd_time
+                if elapsed > self.freshness_timeout_sec:
+                    self._enter_fatal_fault(
+                        f"Bridge freshness timeout ({elapsed:.3f}s > {self.freshness_timeout_sec:.3f}s)"
+                    )
+
+    def _motor_watchdog_loop(self):
+        """Independent monotonic watchdog thread enforcing 250 ms freshness deadline."""
+        while self.running and not self._fatal_fault:
+            time.sleep(0.02)
+            self._motor_watchdog_step()
+
+    def _emit_heartbeat(self):
+        """Emit monotonic timestamp heartbeat to supervisor."""
+        with self._motor_lock:
+            board_error = getattr(self.board, 'fatal_error', None)
+            if board_error is not None:
+                self._enter_fatal_fault(str(board_error))
+            if self._fatal_fault or self._shutting_down:
+                return
+        payload = f"{time.monotonic()}\n".encode('ascii')
+        if self.bridge_pipe_fd is not None:
+            try:
+                os.write(self.bridge_pipe_fd, payload)
+                return
+            except Exception as e:
+                self.get_logger().debug(f"Bridge pipe heartbeat failed: {e}")
+        if self.bridge_sock_path and os.path.exists(self.bridge_sock_path):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+                    s.sendto(payload.strip(), self.bridge_sock_path)
+            except Exception as e:
+                self.get_logger().debug(f"Bridge socket heartbeat failed: {e}")
+
+    def safe_shutdown(self):
+        """Orderly signal-safe shutdown: send repeated zeros and close port."""
+        with self._motor_lock:
+            if self._shutting_down:
+                return
+            self._shutting_down = True
+            self.running = False
+            try:
+                self.get_logger().info("Initiating signal-safe bridge shutdown and motor zeroing...")
+            except Exception:
+                pass
+            try:
+                self.board.zero_motors(count=4)
+            except Exception as e:
+                try:
+                    self.get_logger().error(f"Error zeroing motors during bridge shutdown: {e}")
+                except Exception:
+                    pass
+            finally:
+                try:
+                    self.board.close()
+                except Exception:
+                    pass
 
     def load_servo_offsets(self):
         """
-        Read servo offset settings from the YAML file(从 YAML 文件中读取舵机偏差设置。)
+        Read servo offset settings from YAML file.
         """
-        config_path = '/home/ubuntu/software/Servo_upper_computer/servo_config.yaml'
+        config_path = self.servo_config_file
+        if not os.path.exists(config_path):
+            self.get_logger().warn(f"Servo config file not found: {config_path}")
+            return
         try:
-            with open(config_path, 'r') as file:
+            with open(config_path, 'r', encoding='utf-8') as file:
                 config = yaml.safe_load(file)
 
-            # Ensure config is a dictionary(确保config是字典)
             if not isinstance(config, dict):
-                self.get_logger().error(f"YAML 配置文件格式错误: {config_path}，应为字典格式。")
+                self.get_logger().error(f"YAML config format error: {config_path}, expected dict.")
                 return
 
-            # Iterate through ID1 to ID4 and set offsets(遍历ID1到ID4并设置偏移量)
             for servo_id in range(1, 5):
-                offset = config.get(servo_id, 0)  # Default offset is 0 if not found(如果未找到，默认偏移量为0)
+                offset = config.get(servo_id, 0)
                 try:
                     self.board.pwm_servo_set_offset(servo_id, offset)
-                    #self.get_logger().info(f"已设置舵机 {servo_id} 的偏移量为 {offset}")
-                    pass
                 except Exception as e:
-                    self.get_logger().error(f"设置舵机 {servo_id} 偏移量时出错: {e}")
+                    self.get_logger().error(f"Error setting servo {servo_id} offset: {e}")
 
-        except FileNotFoundError:
-            self.get_logger().error(f"配置文件未找到: {config_path}")
-        except yaml.YAMLError as e:
-            self.get_logger().error(f"解析 YAML 文件时出错: {e}")
         except Exception as e:
-            self.get_logger().error(f"读取配置文件时出错: {e}")
+            self.get_logger().error(f"Error loading servo config {config_path}: {e}")
 
     def get_node_state(self, request, response):
         response.success = True
@@ -142,10 +326,20 @@ class RosRobotController(Node):
         self.board.set_rgb(pixels)
 
     def set_motor_state(self, msg):
-        data = []
-        for i in msg.data:
-            data.extend([[i.id, i.rps]])
-        self.board.set_motor_speed(data)
+        with self._motor_lock:
+            if self._fatal_fault or self._shutting_down:
+                self.get_logger().error("Bridge in fatal fault state; dropping motor command")
+                return
+            data = []
+            for i in msg.data:
+                data.extend([[i.id, i.rps]])
+            try:
+                self.board.set_motor_speed(data)
+                # Advance freshness timestamp ONLY after successful serial write and when not in fatal/shutdown state
+                if not self._fatal_fault and not self._shutting_down:
+                    self._last_motor_cmd_time = time.monotonic()
+            except Exception as e:
+                self._enter_fatal_fault(f"Serial write error in bridge: {e}")
 
     def set_oled_state(self, msg):
         self.board.set_oled_text(int(msg.index), msg.text)
@@ -169,17 +363,14 @@ class RosRobotController(Node):
             self.motor_type = 0x01
             self.battery_level = 0x1af4
         if self.motor_type is not None:
-            for i in range(2):
-                '''
-                MOTOR_TYPE_JGB520 ox00
-                MOTOR_TYPE_JGB37  0x01
-                MOTOR_TYPE_JGB27  0x02
-                MOTOR_TYPE_JGB528 0x03
-                '''
-                self.board.set_motor_type(self.motor_type)
-                self.board.set_battery_level(self.battery_level)
+            for _ in range(2):
+                try:
+                    self.board.set_motor_type(self.motor_type)
+                    self.board.set_battery_level(self.battery_level)
+                except Exception as e:
+                    self.get_logger().warn(f"Failed to send machine type to board: {e}")
         else:
-            self.get_logger().info('\033[1;32m%s\033[0m' % 'Please Set the machine_type')
+            self.get_logger().info('Please Set the machine_type')
 
 
     def get_pwm_servo_state(self, msg):
@@ -368,17 +559,21 @@ class RosRobotController(Node):
                                                  0.0, 0.0, 0.004]
             pub.publish(msg)
 
-def main():
-    node = RosRobotController('ros_robot_controller')
+def main(args=None):
+    if not rclpy.ok():
+        rclpy.init(args=args)
+    node = None
     try:
+        node = RosRobotController('ros_robot_controller')
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        # Safely shut down motor speed(安全关闭电机速度)
-        node.board.set_motor_speed([[1, 0], [2, 0], [3, 0], [4, 0]])
-        node.destroy_node()
-        rclpy.shutdown()
-        print('shutdown')
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        pass
     finally:
+        if node is not None:
+            node.safe_shutdown()
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
         print('shutdown finish')
 
 if __name__ == '__main__':

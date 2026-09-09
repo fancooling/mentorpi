@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+MentorPi tank controller and odometry node (adapted for native Ubuntu 26.04).
+
+NOTE: odom_raw is command integration (dead reckoning), not measured odometry
+from wheel encoders.
+"""
 import os
 import math
 import time
@@ -71,8 +77,7 @@ def qua2rpy(x, y, z, w):
 
 class Controller(Node):
     
-    def __init__(self, name):
-        rclpy.init()
+    def __init__(self, name='odom_publisher'):
         super().__init__(name)
 
         self.x = 0.0
@@ -85,57 +90,86 @@ class Controller(Node):
         self.current_time = None
         signal.signal(signal.SIGINT, self.shutdown)
 
-        self.machine_type = os.environ.get('MACHINE_TYPE')
-        self.mecanum = mecanum.MecanumChassis(wheelbase=0.1368, track_width=0.1446, wheel_diameter=0.075)
         # Declare parameters
+        self.declare_parameter('machine_type', 'MentorPi_Tank')
+        self.declare_parameter('wheelbase', 0.1368)
+        self.declare_parameter('track_width', 0.1446)
+        self.declare_parameter('wheel_diameter', 0.075)
+        self.declare_parameter('controller_only', True)
+        self.declare_parameter('cmd_vel_topic', '/controller/cmd_vel')
+        self.declare_parameter('motor_output_topic', '/ubuntu_tank_safety/motor_input')
+        self.declare_parameter('left_correction_factor', 1.0)
+        self.declare_parameter('right_correction_factor', 1.0)
+        self.declare_parameter('correction_file', '')
         self.declare_parameter('pub_odom_topic', True)
         self.declare_parameter('base_frame_id', 'base_footprint')
         self.declare_parameter('odom_frame_id', 'odom')
         self.declare_parameter('linear_correction_factor', 1.00)
         self.declare_parameter('linear_correction_factor_tank', 0.52)
         self.declare_parameter('angular_correction_factor', 1.00)
-        self.declare_parameter('machine_type', os.environ['MACHINE_TYPE'])
-        
-        self.pub_odom_topic = self.get_parameter('pub_odom_topic').value
-        self.base_frame_id = self.get_parameter('base_frame_id').value
-        self.odom_frame_id = self.get_parameter('odom_frame_id').value
-        
-        #self.machine_type = os.environ.get('MACHINE_TYPE', 'MentorPi_Mecanum')
-        
+
+        # Retrieve parameter values
+        self.machine_type = str(self.get_parameter('machine_type').value)
+        self.wheelbase = float(self.get_parameter('wheelbase').value)
+        self.track_width = float(self.get_parameter('track_width').value)
+        self.wheel_diameter = float(self.get_parameter('wheel_diameter').value)
+        self.controller_only = bool(self.get_parameter('controller_only').value)
+        self.cmd_vel_topic = str(self.get_parameter('cmd_vel_topic').value)
+        self.motor_output_topic = str(self.get_parameter('motor_output_topic').value)
+        self.pub_odom_topic = bool(self.get_parameter('pub_odom_topic').value)
+        self.base_frame_id = str(self.get_parameter('base_frame_id').value)
+        self.odom_frame_id = str(self.get_parameter('odom_frame_id').value)
+        self.correction_file = str(self.get_parameter('correction_file').value)
+
+        # Initialize kinematics model with parameterized geometry
+        self.mecanum = mecanum.MecanumChassis(
+            wheelbase=self.wheelbase,
+            track_width=self.track_width,
+            wheel_diameter=self.wheel_diameter
+        )
+
         if self.machine_type == 'MentorPi_Tank':
-            self.linear_factor = self.get_parameter('linear_correction_factor_tank').value
+            self.linear_factor = float(self.get_parameter('linear_correction_factor_tank').value)
         else:
-            self.linear_factor = self.get_parameter('linear_correction_factor').value
-        self.angular_factor = self.get_parameter('angular_correction_factor').value
-        
+            self.linear_factor = float(self.get_parameter('linear_correction_factor').value)
+        self.angular_factor = float(self.get_parameter('angular_correction_factor').value)
+
         self.correction_factors = self.load_correction_factors()
-        self.left_correction = self.correction_factors['left_correction_factor']
-        self.right_correction = self.correction_factors['right_correction_factor']
+        self.left_correction = float(self.correction_factors['left_correction_factor'])
+        self.right_correction = float(self.correction_factors['right_correction_factor'])
 
         self.clock = self.get_clock() 
         if self.pub_odom_topic:
             self.odom = Odometry()
             self.odom.header.frame_id = self.odom_frame_id
             self.odom.child_frame_id = self.base_frame_id
-            
             self.odom.pose.covariance = ODOM_POSE_COVARIANCE
             self.odom.twist.covariance = ODOM_TWIST_COVARIANCE
-            
             self.odom_pub = self.create_publisher(Odometry, 'odom_raw', 1)
-            self.dt = 1.0/50.0
-
+            self.dt = 1.0 / 50.0
             threading.Thread(target=self.cal_odom_fun, daemon=True).start()
-        self.get_logger().info('\033[1;32m%f %f\033[0m' % (self.linear_factor, self.angular_factor))
-        self.motor_pub = self.create_publisher(MotorsState, 'ros_robot_controller/set_motor', 1)
-        self.servo_state_pub = self.create_publisher(SetPWMServoState, 'ros_robot_controller/pwm_servo/set_state', 10)
-        self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'set_pose', 1)
-        self.create_subscription(Pose2D, 'set_odom', self.set_odom, 1)
-        self.create_subscription(Twist, 'controller/cmd_vel', self.cmd_vel_callback, 1)
-        self.create_subscription(Twist, '/app/cmd_vel', self.acker_cmd_vel_callback, 1)
-        self.create_subscription(Twist, 'cmd_vel', self.app_cmd_vel_callback, 1)
-        self.create_service(Trigger, 'controller/load_calibrate_param', self.load_calibrate_param)
-        self.create_service(Trigger, '~/init_finish', self.get_node_state)
-        self.get_logger().info('\033[1;32m%s\033[0m' % 'start')
+
+        self.get_logger().info('Correction factors: linear=%f angular=%f left=%f right=%f' % (
+            self.linear_factor, self.angular_factor, self.left_correction, self.right_correction))
+
+        if self.controller_only:
+            # Controller-only: single input and guarded output
+            self.motor_pub = self.create_publisher(MotorsState, self.motor_output_topic, 1)
+            self.create_subscription(Twist, self.cmd_vel_topic, self.cmd_vel_callback, 1)
+            self.create_service(Trigger, '~/init_finish', self.get_node_state)
+        else:
+            # Legacy surfaces
+            self.motor_pub = self.create_publisher(MotorsState, 'ros_robot_controller/set_motor', 1)
+            self.servo_state_pub = self.create_publisher(SetPWMServoState, 'ros_robot_controller/pwm_servo/set_state', 10)
+            self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'set_pose', 1)
+            self.create_subscription(Pose2D, 'set_odom', self.set_odom, 1)
+            self.create_subscription(Twist, 'controller/cmd_vel', self.cmd_vel_callback, 1)
+            self.create_subscription(Twist, '/app/cmd_vel', self.acker_cmd_vel_callback, 1)
+            self.create_subscription(Twist, 'cmd_vel', self.app_cmd_vel_callback, 1)
+            self.create_service(Trigger, 'controller/load_calibrate_param', self.load_calibrate_param)
+            self.create_service(Trigger, '~/init_finish', self.get_node_state)
+
+        self.get_logger().info('Controller initialized (controller_only=%s)' % self.controller_only)
 
     def get_node_state(self, request, response):
         response.success = True
@@ -268,44 +302,46 @@ class Controller(Node):
 
 
     def load_correction_factors(self):
-        """从YAML文件加载校正因子"""
+        """Load left and right correction factors from parameters or configured YAML."""
         default_factors = {
-            'left_correction_factor': 1.0,
-            'right_correction_factor': 1.0
+            'left_correction_factor': float(self.get_parameter('left_correction_factor').value),
+            'right_correction_factor': float(self.get_parameter('right_correction_factor').value)
         }
-        
+        if not self.correction_file or not os.path.exists(self.correction_file):
+            return default_factors
+
         try:
-            yaml_path = os.path.join('/home/ubuntu/software/chassis_adjustment/robot_correction_factors.yaml')
-            
-            with open(yaml_path, 'r') as f:
+            with open(self.correction_file, 'r', encoding='utf-8') as f:
                 factors = yaml.safe_load(f)
-                
-            if factors is None:
-                self.get_logger().warn("YAML file is empty, using default factors")
+
+            if factors is None or not isinstance(factors, dict):
+                self.get_logger().warn("YAML correction file empty or invalid, using parameter defaults")
                 return default_factors
-                
-            if not all(key in factors for key in default_factors.keys()):
-                self.get_logger().warn("Missing some correction factors in YAML, using defaults")
-                return {**default_factors, **factors}
-                
-            self.get_logger().info(f"Loaded correction factors: {factors}")
-            return factors
-            
-        except FileNotFoundError:
-            self.get_logger().warn("Correction factors file not found, using defaults")
-            return default_factors
-        except yaml.YAMLError as e:
-            self.get_logger().error(f"YAML parsing error: {e}, using defaults")
-            return default_factors
+
+            return {
+                'left_correction_factor': float(factors.get('left_correction_factor', default_factors['left_correction_factor'])),
+                'right_correction_factor': float(factors.get('right_correction_factor', default_factors['right_correction_factor']))
+            }
         except Exception as e:
-            self.get_logger().error(f"Error loading correction factors: {e}, using defaults")
+            self.get_logger().error(f"Error loading correction factors from {self.correction_file}: {e}, using parameter defaults")
             return default_factors
 
 
-def main():
-    node = Controller('odom_publisher')
-    rclpy.spin(node)  # 循环等待ROS2退出(loop waiting for ROS2 to exit)
-    rclpy.spin(node)  
+def main(args=None):
+    if not rclpy.ok():
+        rclpy.init(args=args)
+    node = None
+    try:
+        node = Controller('odom_publisher')
+        rclpy.spin(node)
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        pass
+    finally:
+        if node is not None:
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
 if __name__ == "__main__":
     main()
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # encoding: utf-8
-# stm32 python sdk
+"""Framing, telemetry parsing, and bounded serial I/O for the STM32 board."""
+
 import enum
+import math
 import time
 import queue
 import struct
@@ -81,6 +83,13 @@ class SBusStatus:
         self.fail_safe = False
 
 class Board:
+    """Serial protocol interface for the MentorPi STM32 controller.
+
+    Passing ``device='mock'`` or ``None`` enables hardware-free packet capture.
+    Real serial writes always have a finite timeout so a disconnected controller
+    cannot block watchdog zeroing or shutdown indefinitely.
+    """
+
     buttons_map = {
             'GAMEPAD_BUTTON_MASK_L2':        0x0001,
             'GAMEPAD_BUTTON_MASK_R2':        0x0002,
@@ -96,20 +105,66 @@ class Board:
             'GAMEPAD_BUTTON_MASK_R1':        0x8000
     }
 
-    def __init__(self, device="/dev/rrc", baudrate=1000000, timeout=10):
+    def __init__(
+        self,
+        device="/dev/rrc",
+        baudrate=1000000,
+        timeout=0.050,
+        write_timeout=0.100,
+        silence_timeout=0.500,
+    ):
+        """Open a real controller port or initialize deterministic mock mode.
+
+        Args:
+            device: Serial path, or ``'mock'``/``None`` for mock mode.
+            baudrate: Serial line speed in bits per second.
+            timeout: Maximum blocking read duration in seconds.
+            write_timeout: Positive maximum blocking write duration in seconds.
+            silence_timeout: Maximum time without any received byte after
+                reception is enabled before the connection becomes fatal.
+
+        Raises:
+            ValueError: If a timeout is non-finite, non-positive, or the read
+                timeout is not shorter than the silence timeout.
+            RuntimeError: If a real serial port cannot be opened.
+        """
+        self.device = device
+        self.baudrate = baudrate
+        self.timeout = float(timeout)
+        self.write_timeout = float(write_timeout) if write_timeout is not None else 0.100
+        self.silence_timeout = float(silence_timeout)
+        if not math.isfinite(self.timeout) or self.timeout <= 0:
+            raise ValueError("timeout must be finite and greater than zero")
+        if not math.isfinite(self.write_timeout) or self.write_timeout <= 0:
+            raise ValueError("write_timeout must be finite and greater than zero")
+        if not math.isfinite(self.silence_timeout) or self.silence_timeout <= self.timeout:
+            raise ValueError("silence_timeout must be finite and greater than timeout")
         self.enable_recv = False
+        self._closed = False
+        self.fatal_error = None
+        self._last_rx_time = None
         self.frame = []
         self.recv_count = 0
+        self.is_mock = (device == "mock" or device is None)
+        self.mock_written_buffers = []
+        self.mock_battery_voltage = 12000
 
-        self.port = serial.Serial(None, baudrate, timeout=timeout)
-        self.port.rts = False
-        self.port.dtr = False
-        self.port.setPort(device)
-        self.port.open()
+        if self.is_mock:
+            self.port = None
+        else:
+            try:
+                self.port = serial.Serial(None, baudrate, timeout=timeout, write_timeout=self.write_timeout)
+                self.port.rts = False
+                self.port.dtr = False
+                self.port.setPort(device)
+                self.port.open()
+            except Exception as e:
+                raise RuntimeError(f"Failed to open serial device '{device}' at {baudrate} baud: {e}") from e
 
         self.state = PacketControllerState.PACKET_CONTROLLER_STATE_STARTBYTE1
         self.servo_read_lock = threading.Lock()
         self.pwm_servo_read_lock = threading.Lock()
+        self._write_lock = threading.RLock()
 
         # 队列用来存储数据(use queue to store data)
         self.sys_queue = queue.Queue(maxsize=1)
@@ -130,8 +185,9 @@ class Board:
             PacketFunction.PACKET_FUNC_PWM_SERVO: self.packet_report_pwm_servo
         }
 
-        time.sleep(0.5)
-        threading.Thread(target=self.recv_task, daemon=True).start()
+        if not self.is_mock:
+            time.sleep(0.1)
+            threading.Thread(target=self.recv_task, daemon=True).start()
 
 
     def packet_report_sys(self, data):
@@ -177,18 +233,25 @@ class Board:
             pass
 
     def get_battery(self):
-        # 获取电压，单位mAh(obtain voltage, which is in the unit of mAh)
+        # 获取电压，单位mV(obtain voltage, which is in the unit of mV)
+        if self.is_mock:
+            try:
+                data = self.sys_queue.get(block=False)
+                if data[0] == 0x04:
+                    return struct.unpack('<H', data[1:])[0]
+            except queue.Empty:
+                pass
+            return getattr(self, 'mock_battery_voltage', 12000)
         if self.enable_recv:
             try:
                 data = self.sys_queue.get(block=False)
                 if data[0] == 0x04:
                     return struct.unpack('<H', data[1:])[0]
                 else:
-                    None
+                    return None
             except queue.Empty:
                 return None
         else:
-            print('get_battery enable reception first!')
             return None
 
     def get_button(self):
@@ -322,8 +385,56 @@ class Board:
         buf.extend(data)
         buf.append(checksum_crc8(bytes(buf[2:])))
         buf = bytes(buf)
-        self.port.write(buf)
-        #print(buf)
+        with self._write_lock:
+            if self._closed:
+                raise RuntimeError(f"Cannot write to closed serial port on '{self.device}'")
+            if self.is_mock:
+                self.mock_written_buffers.append(buf)
+                return len(buf)
+            if self.port is None or not self.port.is_open:
+                raise RuntimeError(f"Cannot write to closed serial port on '{self.device}'")
+            try:
+                written = self.port.write(buf)
+                if written != len(buf):
+                    raise IOError(f"Short serial write on '{self.device}': wrote {written} of {len(buf)} bytes")
+                return written
+            except Exception as e:
+                self.fatal_error = RuntimeError(f"Serial write error on '{self.device}': {e}")
+                raise self.fatal_error from e
+
+    def zero_motors(self, count=1):
+        """Send repeated 4-motor zero commands across all attempts.
+
+        Preserves the full bounded attempt count even if individual writes
+        encounter timeouts or short writes, ensuring subsequent stop attempts
+        occur before port closure. Returns the count of successful stop writes.
+        Raises the last exception if all attempts fail.
+        """
+        attempts = max(1, int(count))
+        successful = 0
+        last_exception = None
+        with self._write_lock:
+            for _ in range(attempts):
+                try:
+                    self.set_motor_speed([[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0]])
+                    successful += 1
+                except Exception as e:
+                    last_exception = e
+            if successful == 0 and last_exception is not None:
+                raise last_exception
+            return successful
+
+    def close(self):
+        """Signal-safe orderly shutdown and port closure."""
+        with self._write_lock:
+            self._closed = True
+            self.enable_recv = False
+            if hasattr(self, 'port') and self.port is not None:
+                try:
+                    if self.port.is_open:
+                        self.port.close()
+                except Exception:
+                    pass
 
 
     def set_led(self, on_time, off_time, repeat=1, led_id=1):
@@ -337,10 +448,17 @@ class Board:
         self.buf_write(PacketFunction.PACKET_FUNC_BUZZER, struct.pack("<HHHH", freq, on_time, off_time, repeat))
 
     def set_motor_speed(self, speeds):
-        data = [0x01, len(speeds)]
-        for i in speeds:
-            data.extend(struct.pack("<Bf", int(i[0] - 1), float(i[1])))
-        self.buf_write(PacketFunction.PACKET_FUNC_MOTOR, data)
+        with self._write_lock:
+            if self.fatal_error is not None:
+                is_zero = all(float(s[1]) == 0.0 for s in speeds)
+                if not is_zero:
+                    raise RuntimeError(
+                        f"Cannot execute nonzero motor command in fatal fault state: {self.fatal_error}"
+                    )
+            data = [0x01, len(speeds)]
+            for i in speeds:
+                data.extend(struct.pack("<Bf", int(i[0] - 1), float(i[1])))
+            self.buf_write(PacketFunction.PACKET_FUNC_MOTOR, data)
     
     def set_motor_type(self, motor_type=0x02):
         '''
@@ -506,12 +624,32 @@ class Board:
 
     def enable_reception(self, enable=True):
         self.enable_recv = enable
+        if enable:
+            self._last_rx_time = time.monotonic()
 
     def recv_task(self):
-        while True:
-            if self.enable_recv:
-                recv_data = self.port.read()
-                if recv_data:
+        """Receive and parse board frames until closed or a serial read fails.
+
+        A serial exception is recorded in :attr:`fatal_error`; the ROS bridge
+        observes that state from its heartbeat timer and stops the graph instead
+        of continuing to advertise healthy supervision.
+        """
+        try:
+            while not self._closed:
+                if self.enable_recv:
+                    recv_data = self.port.read()
+                    if not recv_data:
+                        if self._closed:
+                            break
+                        if (
+                            self._last_rx_time is not None
+                            and time.monotonic() - self._last_rx_time >= self.silence_timeout
+                        ):
+                            raise TimeoutError(
+                                f"no bytes received for {self.silence_timeout:.3f}s"
+                            )
+                        continue
+                    self._last_rx_time = time.monotonic()
                     for dat in recv_data:
                         # print("%0.2X "%dat)
                         if self.state == PacketControllerState.PACKET_CONTROLLER_STATE_STARTBYTE1:
@@ -557,10 +695,19 @@ class Board:
                                 print("校验失败")
                             self.state = PacketControllerState.PACKET_CONTROLLER_STATE_STARTBYTE1
                             continue
-            else:
-                time.sleep(0.01)
-        self.port.close()
-        print("END...")
+                else:
+                    time.sleep(0.01)
+        except Exception as e:
+            self.fatal_error = RuntimeError(f"Serial read error on '{self.device}': {e}")
+            self.enable_recv = False
+        finally:
+            self.enable_recv = False
+            if self._closed and hasattr(self, 'port') and self.port is not None:
+                try:
+                    if self.port.is_open:
+                        self.port.close()
+                except Exception:
+                    pass
 
 def bus_servo_test(board):
     board.bus_servo_set_position(1, [[1, 500], [2, 500]])

@@ -195,6 +195,9 @@ required_files = [
     'deploy.sh',
     'tests/test_source_boundary.sh',
     'tests/test_negative_boundary.sh',
+    'tests/test_dependency_closure.sh',
+    'tests/test_install_workflow.py',
+    'tests/test_milestone3_port.py',
     'source-manifest.txt'
 ]
 

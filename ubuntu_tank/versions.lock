@@ -1,75 +1,232 @@
-# MentorPi Tank Native Controller - Dependency Scope Specification (Draft for Milestone 2 Lock)
-# Target: Ubuntu 26.04 LTS ARM64 (Raspberry Pi 5)
-# ROS Distribution: ROS 2 Lyrical
-# Schema: lockfile-v1 (Draft specification)
-# Status: Defines direct package scopes and perception exclusions for Milestone 1.
-# Authoritative pinned package versions, apt repository snapshots, and package hashes
-# will be resolved and locked in Milestone 2 (via ./deploy.sh install-ros / verify-lock).
-
 meta:
-  format_version: "1.0.0-draft"
-  status: "draft_specification"
-  target_os: "Ubuntu 26.04 LTS"
-  target_arch: "arm64"
-  ros_distro: "lyrical"
-  controller_mode: "controller-only"
-
+  format_version: 1.0.0
+  status: locked
+  closure_status: direct-only
+  target_os: Ubuntu 26.04 LTS
+  target_os_codename: resolute
+  target_arch: arm64
+  ros_distro: lyrical
+  controller_mode: controller-only
+  locked_date: '2026-09-08'
+ros_apt_source:
+  package_name: ros2-apt-source
+  version: 1.2.0.resolute
+  architecture: all
+  url: https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.2.0/ros2-apt-source_1.2.0.resolute_all.deb
+  sha256: a275b9b819874e745a928e83e39c429fa4d607159285c4ef3ebcf75afa732ee3
+rosdep_index:
+  revision: a9f673b32f2469b5b3655f62d53f176ef69b233a
+  source_url: https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/index-v4.yaml
+  index_sha256: d515c14da215282a0b6ed456e6f6267633bbc8f6cf6abe379c0f2a25aeb6453f
+rosdep_sources:
+  revision: a9f673b32f2469b5b3655f62d53f176ef69b233a
+  index_v4:
+    url: https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/index-v4.yaml
+    sha256: d515c14da215282a0b6ed456e6f6267633bbc8f6cf6abe379c0f2a25aeb6453f
+  base:
+    url: https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/rosdep/base.yaml
+    sha256: 8f2892d61eb23a73fa7a856305278f454bbbcf2432c85c8b6bf0b80ae69df437
+  python:
+    url: https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/rosdep/python.yaml
+    sha256: a2929b756654a70c5c98d275b8ca8445b139449a751c6195fe92c678862d77f3
+  ruby:
+    url: https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/rosdep/ruby.yaml
+    sha256: 0beda9b7528c4d88d2a4acead61dd019075f76f052dd7b4d978f94561341c65a
 packages:
-  core_ros:
-    - name: "ros-lyrical-ros-base"
-      scope: "system_base"
-    - name: "ros-dev-tools"
-      scope: "build_tools"
-
-  workspace_direct_ros:
-    - name: "rclpy"
-      scope: "runtime"
-    - name: "std_msgs"
-      scope: "runtime"
-    - name: "std_srvs"
-      scope: "runtime"
-    - name: "geometry_msgs"
-      scope: "runtime"
-    - name: "nav_msgs"
-      scope: "runtime"
-    - name: "sensor_msgs"
-      scope: "runtime_non_perception"
-      allowed_types: ["Imu", "Joy", "JointState"]
-    - name: "ros_robot_controller_msgs"
-      scope: "runtime_interfaces"
-    - name: "launch"
-      scope: "runtime_launch"
-    - name: "launch_ros"
-      scope: "runtime_launch"
-
-  workspace_system_deps:
-    - name: "python3-serial"
-      scope: "runtime_serial"
-    - name: "python3-yaml"
-      scope: "runtime_config"
-    - name: "python3-setuptools"
-      scope: "build"
-    - name: "python3-pytest"
-      scope: "test"
-
-  excluded_perception:
-    - name: "sensor_msgs/Image"
-      status: "forbidden"
-    - name: "sensor_msgs/LaserScan"
-      status: "forbidden"
-    - name: "sensor_msgs/PointCloud2"
-      status: "forbidden"
-    - name: "cv_bridge"
-      status: "forbidden"
-    - name: "image_transport"
-      status: "forbidden"
-    - name: "laser_geometry"
-      status: "forbidden"
-    - name: "nav2_*"
-      status: "forbidden"
-    - name: "robot_localization"
-      status: "forbidden"
-    - name: "torch"
-      status: "forbidden"
-    - name: "opencv2"
-      status: "forbidden"
+- name: ros-lyrical-ros-base
+  version: 0.11.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: system_base
+  sha256: 4f1eadbe80762d05d0ef0885ab3c85b41d34374a78cfe74e3f81621061f5c097
+- name: ros-dev-tools
+  version: 1.0.1-1resolute
+  architecture: all
+  repository: ros2
+  scope: build_tools
+  sha256: e049b6616c0c075a809f8c167bbc7c1b67c0e8aa5818fa45e398f5af8db9adba
+- name: ros-lyrical-rclpy
+  version: 7.1.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime
+  sha256: 1f6402eed84a53f298ffb986128bf30ba9947b892a62330197907785f181b547
+- name: ros-lyrical-std-msgs
+  version: 5.4.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime
+  sha256: d8e544d0c72825cb9fb11bf843767bbcbc217bc93e43c22f5ce02314db686fc6
+- name: ros-lyrical-std-srvs
+  version: 5.4.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime
+  sha256: e1a97cd1517d007ab6f84cfc8eb02741b7a115f924d69f054e79c9f3d8734946
+- name: ros-lyrical-geometry-msgs
+  version: 5.4.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime
+  sha256: 6a511b1e52117043decd49a1dacaaeb78b003a61513fb0ca9b86816032069e9e
+- name: ros-lyrical-nav-msgs
+  version: 5.4.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime
+  sha256: eb2526557c4c5c7dcffa244912298d1a7cc253d332299adc9b6a2b4750031efb
+- name: ros-lyrical-sensor-msgs
+  version: 5.4.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime_non_perception
+  allowed_types:
+  - Imu
+  - Joy
+  - JointState
+  sha256: f266e52b0fea04653eea6dd8a1aff76b4aab982f016985b637d380b8f1511769
+- name: ros-lyrical-launch
+  version: 3.4.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: runtime_launch
+  sha256: 609e5d5cb8dc11fe8657a18e8faad87a376cfb8ff34877bdab214b851072b9e9
+- name: ros-lyrical-launch-ros
+  version: 0.27.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: runtime_launch
+  sha256: a03633c4f990e42d0f5916dd96bf5bfebe44cec793c493b3dda6879c3d7ad452
+- name: ros-lyrical-rosidl-default-runtime
+  version: 1.7.0-1resolute
+  architecture: arm64
+  repository: ros2
+  scope: runtime_interfaces
+  sha256: 8655a04a4e7fce5e1e6ebcb34cfe4244b0c4d849e5b841f17a395ba3197bb8d7
+- name: ros-lyrical-rosidl-default-generators
+  version: 1.7.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: build_interfaces
+  sha256: 2d3727f5cd38b5ee2e2197f2bb8db89afce4dbf4496f94c19371d77f8f9f1b66
+- name: ros-lyrical-ament-cmake
+  version: 2.5.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: build_tool
+  sha256: 956ea9553bcb344f61e55bd23b7561b79c86d4928a16f67781664845762c154c
+- name: ros-lyrical-ament-lint-auto
+  version: 0.17.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: test_tool
+  sha256: 1d63f312dd581996776aa5fd77d8fc08c61ed1ac769434b509defad676b2926d
+- name: ros-lyrical-ament-lint-common
+  version: 0.17.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: test_tool
+  sha256: 1fe4f7e9760ec9f2bfb3a14bc4fa91e114802babbcf510f69f8603e692d16c48
+- name: ros-lyrical-ament-copyright
+  version: 0.17.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: test_tool
+  sha256: 5c034f239cc7fb790997fb12ca57da326e8e40460322aba91b16d3af08460bfb
+- name: ros-lyrical-ament-flake8
+  version: 0.17.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: test_tool
+  sha256: 27bba87133bc130bdd930d28e81e71800001e6c99e63ea1369a3aa75e240191f
+- name: ros-lyrical-ament-pep257
+  version: 0.17.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: test_tool
+  sha256: 4300c6fcd111961b7a8ef4595d424c6ac48f8eca7ddf5e9fc3b76c75a4bb00f5
+- name: ros-lyrical-sros2
+  version: 0.13.0-1resolute
+  architecture: all
+  repository: ros2
+  scope: security
+  sha256: d1a077bdb645935eddeab0ad97a5586e9d7b7220a92e67d62dc2acd46f63b297
+- name: python3-serial
+  version: 3.5-2build1
+  architecture: all
+  repository: ubuntu-resolute
+  scope: runtime_serial
+  sha256: 978bb3936e1caa782e1c684e797897d496c832d80a34ebee250bf8458d1b19e1
+- name: python3-yaml
+  version: 6.0.1-2build2
+  architecture: arm64
+  repository: ubuntu-resolute
+  scope: runtime_config
+  sha256: c3bff0b5c78876df70d650f02bb1100f21209f4042738240deaed3fc11a1256d
+- name: python3-setuptools
+  version: 69.5.1-1
+  architecture: all
+  repository: ubuntu-resolute
+  scope: build
+  sha256: 070d3ec6edbecd066f0d5e43d1375931dc045efe65deb9d7c766fff5d66b426e
+- name: python3-pytest
+  version: 8.1.2-1
+  architecture: all
+  repository: ubuntu-resolute
+  scope: test
+  sha256: 7137883d363d8c0ffd87d15af634a3f1381710c2c6fd697d8d4e84ba1482e812
+- name: rpi-eeprom
+  version: 24.5-1
+  architecture: arm64
+  repository: ubuntu-resolute
+  scope: host_firmware
+  sha256: e30c3230116bd32168e7fea406b407cfe4ff9e84a98b30efdca4c51ba74b53fa
+- name: zstd
+  version: 1.5.6+dfsg-1
+  architecture: arm64
+  repository: ubuntu-resolute
+  scope: release_packaging
+  sha256: d9b022c154c4e3bcb23d61ff0a2845861a0f0efaff356181db307239a12ee2de
+- name: systemd-container
+  version: 256.4-1ubuntu1
+  architecture: arm64
+  repository: ubuntu-resolute
+  scope: isolated_build
+  sha256: 8cd7bd2a0665c36e15a3499cfcd32dd4b5b3ed2e78f0b67ebf5cea99e40f6c3d
+excluded_perception:
+- name: sensor_msgs/Image
+  status: forbidden
+- name: sensor_msgs/CompressedImage
+  status: forbidden
+- name: sensor_msgs/LaserScan
+  status: forbidden
+- name: sensor_msgs/PointCloud2
+  status: forbidden
+- name: sensor_msgs/CameraInfo
+  status: forbidden
+- name: cv_bridge
+  status: forbidden
+- name: image_transport
+  status: forbidden
+- name: laser_geometry
+  status: forbidden
+- name: slam_toolbox
+  status: forbidden
+- name: cartographer
+  status: forbidden
+- name: rtabmap
+  status: forbidden
+- name: nav2_*
+  status: forbidden
+- name: robot_localization
+  status: forbidden
+- name: torch
+  status: forbidden
+- name: torchvision
+  status: forbidden
+- name: mediapipe
+  status: forbidden
+- name: opencv2
+  status: forbidden
+- name: pygame
+  status: forbidden

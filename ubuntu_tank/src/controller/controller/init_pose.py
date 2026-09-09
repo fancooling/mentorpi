@@ -5,6 +5,7 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 from sensor_msgs.msg import JointState
 from ros_robot_controller_msgs.msg import BuzzerState, SetPWMServoState, PWMServoState
+import os
 import yaml
 
 class InitPose(Node):
@@ -20,8 +21,16 @@ class InitPose(Node):
         self.client = self.create_client(Trigger, namespace + '/controller_manager/init_finish')
         self.client.wait_for_service()
 
-        with open('/home/ubuntu/software/Servo_upper_computer/servo_config.yaml', 'r') as file:
-            servo_offsets = yaml.safe_load(file)
+        config_path = '/etc/opt/ubuntu_tank/servo_config.yaml'
+        servo_offsets = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as file:
+                    loaded = yaml.safe_load(file)
+                    if isinstance(loaded, dict):
+                        servo_offsets = loaded
+            except Exception:
+                pass
 
         pulse = self.get_parameters_by_prefix('servo')
         msg = SetPWMServoState()

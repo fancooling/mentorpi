@@ -429,13 +429,16 @@ installation.
 ### 6.3 ROS and controller dependencies
 
 `./deploy.sh install-ros` installs the supported ROS base and development
-tooling at the exact versions in `versions.lock`; no second undocumented install
-command exists.
+tooling only after `versions.lock` records `closure_status: complete`; no second
+undocumented install command exists. The committed lock remains `direct-only`,
+so live installation currently fails before mutation pending clean-target
+closure capture and review.
 
-The lock covers the complete apt dependency closure (package name, version,
-architecture, repository identity, and available-package hash), not only the
-four top-level packages. It also records the rosdep rules/index revision used to
-derive that closure. It includes `ros-lyrical-ros-base`, `ros-dev-tools`,
+The completed lock must cover the full apt dependency closure (package name,
+version, architecture, repository identity, and downloaded artifact hash), not
+only the direct packages. The current direct-only lock records the rosdep
+rules/index revision that will be used to derive that closure. It includes
+`ros-lyrical-ros-base`, `ros-dev-tools`,
 Python serial/YAML dependencies, SROS2 policy/keystore tooling, EEPROM inspection
 tooling, `zstd`, and the selected `systemd-nspawn`/Ubuntu-rootfs tooling used by
 packaging. Installation fails rather than silently selecting a different
@@ -459,10 +462,11 @@ rosdep check --from-paths src --ignore-src --rosdistro lyrical
 
 Every retained ROS package must declare accurate build, execution, and test
 dependencies before rosdep is treated as a reliable installation mechanism.
-`install-deps` uses rosdep for resolution but installs only the locked explicit
-package versions and a downloaded rosdep index matching the locked revision and
-hash; it fails on an unresolved key or dependency absent from the lock instead
-of letting apt choose an unrecorded version.
+`install-deps` uses rosdep for resolution and a downloaded rosdep index matching
+the locked revision and hash. It does not invoke apt installation: every
+resolved package must already have been installed at its exact locked version
+by the verified `install-ros` transaction. It fails on an unresolved key,
+dependency absent from the lock, missing package, or version mismatch.
 After any base upgrade, `install-ros` checks `/run/reboot-required` and stops
 before ROS installation, build, service installation, or activation until the
 operator reboots and reruns `check-host`.
@@ -903,43 +907,69 @@ inherited-pipe operation), and `ubuntu_tank_teleop` (8/8 passed) all passed via
 
 
 
-### Milestone 2 — Ubuntu and ROS installation workflow
+### Milestone 2 — Target-Pi Ubuntu and ROS installation workflow
 
-- [ ] Implement idempotent `check-host`, `prepare-host`, `verify-lock`, and
-  `install-ros` commands.
+Milestone 2 does not require ROS 2 or Pi-specific drivers to be installed
+directly on a general-purpose development workstation. `check-host`,
+`prepare-host`, and `install-ros` are target-host operations and must fail closed
+unless they are running on the supported clean Ubuntu 26.04 ARM64 Raspberry Pi.
+The development workstation may be used to author the workflow and run static,
+mocked, and hardware-free tests without ROS. Actual apt/ROS installation,
+EEPROM and device integration, and the milestone exit test must occur on a clean
+target Pi. Later ROS compilation and integration tests require a compatible
+Ubuntu 26.04 ARM64 ROS environment, which may be the target Pi or a separate
+compatible ARM64 build host using the design's isolated disposable build root;
+they do not require modifying the development workstation's base operating
+system.
+
+Any Python-only development dependency installed directly on the general-purpose
+development workstation must use the single repository-level `.venv`, with its
+purpose and version recorded by the project. Do not create component-level
+environments, use Conda as a second environment, or install non-standard Python
+packages into the global interpreter. This workstation policy does not move
+target or build-root Python dependencies out of their locked apt/ROS installation
+path. A Python environment is not an installation mechanism for ROS, kernel or
+USB drivers, udev rules, or apt-managed native libraries. Those target
+dependencies belong on the clean Pi or compatible isolated build root and must
+be covered by `versions.lock` where required; Milestone 2 acceptance still
+requires the clean target Pi. The target Pi does not use `.venv`, `virtualenv`,
+or Conda: its Python and non-Python runtime dependencies are installed directly
+through the locked apt/ROS workflow, and no Python virtual-environment activation
+step is part of service startup or operator setup. The production wrapper still
+sources the required ROS setup scripts as described in Section 6.4.
+
+- [ ] Implement idempotent `check-host`, `prepare-host`, `verify-lock`, `install-ros`, and `install-deps` commands.
 - [ ] Validate Ubuntu 26.04, ARM64, EEPROM, locale, disk, and time preconditions.
 - [ ] Configure the official `ros2-apt-source` package for Resolute.
-- [ ] Reject factory/sidecar/replacement containers, factory boot units, and
-  conflicting ROS/device owners before install, activation, start, or arm.
-- [ ] Record and accept the security-current Ubuntu baseline separately from the
-  locked ROS/application dependency closure.
-- [ ] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling
-  dependency closure; never resolve a `latest` release during installation.
-- [ ] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only
-  other demonstrated dependencies at locked versions.
+- [ ] Reject factory/sidecar/replacement containers, factory boot units, and conflicting ROS/device owners before install, activation, start, or arm.
+- [ ] Record and accept the security-current Ubuntu baseline separately from the locked ROS/application dependency closure.
+- [ ] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling dependency closure; never resolve a `latest` release during installation.
+- [ ] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only other demonstrated dependencies at locked versions.
 - [ ] Stop for a required reboot after base upgrades and re-run host preflight.
 - [ ] Add clear recovery behavior for partial apt or network failures.
 - [ ] Test the instructions from a clean Ubuntu 26.04 Raspberry Pi image.
 
 Exit criterion: a clean Pi can install ROS and pass `check-host` by following only
 `ubuntu_tank/README.md` and `deploy.sh`.
+Status: In-progress. Idempotent commands (`check-host`, `prepare-host`, `verify-lock`, `verify-closure`, `install-ros`, `install-deps`) are implemented in `ubuntu_tank/deploy.sh`, `scripts/check_host.sh`, and `scripts/install_ros2.sh`. `versions.lock` locks 26 direct packages with exact versions, architectures, and SHA-256 hashes, alongside the official pinned `ros2-apt-source` package and four upstream rosdep snapshot sources (`index_v4`, `base`, `python`, `ruby`). It is explicitly marked `closure_status: direct-only`; `install-ros` and `install-deps` refuse live execution before mutation until the complete clean-target ARM64 apt transaction is captured, reviewed, and locked. Automated test gates enforce preflight, mutual exclusion, reboot, host-baseline, candidate-closure, and dry-run behavior. Physical closure capture, installation, reboot, and acceptance on a clean target Pi 5 remain pending.
 
 ### Milestone 3 — Lyrical port and dependency closure
 
-- [ ] Complete `package.xml` metadata for every retained package.
-- [ ] Remove `MACHINE_TYPE` environment dependencies from both controller nodes.
-- [ ] Parameterize serial device, baud, geometry, and correction settings.
-- [ ] Remove hardcoded `/home/ubuntu/software` paths.
-- [ ] Make bridge serial shutdown and zeroing signal-safe.
-- [ ] Add an independent monotonic bridge freshness watchdog and guard/bridge
+- [x] Complete `package.xml` metadata for every retained package.
+- [x] Remove `MACHINE_TYPE` environment dependencies from both controller nodes.
+- [x] Parameterize serial device, baud, geometry, and correction settings.
+- [x] Remove hardcoded `/home/ubuntu/software` paths.
+- [x] Make bridge serial shutdown and zeroing signal-safe.
+- [x] Add an independent monotonic bridge freshness watchdog and guard/bridge
   health heartbeats for service supervision.
-- [ ] Make the supervisor track both child deadlines independently and ensure
+- [x] Make the supervisor track both child deadlines independently and ensure
   only it can send systemd watchdog notifications.
 - [ ] Build from a clean workspace with rosdep on Ubuntu 26.04 ARM64.
 - [ ] Test every installed console-script import on ROS 2 Lyrical.
 
 Exit criterion: clean rosdep, colcon build, package import, and installed-launch
 parse tests pass without legacy environment variables or paths.
+Status: In-progress. All 6 packages have complete `package.xml` and `setup.py` metadata, synchronized dependencies, maintainers (`dev@mentorpi.local`), versions (1.0.0), and Apache-2.0 licenses. Legacy `MACHINE_TYPE` and hardcoded `/home/ubuntu/software` paths are completely removed from sources, and workspace build fails closed if `MACHINE_TYPE` is present in the environment. Serial bridge SDK supports 50 ms read polling, a 100 ms write timeout, a fatal 500 ms receive-silence deadline, mock mode, signal-safe closing, and repeated zeroing on failure. Bridge node features an independent monotonic freshness watchdog (250 ms) emitting repeated 4-motor zeros on command loss, fatal bridge fault propagation on serial read/write error or silence (suppressing supervisor heartbeats and stopping the graph), non-ROS supervisor heartbeat emission via pipe FD and socket datagrams, dedicated 1 Hz battery telemetry polling in controller-only mode, and strict non-motor topic restriction. Motion controller parameters (geometry, applied correction factors, topics) are fully configurable, routing motor commands to `/ubuntu_tank_safety/motor_input`, and odom command integration is documented. Launch file declares parameters cleanly. Workspace build script validates and constrains `--clean` to workspace-owned build directories, and candidate solver manifest generation extracts complete downloaded package sets and requires independently determined architecture and repository fields. Hardware-free test suite passes 100% across all milestones (`./deploy.sh test`). Target physical clean Ubuntu 26.04 ARM64 rosdep/colcon compilation, confirmation of the STM32 telemetry cadence against the 500 ms silence deadline, and installed console-script testing remain pending physical deployment.
 
 ### Milestone 4 — Guarded bringup and safe teleop
 

@@ -20,6 +20,7 @@ Host & ROS Setup (Milestone 2):
   check-host                     Read-only verification of OS, architecture, EEPROM, and devices
   prepare-host                   Upgrade base Ubuntu packages and configure locales
   verify-lock                    Validate dependency lock integrity against versions.lock
+  verify-closure                 Validate candidate packages and solver closure against versions.lock
   install-ros                    Install pinned ROS 2 Lyrical packages and build tools
   install-deps                   Resolve and verify locked rosdep dependencies
 
@@ -63,7 +64,12 @@ cmd_test() {
   echo "--> Running Negative Boundary Regression Tests..."
   bash "${SCRIPT_DIR}/tests/test_negative_boundary.sh"
 
-  # 3. Python module unit tests
+  # 3. Dependency closure and lockfile verification gate
+  echo ""
+  echo "--> Running Dependency Closure & Lockfile Gate..."
+  bash "${SCRIPT_DIR}/tests/test_dependency_closure.sh"
+
+  # 4. Python module unit tests
   echo ""
   echo "--> Running ubuntu_tank_safety unit tests..."
   PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_safety" python3 -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_safety/test" -p "test_*.py" -v
@@ -77,8 +83,16 @@ cmd_test() {
   PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_teleop" python3 -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_teleop/test" -p "test_*.py" -v
 
   echo ""
+  echo "--> Running Milestone 2 installation workflow unit tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_install_workflow.py" -v
+
+  echo ""
+  echo "--> Running Milestone 3 Lyrical port and dependency closure unit tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1 tests PASSED successfully!"
+  echo "All Milestone 1, 2, & 3 tests PASSED successfully!"
   echo "============================================================"
 }
 
@@ -86,7 +100,7 @@ cmd_stub() {
   local cmd="$1"
   local milestone="$2"
   echo "Command '${cmd}' is planned for ${milestone} according to MENTORPI_FRESH_CONTROLLER_DESIGN.md." >&2
-  echo "Milestone 1 (Repository scaffold & provenance) is current." >&2
+  echo "Milestone 2 (Target-Pi Ubuntu and ROS installation workflow) is current." >&2
   exit 1
 }
 
@@ -100,11 +114,26 @@ case "${COMMAND}" in
   test)
     cmd_test "$@"
     ;;
-  check-host|prepare-host|verify-lock|install-ros|install-deps)
-    cmd_stub "${COMMAND}" "Milestone 2 (Ubuntu and ROS installation workflow)"
+  check-host)
+    "${SCRIPT_DIR}/scripts/check_host.sh" "$@"
+    ;;
+  prepare-host)
+    "${SCRIPT_DIR}/scripts/install_ros2.sh" prepare-host "$@"
+    ;;
+  verify-lock)
+    "${SCRIPT_DIR}/scripts/install_ros2.sh" verify-lock "$@"
+    ;;
+  verify-closure)
+    "${SCRIPT_DIR}/scripts/install_ros2.sh" verify-closure "$@"
+    ;;
+  install-ros)
+    "${SCRIPT_DIR}/scripts/install_ros2.sh" install-ros "$@"
+    ;;
+  install-deps)
+    "${SCRIPT_DIR}/scripts/install_ros2.sh" install-deps "$@"
     ;;
   build)
-    cmd_stub "${COMMAND}" "Milestone 3 (Lyrical port and dependency closure)"
+    "${SCRIPT_DIR}/scripts/build_workspace.sh" "$@"
     ;;
   arm|disarm)
     cmd_stub "${COMMAND}" "Milestone 4 (Guarded bringup and safe teleop)"
