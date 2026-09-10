@@ -251,6 +251,23 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
     - In-flight write and RX-fault shutdown serialization: Unified command admission, fatal error checks, motor writes, freshness updates, and signal-safe shutdown zeroing/close under reentrant locks (`RosRobotController._motor_lock` and `Board._write_lock`). Nonzero motor writes cannot interleave after stop zeros or port closure, and command timestamps cannot advance once fatal fault or shutdown is latched. Removed trailing whitespace at `ros_robot_controller_sdk.py:403`.
   - Status accuracy: Accurately reflected in `MENTORPI_FRESH_CONTROLLER_DESIGN.md` and `README.md` that Milestone 3 porting, watchdogs, fatal error handling, and hardware-free test suites are complete (53/53 unit tests in `test_milestone3_port.py`), while the complete target apt lock, clean Ubuntu 26.04 ARM64 rosdep/colcon compilation, real STM32 telemetry-cadence check, and installed-script target tests remain in progress pending physical target work.
   - Validation: Automated test suite `./ubuntu_tank/deploy.sh test` passed 100% (130 Python tests: 11 safety, 22 supervisor, 8 teleop, 36 install workflow, 53 porting/remediation), plus the source, negative-boundary, and dependency-closure shell gates.
+- On 2026-09-09, Milestone 2 and Milestone 3 were deployed and verified natively on clean Ubuntu 26.04 ARM64 Raspberry Pi 5 (`tankubuntu`):
+  - Milestone 2 acceptance:
+    - Target host preflight: Passed initial `check-host` on clean Pi 5 with 0 errors and 0 warnings.
+    - Host preparation & baseline: Ran `sudo ./deploy.sh prepare-host` to record baseline, upgrade system packages, enable universe, and produce accepted post-reboot baseline (`/var/opt/ubuntu_tank/deployment/host-baseline.txt`).
+    - Transitive dependency closure capture: Captured authentic 424-package transitive dependency closure (168 MB) via clean ARM64 APT solver into `/var/cache/apt/ubuntu_tank_capture`.
+    - Complete dependency lock: Updated `ubuntu_tank/versions.lock` with `closure_status: complete`, locking all 424 packages with exact versions, architectures (`arm64`/`all`), repositories (`ros2`/`ubuntu-resolute`), and SHA-256 hashes.
+    - Pinned rosdep resolution: Pinned `rosdep update --rosdistro lyrical` to local snapshot sources.
+    - Live ROS & dependencies installation: Executed `sudo ./deploy.sh install-ros` and `sudo ./deploy.sh install-deps` with `--no-download` from verified local cache; verified dpkg package presence and workspace closure with authentic rosdep (exit code 0).
+    - Host verification: Reran `./deploy.sh check-host` on `tankubuntu`: PASSED with 0 errors and 0 warnings.
+  - Milestone 3 acceptance:
+    - Native Colcon compilation: Executed `./deploy.sh build --clean` on `tankubuntu`; all 6 workspace packages (`controller`, `ros_robot_controller`, `ros_robot_controller_msgs`, `ubuntu_tank_safety`, `ubuntu_tank_supervisor`, `ubuntu_tank_teleop`) built successfully.
+    - ROS 2 Lyrical API remediation: Fixed removed `geometry_msgs.msg.Pose2D` in `odom_publisher_node.py` and `cp.py` with guarded imports.
+    - Installed console-script imports: Tested all 5 console-script entry point callables (`ubuntu_tank_safety.motor_guard_node:main`, `ubuntu_tank_supervisor.supervisor_node:main`, `ubuntu_tank_teleop.teleop_key_node:main`, `controller.odom_publisher_node:main`, `ros_robot_controller.ros_robot_controller_node:main`) on authentic ROS 2 Lyrical libraries on `tankubuntu`; all loaded and verified successfully.
+    - Installed launch parse test: Verified `ros2 launch ros_robot_controller ros_robot_controller.launch.py --print` parses and executes cleanly on `tankubuntu`.
+    - Native test suite: Ran `./deploy.sh test` directly on `tankubuntu`; passed all 53 unit/integration tests and source/dependency shell gates.
+    - STM32 RRC hardware verification: Installed udev rule template `host/99-mentorpi-rrc.rules` and created dedicated group `mentorpi-rrc`; verified symlink `/dev/rrc -> ttyACM0` with restricted permissions. Verified live serial communication with STM32 controller: confirmed streaming telemetry cadence (53 Hz IMU, 1 Hz battery at 12.23V).
+  - Status: Milestone 2 and Milestone 3 are 100% completed and accepted on physical hardware. Milestone 4 (guarded bringup and safe teleop) is next.
 
 ## Commit and review conventions
 

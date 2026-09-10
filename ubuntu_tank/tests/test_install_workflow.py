@@ -220,24 +220,17 @@ class TestVerifyLock(unittest.TestCase):
     """Tests for install_ros2.sh verify-lock."""
 
     def test_authoritative_lock_passes(self):
-        """The committed direct-only lock must pass structural verification."""
+        """The committed lock must pass structural verification."""
         res = subprocess.run([INSTALL_ROS2_BIN, "verify-lock"], capture_output=True, text=True)
         self.assertEqual(res.returncode, 0, f"verify-lock failed")
         self.assertIn("PASS: versions.lock verified successfully.", res.stdout)
-        self.assertIn("Transitive closure status: direct-only", res.stdout)
+        self.assertIn("Transitive closure status: complete", res.stdout)
 
     def test_live_install_requires_complete_transitive_lock(self):
-        """Live package mutation must reject the committed direct-only lock."""
-        script = f'source "{INSTALL_ROS2_BIN}"; require_complete_package_lock'
-        res = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-        self.assertNotEqual(res.returncode, 0)
-        self.assertIn("transitive closure is 'direct-only'", res.stderr)
-
-    def test_complete_transitive_lock_passes_live_gate(self):
-        """A reviewed complete lock state must pass the live mutation gate."""
+        """Live package mutation must reject a direct-only lock."""
         with open(LOCK_FILE, "r", encoding="utf-8") as source:
             lock_text = source.read().replace(
-                "closure_status: direct-only", "closure_status: complete", 1
+                "closure_status: complete", "closure_status: direct-only", 1
             )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".lock", delete=False) as tmp:
             tmp.write(lock_text)
@@ -246,9 +239,16 @@ class TestVerifyLock(unittest.TestCase):
         try:
             script = f'LOCK_FILE="{tmp_path}"; source "{INSTALL_ROS2_BIN}"; require_complete_package_lock'
             res = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("transitive closure is 'direct-only'", res.stderr)
         finally:
             os.remove(tmp_path)
+
+    def test_complete_transitive_lock_passes_live_gate(self):
+        """A reviewed complete lock state must pass the live mutation gate."""
+        script = f'source "{INSTALL_ROS2_BIN}"; require_complete_package_lock'
+        res = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr)
 
     def test_reject_tampered_missing_format_version(self):
         """Tampered lockfile missing format_version must fail."""

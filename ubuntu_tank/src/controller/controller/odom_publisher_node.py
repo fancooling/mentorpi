@@ -18,7 +18,11 @@ from std_srvs.srv import Trigger
 from nav_msgs.msg import Odometry
 from controller import ackermann, mecanum
 from ros_robot_controller_msgs.msg import MotorsState, SetPWMServoState, PWMServoState
-from geometry_msgs.msg import Pose2D, Pose, Twist, PoseWithCovarianceStamped, TransformStamped
+from geometry_msgs.msg import Pose, Twist, PoseWithCovarianceStamped, TransformStamped
+try:
+    from geometry_msgs.msg import Pose2D
+except ImportError:
+    Pose2D = None
 
 CONTROLLER_ONLY_CMD_TOPIC = '/controller/cmd_vel'
 GUARD_INPUT_TOPIC = '/ubuntu_tank_safety/motor_input'
@@ -179,7 +183,8 @@ class Controller(Node):
             self.motor_pub = self.create_publisher(MotorsState, 'ros_robot_controller/set_motor', 1)
             self.servo_state_pub = self.create_publisher(SetPWMServoState, 'ros_robot_controller/pwm_servo/set_state', 10)
             self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'set_pose', 1)
-            self.create_subscription(Pose2D, 'set_odom', self.set_odom, 1)
+            if Pose2D is not None:
+                self.create_subscription(Pose2D, 'set_odom', self.set_odom, 1)
             self.create_subscription(Twist, 'controller/cmd_vel', self.cmd_vel_callback, 1)
             self.create_subscription(Twist, '/app/cmd_vel', self.acker_cmd_vel_callback, 1)
             self.create_subscription(Twist, 'cmd_vel', self.app_cmd_vel_callback, 1)

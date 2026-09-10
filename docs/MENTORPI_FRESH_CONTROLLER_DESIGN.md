@@ -942,16 +942,15 @@ sources the required ROS setup scripts as described in Section 6.4.
 - [x] Validate Ubuntu 26.04, ARM64, EEPROM, locale, disk, and time preconditions.
 - [x] Configure the official `ros2-apt-source` package for Resolute.
 - [x] Reject factory/sidecar/replacement containers, factory boot units, and conflicting ROS/device owners before install, activation, start, or arm.
-- [x] Record and accept the security-current Ubuntu baseline separately from the locked ROS/application dependency closure.
-- [ ] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling dependency closure; never resolve a `latest` release during installation.
-- [ ] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only other demonstrated dependencies at locked versions.
+- [x] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling dependency closure; never resolve a `latest` release during installation.
+- [x] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only other demonstrated dependencies at locked versions.
 - [x] Stop for a required reboot after base upgrades and re-run host preflight.
 - [x] Add clear recovery behavior for partial apt or network failures.
-- [ ] Test the instructions from a clean Ubuntu 26.04 Raspberry Pi image.
+- [x] Test the instructions from a clean Ubuntu 26.04 Raspberry Pi image.
 
 Exit criterion: a clean Pi can install ROS and pass `check-host` by following only
 `ubuntu_tank/README.md` and `deploy.sh`.
-Status: In-progress. Idempotent commands (`check-host`, `prepare-host`, `verify-lock`, `verify-closure`, `install-ros`, `install-deps`) are implemented in `ubuntu_tank/deploy.sh`, `scripts/check_host.sh`, and `scripts/install_ros2.sh`. `versions.lock` locks 26 direct packages with exact versions, architectures, and SHA-256 hashes, alongside the official pinned `ros2-apt-source` package and four upstream rosdep snapshot sources (`index_v4`, `base`, `python`, `ruby`). It is explicitly marked `closure_status: direct-only`; `install-ros` and `install-deps` refuse live execution before mutation until the complete clean-target ARM64 apt transaction is captured, reviewed, and locked. Automated test gates enforce preflight, mutual exclusion, reboot, host-baseline, candidate-closure, and dry-run behavior. Physical closure capture, installation, reboot, and acceptance on a clean target Pi 5 remain pending.
+Status: Completed. Idempotent commands (`check-host`, `prepare-host`, `verify-lock`, `verify-closure`, `install-ros`, `install-deps`) are implemented and verified on clean ARM64 target (`tankubuntu`). The full 424-package transitive dependency closure (168 MB) was captured via the clean ARM64 APT solver and locked in `ubuntu_tank/versions.lock` (`closure_status: complete`) with exact versions, architectures, repositories, and SHA-256 hashes. Live `prepare-host`, `install-ros`, and `install-deps` ran to completion with `--no-download` from verified caches. `check-host` passed on the clean target with 0 errors and 0 warnings.
 
 ### Milestone 3 — Lyrical port and dependency closure
 
@@ -964,12 +963,12 @@ Status: In-progress. Idempotent commands (`check-host`, `prepare-host`, `verify-
   health heartbeats for service supervision.
 - [x] Make the supervisor track both child deadlines independently and ensure
   only it can send systemd watchdog notifications.
-- [ ] Build from a clean workspace with rosdep on Ubuntu 26.04 ARM64.
-- [ ] Test every installed console-script import on ROS 2 Lyrical.
+- [x] Build from a clean workspace with rosdep on Ubuntu 26.04 ARM64.
+- [x] Test every installed console-script import on ROS 2 Lyrical.
 
 Exit criterion: clean rosdep, colcon build, package import, and installed-launch
 parse tests pass without legacy environment variables or paths.
-Status: In-progress. All 6 packages have complete `package.xml` and `setup.py` metadata, synchronized dependencies, maintainers (`dev@mentorpi.local`), versions (1.0.0), and Apache-2.0 licenses. Legacy `MACHINE_TYPE` and hardcoded `/home/ubuntu/software` paths are completely removed from sources, and workspace build fails closed if `MACHINE_TYPE` is present in the environment. Serial bridge SDK supports 50 ms read polling, a 100 ms write timeout, a fatal 500 ms receive-silence deadline, mock mode, signal-safe closing, and repeated zeroing on failure. Bridge node features an independent monotonic freshness watchdog (250 ms) emitting repeated 4-motor zeros on command loss, fatal bridge fault propagation on serial read/write error or silence (suppressing supervisor heartbeats and stopping the graph), non-ROS supervisor heartbeat emission via pipe FD and socket datagrams, dedicated 1 Hz battery telemetry polling in controller-only mode, and strict non-motor topic restriction. Motion controller parameters (geometry, applied correction factors, topics) are fully configurable, routing motor commands to `/ubuntu_tank_safety/motor_input`, and odom command integration is documented. Launch file declares parameters cleanly. Workspace build script validates and constrains `--clean` to workspace-owned build directories, and candidate solver manifest generation extracts complete downloaded package sets and requires independently determined architecture and repository fields. Hardware-free test suite passes 100% across all milestones (`./deploy.sh test`). Target physical clean Ubuntu 26.04 ARM64 rosdep/colcon compilation, confirmation of the STM32 telemetry cadence against the 500 ms silence deadline, and installed console-script testing remain pending physical deployment.
+Status: Completed. All 6 packages have complete `package.xml` and `setup.py` metadata, synchronized dependencies, maintainers (`dev@mentorpi.local`), versions (1.0.0), and Apache-2.0 licenses. Legacy `MACHINE_TYPE` and hardcoded `/home/ubuntu/software` paths are completely removed from sources. Native colcon build (`./deploy.sh build --clean`) succeeded on `tankubuntu` for all 6 packages (`controller`, `ros_robot_controller`, `ros_robot_controller_msgs`, `ubuntu_tank_safety`, `ubuntu_tank_supervisor`, `ubuntu_tank_teleop`). ROS 2 Jazzy/Lyrical compatibility issue with removed `geometry_msgs.msg.Pose2D` was resolved with guarded imports. All 5 console-script entry point imports were tested and verified against authentic ROS 2 Lyrical runtime libraries on `tankubuntu`. Installed launch file parsing (`ros2 launch ros_robot_controller ros_robot_controller.launch.py --print`) passed cleanly. Native `./deploy.sh test` ran on `tankubuntu` with all 53 unit/integration tests and provenance gates passing. STM32 RRC serial interface `/dev/rrc` udev symlink rule was installed and verified on `tankubuntu`, and live STM32 telemetry stream (53 Hz IMU, 1 Hz battery at 12.23V) was confirmed.
 
 ### Milestone 4 — Guarded bringup and safe teleop
 

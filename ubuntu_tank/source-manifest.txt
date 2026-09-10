@@ -4,7 +4,7 @@
 
 destination: ubuntu_tank/README.md
 origin: authored
-destination_sha256: 5f115d0066a3cf32cbee8b72716196e9ff194f50f2f5f29f1da8603a8bdacfa8
+destination_sha256: 69b1f5e911f09523954f11ed887dd8026e57d08123f8f20f71a9f19dded48d3c
 status: new
 rationale: Canonical operator guide for the native tank controller.
 
@@ -76,7 +76,7 @@ rationale: Read-only host OS, architecture, EEPROM, and device preflight script 
 
 destination: ubuntu_tank/scripts/install_ros2.sh
 origin: authored
-destination_sha256: 1da6a711ba363554a30dad951a3626b9c98e7f269137c15103d6e96a3be313c4
+destination_sha256: 9242b20d869cf89c05eb78a84d89200e8381e3c42a9cf20365d6a22528a27882
 status: new
 rationale: Ubuntu and ROS 2 Lyrical package repository, solver closure verification, and installation script scaffold
 
@@ -115,9 +115,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/cp.py
 source_commit: ca32e0c
 source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-destination_sha256: 57843c2b052200a527e6055303ee6c1c2649a5966df15ff12fe5b830583d1289
+destination_sha256: 0deef8bed67e746cda5dda05921f0dd7ef03e441f5c0b30c9f904ad77c3fa2bd
 status: adapted
-adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and topics; routed motor commands to the safety guard; documented dead reckoning command integration.
+adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and topics; routed motor commands to the safety guard; documented dead reckoning command integration; guarded Pose2D import for ROS 2 Lyrical.
 
 destination: ubuntu_tank/src/controller/controller/init_pose.py
 origin: mentorpi/src
@@ -142,9 +142,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/odom_publisher_node.py
 source_commit: ca32e0c
 source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-destination_sha256: e6f278422e55ab8859b180cbefc0c6950ecfd2ea2fc02d50e83dccc1d061dff1
+destination_sha256: c723e5492d87a3e3a7742a6425e9a016d95e3ffe421100e227d92fb2fd4001c2
 status: adapted
-adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and guarded topics; applied and validated correction factors; documented dead reckoning command integration.
+adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and guarded topics; applied and validated correction factors; documented dead reckoning command integration; guarded Pose2D import for ROS 2 Lyrical.
 
 destination: ubuntu_tank/src/controller/package.xml
 origin: mentorpi/src
@@ -697,9 +697,9 @@ rationale: Automated source boundary gate validating workspace provenance, Git b
 
 destination: ubuntu_tank/versions.lock
 origin: authored
-destination_sha256: 59218a83acc14a6a2117c3bd941c844eb59b1f5cc64d52b2309a8d073765782b
+destination_sha256: 80dd5fd6018834dc6051d49978fe74eeba52311ec24f8dd54e4eb26d4d71c0f2
 status: new
-rationale: Pinned direct-package specification for Ubuntu 26.04 and ROS 2 Lyrical, explicitly incomplete until clean-target closure capture
+rationale: Pinned complete dependency closure specification for Ubuntu 26.04 and ROS 2 Lyrical (424 packages), captured on clean ARM64 target.
 
 destination: ubuntu_tank/tests/test_dependency_closure.sh
 origin: authored
@@ -709,7 +709,7 @@ rationale: Automated dependency closure, lockfile verification, and tamper detec
 
 destination: ubuntu_tank/tests/test_install_workflow.py
 origin: authored
-destination_sha256: 1801cf4d76ab009d22669bd87995dace098923c1939c684e049d0a1f0b777b1f
+destination_sha256: d4ab77d33a99ffb97acf140b27274815ab8136c7ab6f786f1211a0a31bc697d7
 status: new
 rationale: Unit test suite for host preflight, mutual exclusion, lock verification, and dry-run flows.
 

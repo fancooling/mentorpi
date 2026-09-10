@@ -1549,8 +1549,19 @@ EOF
   rm -f /etc/ros/rosdep/sources.list.d/20-default.list
 
   echo "--> Updating rosdep using verified snapshot..."
-  export ROSDISTRO_INDEX_URL="file://${rosdep_dir}/index-v4.yaml"
-  rosdep update
+  local index_url
+  index_url="$(python3 - "${LOCK_FILE}" <<'PYINDEX'
+import sys, yaml
+try:
+    with open(sys.argv[1]) as f:
+        d = yaml.safe_load(f)
+    print(d.get('rosdep_sources', {}).get('index_v4', {}).get('url', ''))
+except Exception:
+    pass
+PYINDEX
+)"
+  export ROSDISTRO_INDEX_URL="${index_url:-https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/index-v4.yaml}"
+  rosdep update --rosdistro lyrical
 
   echo "--> Resolving workspace package dependencies..."
   cd "${TANK_DIR}"

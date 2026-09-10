@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestone 1 completed; Milestones 2 and 3 implemented and hardware-free tested, with clean ARM64 target execution and acceptance still pending.
+Status: Milestones 1, 2, and 3 completed and verified natively on clean Ubuntu 26.04 ARM64 Raspberry Pi 5 (tankubuntu); Milestone 4 (guarded bringup and safe teleop) next.
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,7 +15,7 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the hardware-free repository scaffold, native host preparation and ROS installation workflow, Lyrical source port, serial-bridge watchdog/error handling, and workspace build command. A clean Ubuntu 26.04 ARM64 rosdep/colcon build and installed-artifact test have not run. Full guarded bringup, SROS2 enforcement, native deployment, and physical acceptance remain Milestones 4-6; `arm`, `disarm`, `package`, `install`, `activate`, `rollback`, `start`, `stop`, and `bench` remain stubs. In the target architecture, actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`.
+**Current Implementation Scope**: This delivery provides the hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, and workspace build command, all verified natively on a clean Ubuntu 26.04 ARM64 Raspberry Pi 5. Full guarded bringup, SROS2 enforcement, native deployment, and physical acceptance remain Milestones 4-6; `arm`, `disarm`, `package`, `install`, `activate`, `rollback`, `start`, `stop`, and `bench` remain stubs. In the target architecture, actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`.
 
 ### Development and target environments
 
@@ -70,7 +70,7 @@ Follow this exact sequence on a clean Raspberry Pi 5 with Ubuntu 26.04 LTS (Reso
    ```bash
    ./deploy.sh verify-lock
    ```
-   Pure data validation of the recorded package entries, cryptographic SHA256 hashes, architectures, and closure state in `versions.lock`. The committed lock is explicitly `direct-only`; live ROS/dependency installation fails closed until a clean ARM64 target transaction has been captured, reviewed, and marked `complete`.
+   Pure data validation of the recorded package entries, cryptographic SHA256 hashes, architectures, and closure state in `versions.lock`. The committed lock provides the complete 424-package transitive closure (`closure_status: complete`); live ROS/dependency installation and colcon build are verified on the clean ARM64 target.
 
 5. **Install ROS 2 Lyrical & Build Tools**:
    ```bash
