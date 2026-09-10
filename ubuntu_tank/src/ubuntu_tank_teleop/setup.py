@@ -16,7 +16,6 @@ setup(
     maintainer_email='dev@mentorpi.local',
     description='Safe keyboard teleoperation with renewable motion leases and fail-closed zeroing',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'teleop_key = ubuntu_tank_teleop.teleop_key_node:main',

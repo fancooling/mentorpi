@@ -6,6 +6,7 @@ fresh input and automatically drops to zero after key repeat ceases or input is 
 within the configured lease (or on pause, terminal loss, or cancellation).
 """
 
+import math
 from typing import Optional, Tuple
 
 
@@ -18,14 +19,27 @@ class TeleopLeaseManager:
         angular_vel: float = 0.5,
         lease_duration_sec: float = 0.150
     ):
-        if lease_duration_sec >= 0.250:
+        try:
+            linear_v = float(linear_vel)
+            angular_v = float(angular_vel)
+            lease_sec = float(lease_duration_sec)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Velocities and lease duration must be valid numbers: {e}")
+
+        if not (math.isfinite(lease_sec) and 0.0 < lease_sec < 0.250):
             raise ValueError(
-                f"Lease duration {lease_duration_sec}s must be strictly less than 250 ms motor guard timeout"
+                f"Lease duration {lease_duration_sec}s must be strictly positive and less than 250 ms motor guard timeout"
             )
 
-        self.linear_vel = float(linear_vel)
-        self.angular_vel = float(angular_vel)
-        self.lease_duration_sec = float(lease_duration_sec)
+        if not (math.isfinite(linear_v) and linear_v > 0.0):
+            raise ValueError(f"linear_vel {linear_vel} must be a positive finite number")
+
+        if not (math.isfinite(angular_v) and angular_v > 0.0):
+            raise ValueError(f"angular_vel {angular_vel} must be a positive finite number")
+
+        self.linear_vel = linear_v
+        self.angular_vel = angular_v
+        self.lease_duration_sec = lease_sec
 
         self._target_linear: float = 0.0
         self._target_angular: float = 0.0

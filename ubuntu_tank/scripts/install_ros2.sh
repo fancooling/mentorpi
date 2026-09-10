@@ -135,10 +135,23 @@ Environment Overrides (for test harness only):
 HELP
 }
 
+# Resolve reboot check file path (respecting mock overrides in test harness)
+resolve_reboot_check_file() {
+  local reboot_file="/run/reboot-required"
+  if [ -n "${UBUNTU_TANK_MOCK_REBOOT_FILE:-}" ]; then
+    reboot_file="${UBUNTU_TANK_MOCK_REBOOT_FILE}"
+  elif [ -n "${UBUNTU_TANK_MOCK_TARGET:-}" ]; then
+    reboot_file="/tmp/nonexistent_ubuntu_tank_reboot_required"
+  fi
+  echo "${reboot_file}"
+}
+
 # Check for required reboot
 check_reboot_pending() {
-  if [ -f /run/reboot-required ]; then
-    echo "FAIL: System reboot is required (/run/reboot-required exists)." >&2
+  local reboot_check_file
+  reboot_check_file="$(resolve_reboot_check_file)"
+  if [ -f "${reboot_check_file}" ]; then
+    echo "FAIL: System reboot is required (${reboot_check_file} exists)." >&2
     echo "Please reboot the host and rerun preflight before continuing." >&2
     return 2
   fi
@@ -864,12 +877,13 @@ PREPHELP
     echo "[DRY-RUN] Would run: sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8"
     echo "[DRY-RUN] Would run: sudo add-apt-repository -y universe"
     echo "[DRY-RUN] Would record post-upgrade host baseline in /var/opt/ubuntu_tank/deployment/host-baseline-post.txt."
-    local reboot_check_file="${UBUNTU_TANK_MOCK_REBOOT_FILE:-/run/reboot-required}"
+    local reboot_check_file
+    reboot_check_file="$(resolve_reboot_check_file)"
     if [ -f "${reboot_check_file}" ]; then
       echo "[DRY-RUN] Host reboot required (${reboot_check_file} exists)."
       return 2
     fi
-    echo "[DRY-RUN] Would check /run/reboot-required."
+    echo "[DRY-RUN] Would check ${reboot_check_file}."
     echo "PASS: Dry-run prepare-host completed successfully."
     return 0
   fi
@@ -905,7 +919,8 @@ PREPHELP
   echo "--> Enabling Ubuntu universe repository..."
   add-apt-repository -y universe
 
-  local reboot_check_file="${UBUNTU_TANK_MOCK_REBOOT_FILE:-/run/reboot-required}"
+  local reboot_check_file
+  reboot_check_file="$(resolve_reboot_check_file)"
   if [ -f "${reboot_check_file}" ]; then
     echo "--> Recording post-upgrade host baseline (pending reboot)..."
     record_host_baseline "${post_baseline}" "MentorPi Host Baseline - Post-Upgrade Snapshot (Reboot Required)" "true"
@@ -1167,7 +1182,8 @@ ROSHELP
   fi
 
   # 3. Check pending reboot
-  local reboot_check_file="${UBUNTU_TANK_MOCK_REBOOT_FILE:-/run/reboot-required}"
+  local reboot_check_file
+  reboot_check_file="$(resolve_reboot_check_file)"
   if [ -f "${reboot_check_file}" ]; then
     echo "FAIL: Host reboot required before installing ROS (${reboot_check_file} exists)." >&2
     return 2
@@ -1407,7 +1423,8 @@ DEPSHELP
   fi
 
   # Check pending reboot
-  local reboot_check_file="${UBUNTU_TANK_MOCK_REBOOT_FILE:-/run/reboot-required}"
+  local reboot_check_file
+  reboot_check_file="$(resolve_reboot_check_file)"
   if [ -f "${reboot_check_file}" ]; then
     echo "FAIL: Host reboot required before installing dependencies (${reboot_check_file} exists)." >&2
     return 2

@@ -5,7 +5,7 @@ Provides:
 - Input subscription: /ubuntu_tank_safety/motor_input (MotorsState)
 - Output publication: /ros_robot_controller/set_motor_guarded (MotorsState)
 - Arm/disarm service: /ubuntu_tank_safety/set_arm (std_srvs/srv/SetBool)
-- State topic: /ubuntu_tank_safety/armed (std_msgs/msg/Bool, transient-local)
+- State topics: /ubuntu_tank_safety/state, /ubuntu_tank_safety/armed (std_msgs/msg/Bool, transient-local)
 - Non-ROS monotonic heartbeat emission for process supervision
 """
 
@@ -70,7 +70,8 @@ class MotorGuardNode(Node):
             reliability=ReliabilityPolicy.RELIABLE
         )
 
-        self.state_pub = self.create_publisher(Bool, '/ubuntu_tank_safety/armed', state_qos)
+        self.armed_pub = self.create_publisher(Bool, '/ubuntu_tank_safety/armed', state_qos)
+        self.state_pub = self.create_publisher(Bool, '/ubuntu_tank_safety/state', state_qos)
         self.guarded_pub = self.create_publisher(MotorsState, '/ros_robot_controller/set_motor_guarded', 10)
 
         self.motor_sub = self.create_subscription(
@@ -100,6 +101,7 @@ class MotorGuardNode(Node):
     def _publish_state(self):
         msg = Bool()
         msg.data = self.guard.is_armed
+        self.armed_pub.publish(msg)
         self.state_pub.publish(msg)
 
     def _publish_motor_command(self, motor_states: List[Tuple[int, float]]):
@@ -168,8 +170,17 @@ class MotorGuardNode(Node):
                 pass
 
     def destroy_node(self):
-        self.get_logger().info("MotorGuard shutting down. Publishing repeated zero commands.")
-        self._publish_repeated_zero(count=5)
+        if getattr(self, '_is_destroyed', False):
+            return
+        self._is_destroyed = True
+        try:
+            self.get_logger().info("MotorGuard shutting down. Publishing repeated zero commands.")
+        except Exception:
+            pass
+        try:
+            self._publish_repeated_zero(count=5)
+        except Exception:
+            pass
         super().destroy_node()
 
 
@@ -178,9 +189,12 @@ def main(args=None):
     node = MotorGuardNode()
 
     def handle_sig(sig, frame):
-        node.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        if rclpy.ok():
+            rclpy.shutdown()
 
     signal.signal(signal.SIGINT, handle_sig)
     signal.signal(signal.SIGTERM, handle_sig)

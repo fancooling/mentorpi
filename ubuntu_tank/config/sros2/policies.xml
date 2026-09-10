@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policy version="0.2.0">
+  <enclaves>
+    <!-- Controller enclave: translates safe Twist into motor commands for guard -->
+    <enclave path="/ubuntu_tank/controller">
+      <profiles>
+        <profile ns="/" node="controller">
+          <topics publish="ALLOW">
+            <topic>/ubuntu_tank_safety/motor_input</topic>
+            <topic>/odom_raw</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/controller/cmd_vel</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services reply="ALLOW">
+            <service>/controller/describe_parameters</service>
+            <service>/controller/get_parameters</service>
+            <service>/controller/get_parameter_types</service>
+            <service>/controller/list_parameters</service>
+            <service>/controller/set_parameters</service>
+            <service>/controller/set_parameters_atomically</service>
+            <service>/controller/init_finish</service>
+          </services>
+        </profile>
+      </profiles>
+    </enclave>
+
+    <!-- Guard enclave: owns arming boundary, motor validation, and guarded command output -->
+    <enclave path="/ubuntu_tank/guard">
+      <profiles>
+        <profile ns="/" node="motor_guard">
+          <topics publish="ALLOW">
+            <topic>/ros_robot_controller/set_motor_guarded</topic>
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/motor_input</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services reply="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+            <service>/motor_guard/describe_parameters</service>
+            <service>/motor_guard/get_parameters</service>
+            <service>/motor_guard/get_parameter_types</service>
+            <service>/motor_guard/list_parameters</service>
+            <service>/motor_guard/set_parameters</service>
+            <service>/motor_guard/set_parameters_atomically</service>
+          </services>
+        </profile>
+      </profiles>
+    </enclave>
+
+    <!-- Bridge enclave: serial bridge to STM32, strictly consumer of guarded commands -->
+    <enclave path="/ubuntu_tank/bridge">
+      <profiles>
+        <profile ns="/" node="ros_robot_controller">
+          <topics publish="ALLOW">
+            <topic>/ros_robot_controller/battery</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ros_robot_controller/set_motor_guarded</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services reply="ALLOW">
+            <service>/ros_robot_controller/init_finish</service>
+            <service>/ros_robot_controller/describe_parameters</service>
+            <service>/ros_robot_controller/get_parameters</service>
+            <service>/ros_robot_controller/get_parameter_types</service>
+            <service>/ros_robot_controller/list_parameters</service>
+            <service>/ros_robot_controller/set_parameters</service>
+            <service>/ros_robot_controller/set_parameters_atomically</service>
+          </services>
+        </profile>
+      </profiles>
+    </enclave>
+
+    <!-- Operator enclave: teleop / operator controls with arming capability -->
+    <enclave path="/ubuntu_tank/operator">
+      <profiles>
+        <profile ns="/" node="teleop_key">
+          <topics publish="ALLOW">
+            <topic>/controller/cmd_vel</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services request="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+          <services reply="ALLOW">
+            <service>/teleop_key/describe_parameters</service>
+            <service>/teleop_key/get_parameters</service>
+            <service>/teleop_key/get_parameter_types</service>
+            <service>/teleop_key/list_parameters</service>
+            <service>/teleop_key/set_parameters</service>
+            <service>/teleop_key/set_parameters_atomically</service>
+            <service>/teleop_key/get_type_description</service>
+          </services>
+        </profile>
+        <profile ns="/" node="operator_client">
+          <topics publish="ALLOW">
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services request="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+        </profile>
+        <profile ns="/" node="*">
+          <services request="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+        </profile>
+      </profiles>
+    </enclave>
+
+    <!-- Status enclave: read-only telemetry and state reporting -->
+    <enclave path="/ubuntu_tank/status">
+      <profiles>
+        <profile ns="/" node="status_monitor">
+          <topics publish="ALLOW">
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
+            <topic>/odom_raw</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+        </profile>
+        <profile ns="/" node="status_client">
+          <topics publish="ALLOW">
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
+            <topic>/odom_raw</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+        </profile>
+      </profiles>
+    </enclave>
+  </enclaves>
+</policy>

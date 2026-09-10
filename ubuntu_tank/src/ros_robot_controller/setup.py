@@ -19,7 +19,6 @@ setup(
     maintainer_email='dev@mentorpi.local',
     description='MentorPi STM32 hardware bridge node adapted for native Ubuntu 26.04',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'ros_robot_controller = ros_robot_controller.ros_robot_controller_node:main',

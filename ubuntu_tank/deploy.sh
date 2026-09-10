@@ -40,6 +40,7 @@ Target Operations (Milestone 5):
 Hardware Actuation (Milestones 4 & 6):
   arm --ack-tracks-raised        Explicitly arm motor guard (requires physical safety acknowledgment)
   disarm                         Immediately disarm and send repeated zero commands
+  teleop                         Run interactive keyboard teleoperation (W/A/S/D)
   bench --ack-tracks-raised      Run bounded bench test of forward/reverse/left/right motion
 
 Safety Rules:
@@ -91,9 +92,130 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
 
   echo ""
+  echo "--> Running Milestone 4 Guarded bringup and safe teleop tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone4_bringup.py" -v
+
+  echo ""
+  echo "--> Running Milestone 4 Hardware-Free RMW & Runtime Integration tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_rmw_integration.py" -v
+
+  echo ""
+  echo "--> Verifying SROS2 Security Policies..."
+  python3 "${SCRIPT_DIR}/scripts/sros2_policy.py"
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, & 3 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, & 4 tests PASSED successfully!"
   echo "============================================================"
+}
+
+cmd_arm() {
+  local ack=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ack-tracks-raised)
+        ack="true"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [ "${ack}" != "true" ]; then
+    echo "ERROR: Arming requires physical safety acknowledgment: --ack-tracks-raised" >&2
+    echo "Tracks must be physically raised clear of the surface before motor commands are enabled." >&2
+    exit 1
+  fi
+
+  # Mutual exclusion: ensure factory or replacement containers are not running
+  if command -v docker >/dev/null 2>&1; then
+    local docker_out
+    if ! docker_out="$(docker ps -a --format '{{.Names}}' 2>&1)"; then
+      echo "ERROR: Docker command is available but container inventory could not be enumerated: ${docker_out}" >&2
+      echo "Cannot verify mutual exclusion with containerized stacks. Failing closed." >&2
+      exit 1
+    fi
+    if echo "${docker_out}" | grep -E -qw "MentorPi|MentorPiFan|mentorpi|runtime-core"; then
+      echo "ERROR: Conflicting container (MentorPi, MentorPiFan, mentorpi, or runtime-core) is running." >&2
+      echo "Native Ubuntu controller must never run beside containerized stacks." >&2
+      exit 1
+    fi
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    for srv in mentorpi.service mentorpi-fan.service; do
+      if systemctl is-active --quiet "${srv}" 2>/dev/null; then
+        echo "ERROR: Conflicting host service '${srv}' is running." >&2
+        echo "Native Ubuntu controller must never run beside factory services." >&2
+        exit 1
+      fi
+    done
+  fi
+
+  if ! command -v ros2 >/dev/null 2>&1; then
+    echo "ERROR: ros2 CLI is not found in PATH. Ensure ROS 2 environment is sourced." >&2
+    exit 1
+  fi
+
+  echo "--> Calling /ubuntu_tank_safety/set_arm with data=True..."
+  env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
+      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ros2 run ubuntu_tank_bringup operator_client --arm
+}
+
+cmd_disarm() {
+  if ! command -v ros2 >/dev/null 2>&1; then
+    echo "ERROR: ros2 CLI is not found in PATH. Ensure ROS 2 environment is sourced." >&2
+    exit 1
+  fi
+
+  echo "--> Calling /ubuntu_tank_safety/set_arm with data=False..."
+  env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
+      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ros2 run ubuntu_tank_bringup operator_client --disarm
+}
+
+cmd_teleop() {
+  if ! command -v ros2 >/dev/null 2>&1; then
+    echo "ERROR: ros2 CLI is not found in PATH. Ensure ROS 2 environment is sourced." >&2
+    exit 1
+  fi
+
+  echo "--> Launching interactive keyboard teleoperation..."
+  exec env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
+      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ros2 run ubuntu_tank_teleop teleop_key "$@"
+}
+
+cmd_status() {
+  echo "============================================================"
+  echo "MentorPi Tank Controller Status"
+  echo "============================================================"
+  if command -v ros2 >/dev/null 2>&1; then
+    echo "--> Querying guard state and telemetry..."
+    if ! env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
+      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/status}" \
+      ros2 run ubuntu_tank_bringup status_client; then
+      echo "    Guard state topic unavailable or not publishing."
+      return 1
+    fi
+  else
+    echo "ros2 CLI not available in current environment."
+  fi
 }
 
 cmd_stub() {
@@ -135,10 +257,19 @@ case "${COMMAND}" in
   build)
     "${SCRIPT_DIR}/scripts/build_workspace.sh" "$@"
     ;;
-  arm|disarm)
-    cmd_stub "${COMMAND}" "Milestone 4 (Guarded bringup and safe teleop)"
+  arm)
+    cmd_arm "$@"
     ;;
-  package|install|activate|rollback|start|stop|status|logs)
+  disarm)
+    cmd_disarm "$@"
+    ;;
+  teleop)
+    cmd_teleop "$@"
+    ;;
+  status)
+    cmd_status "$@"
+    ;;
+  package|install|activate|rollback|start|stop|logs)
     cmd_stub "${COMMAND}" "Milestone 5 (Native host deployment and operations)"
     ;;
   bench)

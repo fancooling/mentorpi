@@ -333,11 +333,15 @@ class RosRobotController(Node):
             data = []
             for i in msg.data:
                 data.extend([[i.id, i.rps]])
+            is_moving = any(abs(float(getattr(i, 'rps', 0.0))) > 1e-4 for i in msg.data)
             try:
                 self.board.set_motor_speed(data)
-                # Advance freshness timestamp ONLY after successful serial write and when not in fatal/shutdown state
+                # Advance freshness timestamp ONLY for active motion after successful write
                 if not self._fatal_fault and not self._shutting_down:
-                    self._last_motor_cmd_time = time.monotonic()
+                    if is_moving:
+                        self._last_motor_cmd_time = time.monotonic()
+                    else:
+                        self._last_motor_cmd_time = None  # Stationary; no active motion lease to expire
             except Exception as e:
                 self._enter_fatal_fault(f"Serial write error in bridge: {e}")
 

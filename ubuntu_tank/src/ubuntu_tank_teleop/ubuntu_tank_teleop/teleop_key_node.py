@@ -45,7 +45,7 @@ class TeleopKeyNode(Node):
     """ROS 2 Node publishing lease-bounded Twist commands from keyboard input."""
 
     def __init__(self):
-        super().__init__('teleop_key')
+        super().__init__('teleop_key', start_parameter_services=False)
 
         self.declare_parameter('linear_vel', 0.2)
         self.declare_parameter('angular_vel', 0.5)
@@ -55,6 +55,9 @@ class TeleopKeyNode(Node):
         lin_vel = self.get_parameter('linear_vel').value
         ang_vel = self.get_parameter('angular_vel').value
         lease_sec = self.get_parameter('lease_duration_sec').value
+        rate_hz = self.get_parameter('publish_rate_hz').value
+
+        self.publish_rate_hz = float(rate_hz) if rate_hz is not None else 20.0
 
         self.lease_mgr = TeleopLeaseManager(
             linear_vel=lin_vel,
@@ -79,9 +82,29 @@ def main(args=None):
     rclpy.init(args=args)
     node = TeleopKeyNode()
 
+    input_file = None
+    input_fd = None
+    opened_tty = False
     old_settings = None
-    if os.name != 'nt' and sys.stdin.isatty():
-        old_settings = termios.tcgetattr(sys.stdin)
+
+    if os.name != 'nt':
+        if sys.stdin.isatty():
+            input_file = sys.stdin
+            input_fd = sys.stdin.fileno()
+        else:
+            try:
+                input_file = open('/dev/tty', 'r')
+                input_fd = input_file.fileno()
+                opened_tty = True
+            except (OSError, IOError):
+                input_file = None
+                input_fd = None
+
+        if input_fd is not None:
+            try:
+                old_settings = termios.tcgetattr(input_fd)
+            except Exception:
+                old_settings = None
 
     running = True
 
@@ -93,23 +116,30 @@ def main(args=None):
     signal.signal(signal.SIGTERM, signal_handler)
 
     print(BANNER)
+    if input_fd is None:
+        sys.stderr.write(
+            "Note: Interactive terminal (TTY) not detected on stdin or /dev/tty.\n"
+            "Keyboard drive commands require an interactive terminal (e.g. './deploy.sh teleop').\n"
+        )
 
     try:
-        if old_settings is not None:
-            tty.setraw(sys.stdin.fileno())
+        if old_settings is not None and input_fd is not None:
+            tty.setraw(input_fd)
 
-        loop_period = 0.050  # 20 Hz
+        loop_period = 1.0 / max(node.publish_rate_hz, 1.0)
         while running and rclpy.ok():
             now_mono = time.monotonic()
 
-            # Poll stdin if interactive tty
-            if old_settings is not None:
-                rlist, _, _ = select.select([sys.stdin], [], [], loop_period)
+            # Poll input descriptor if interactive tty is available
+            if old_settings is not None and input_fd is not None:
+                rlist, _, _ = select.select([input_fd], [], [], loop_period)
                 if rlist:
-                    char = sys.stdin.read(1)
+                    char = os.read(input_fd, 1).decode('utf-8', errors='ignore')
                     if char == '\x03':  # Ctrl-C
                         break
                     node.lease_mgr.process_key(char, now_mono)
+            else:
+                time.sleep(loop_period)
 
             # Check active lease and publish current velocity
             lin_x, ang_z = node.lease_mgr.get_velocities(time.monotonic())
@@ -122,8 +152,16 @@ def main(args=None):
         sys.stderr.write(f"\nTeleop error: {exc}\n")
     finally:
         node.publish_zero(count=3)
-        if old_settings is not None:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        if old_settings is not None and input_fd is not None:
+            try:
+                termios.tcsetattr(input_fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
+        if opened_tty and input_file is not None:
+            try:
+                input_file.close()
+            except Exception:
+                pass
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

@@ -972,25 +972,26 @@ Status: Completed. All 6 packages have complete `package.xml` and `setup.py` met
 
 ### Milestone 4 — Guarded bringup and safe teleop
 
-- [ ] Create `ubuntu_tank_bringup` with the guarded topic graph.
-- [ ] Configure disarmed startup, 250 ms freshness, and conservative RPS limits.
-- [ ] Shut down the graph when the guard or hardware bridge exits.
-- [ ] Disable every non-motor bridge command endpoint in controller-only mode.
-- [ ] Remove the controller's legacy `/app/cmd_vel`, `/cmd_vel`, servo, and
+- [x] Create `ubuntu_tank_bringup` with the guarded topic graph.
+- [x] Configure disarmed startup, 250 ms freshness, and conservative RPS limits.
+- [x] Shut down the graph when the guard or hardware bridge exits.
+- [x] Disable every non-motor bridge command endpoint in controller-only mode.
+- [x] Remove the controller's legacy `/app/cmd_vel`, `/cmd_vel`, servo, and
   pose-reset command surfaces in controller-only mode.
-- [ ] Add a read-only transient-local guard-state topic for status reporting.
-- [ ] Configure localhost-only DDS and distinct deny-by-default SROS2 enclaves
+- [x] Add a read-only transient-local guard-state topic for status reporting.
+- [x] Configure localhost-only DDS and distinct deny-by-default SROS2 enclaves
   for controller, guard, bridge, operator controls, and read-only status.
-- [ ] Implement renewable keyboard leases and periodic fresh commands.
-- [ ] Add invalid-command, timeout, signal, crash, and topic-ownership tests.
-- [ ] Add wall-clock-jump, ROS-time-pause, executor-starvation, hung-process, and
+- [x] Implement renewable keyboard leases and periodic fresh commands.
+- [x] Add invalid-command, timeout, signal, crash, and topic-ownership tests.
+- [x] Add wall-clock-jump, ROS-time-pause, executor-starvation, hung-process, and
   one-child-healthy/one-child-hung heartbeat fault-injection tests.
-- [ ] Test that uncredentialed local/LAN participants and each credentialed
+- [x] Test that uncredentialed local/LAN participants and each credentialed
   non-owner enclave cannot arm, bypass the guard, or command forbidden topics.
-- [ ] Prove that no normal launch path bypasses the guard.
+- [x] Prove that no normal launch path bypasses the guard.
 
 Exit criterion: all hardware-free safety regressions pass and every tested exit
 path publishes repeated four-motor zero commands.
+Status: Completed for hardware-free development and integration testing. Package `ubuntu_tank_bringup` created with guarded topic pipeline (`/controller/cmd_vel` -> `controller/odom_publisher` -> `/ubuntu_tank_safety/motor_input` -> `ubuntu_tank_safety/motor_guard` -> `/ros_robot_controller/set_motor_guarded` -> `ros_robot_controller` -> `/dev/rrc`) and fail-closed `OnProcessExit` shutdown handlers. Motor guard starts disarmed by default with 250 ms freshness timeout and <= 2.0 RPS limits. Controller-only mode verified to strip all non-motor endpoints in both controller and bridge nodes. Transient-local guard state reporting added to `/ubuntu_tank_safety/state` and `/ubuntu_tank_safety/armed`. SROS2 deny-by-default governance and permissions implemented for 5 distinct enclaves (`/ubuntu_tank/controller`, `/ubuntu_tank/guard`, `/ubuntu_tank/bridge`, `/ubuntu_tank/operator`, `/ubuntu_tank/status`), including required middleware discovery topic (`ros_discovery_info`) and node infrastructure endpoints, verified by `sros2_policy.py` and official OMG XSD schemas. Safe keyboard teleoperation implemented with renewable 150 ms leases and fail-closed zeroing. Hardware-free integration test suite (`test_milestone4_bringup.py` and `test_rmw_integration.py`) exercises authentic OpenSSL signed keystore verification, foreign CA participant rejection, tampered signature rejection, virtual PTY serial bridge communication with STM32 framing/telemetry, active real-time scheduling / clock pauses (> 250 ms), and supervisor child process faults. Physical target-Pi acceptance with real motors and tracks raised remains scheduled for Milestone 6.
 
 ### Milestone 5 — Native host deployment and operations
 

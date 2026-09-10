@@ -73,6 +73,20 @@ class TestTeleopLease(unittest.TestCase):
         with self.assertRaises(ValueError):
             TeleopLeaseManager(lease_duration_sec=0.300)
 
+    def test_reject_non_positive_or_non_finite_lease_duration(self):
+        """Lease duration <= 0, NaN, or infinite must be rejected."""
+        for bad_val in [0.0, -0.150, float('nan'), float('inf'), float('-inf')]:
+            with self.assertRaises(ValueError):
+                TeleopLeaseManager(lease_duration_sec=bad_val)
+
+    def test_reject_invalid_velocities(self):
+        """Velocities <= 0, NaN, or infinite must be rejected."""
+        for bad_val in [0.0, -0.5, float('nan'), float('inf')]:
+            with self.assertRaises(ValueError):
+                TeleopLeaseManager(linear_vel=bad_val)
+            with self.assertRaises(ValueError):
+                TeleopLeaseManager(angular_vel=bad_val)
+
     def test_key_repeat_extends_lease(self):
         """Simulated key repeat (multiple 'w' inputs) extends deadline."""
         self.mgr.process_key('w', now_monotonic=10.0)

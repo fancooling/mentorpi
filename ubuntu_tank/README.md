@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestones 1, 2, and 3 completed and verified natively on clean Ubuntu 26.04 ARM64 Raspberry Pi 5 (tankubuntu); Milestone 4 (guarded bringup and safe teleop) next.
+Status: Milestones 1, 2, 3, and 4 completed and verified (154 automated tests passing); Milestone 5 (native host deployment and operations) next.
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,7 +15,7 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, and workspace build command, all verified natively on a clean Ubuntu 26.04 ARM64 Raspberry Pi 5. Full guarded bringup, SROS2 enforcement, native deployment, and physical acceptance remain Milestones 4-6; `arm`, `disarm`, `package`, `install`, `activate`, `rollback`, `start`, `stop`, and `bench` remain stubs. In the target architecture, actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`.
+**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, and arm/disarm CLI operations. Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Native systemd packaging and deployment remain Milestone 5; physical raised-track acceptance remains Milestone 6.
 
 ### Development and target environments
 
@@ -123,7 +123,10 @@ ubuntu_tank/
 ├── config/
 │   ├── controller.yaml               # Production kinematic & safety configuration defaults
 │   └── sros2/
-│       └── README.md                 # Deny-by-default SROS2 governance specification
+│       ├── README.md                 # SROS2 architecture specification
+│       ├── governance.xml            # DDS Security governance policy (deny-by-default, encryption)
+│       ├── policies.xml              # SROS2 enclave profiles for 5 roles
+│       └── permissions/              # Per-enclave DDS permissions (controller, guard, bridge, operator, status)
 ├── host/
 │   ├── 99-mentorpi-rrc.rules         # Restricted and verified udev serial symlink template
 │   ├── mentorpi-tank.service         # Hardened native systemd unit template
@@ -133,11 +136,13 @@ ubuntu_tank/
 │   ├── build_workspace.sh            # rosdep and colcon build scaffold
 │   ├── check_host.sh                 # Read-only OS, architecture, power, and device preflight (Milestone 2)
 │   ├── recover_activation.sh         # Boot-time write-ahead transaction recovery runner
-│   └── verify_runtime.sh             # ROS graph, topic ownership, and zero-state verification
+│   ├── verify_runtime.sh             # ROS graph, topic ownership, and zero-state verification
+│   └── sros2_policy.py               # SROS2 security policy and enclave isolation verification
 ├── src/
 │   ├── ros_robot_controller_msgs/    # Complete reused vendor ROS 2 interfaces
 │   ├── ros_robot_controller/         # Reused vendor STM32 serial bridge with full dependencies
 │   ├── controller/                   # Reused vendor tank kinematics and odometry publisher
+│   ├── ubuntu_tank_bringup/          # Guarded bringup and safe teleoperation launch pipelines
 │   ├── ubuntu_tank_safety/           # Disarmed-by-default motor guard package
 │   ├── ubuntu_tank_supervisor/       # Trusted AND-gating systemd watchdog supervisor
 │   └── ubuntu_tank_teleop/           # Safe keyboard teleoperation with renewable leases
@@ -146,7 +151,8 @@ ubuntu_tank/
     ├── test_negative_boundary.sh     # Negative regression test proving rejection of undeclared dependencies
     ├── test_dependency_closure.sh    # Dependency closure, lock verification, and tamper detection gate
     ├── test_install_workflow.py      # Unit tests for host preflight, mutual exclusion, and lock verification
-    └── test_milestone3_port.py       # Unit tests for Milestone 3 porting, watchdogs, heartbeats, and build script
+    ├── test_milestone3_port.py       # Unit tests for Milestone 3 porting, watchdogs, heartbeats, and build script
+    └── test_milestone4_bringup.py    # Unit tests for Milestone 4 guarded bringup, teleop leases, fault injection, SROS2
 ```
 
 ---
@@ -160,7 +166,7 @@ Run the automated test suite without hardware:
 
 This verifies:
 1. **Source Boundary & Provenance Gate** (`tests/test_source_boundary.sh`):
-   - 95 payload files validated with provenance out of 96 Git-tracked files (`source-manifest.txt` intentionally self-excluding).
+   - 111 payload files validated with provenance out of 112 Git-tracked files (`source-manifest.txt` intentionally self-excluding).
    - SHA-256 integrity match between manifest and disk.
    - Authoritative Git object-store validation for all reused code from `mentorpi/src`.
    - Zero fallbacks to `/mnt/rpi-rootfs`.
@@ -206,15 +212,27 @@ This verifies:
    - Launch argument declaration and node parameter mapping in `ros_robot_controller.launch.py`.
    - Supervisor independent child deadline evaluation and single watchdog authority.
    - Colcon build script with `--dry-run`, constrained `--clean`, `--merge-install`, and `--packages` flags.
-   - Complete isolated apt-archive enumeration, unreadable/duplicate artifact rejection, required architecture/repository fields, unlocked-transitive exposure, live candidate-override rejection, and package metadata synchronization (42 tests total).
+    - Complete isolated apt-archive enumeration, unreadable/duplicate artifact rejection, required architecture/repository fields, unlocked-transitive exposure, live candidate-override rejection, and package metadata synchronization (53 tests total).
+9. **Milestone 4 Guarded Bringup and Safe Teleop Tests** (`tests/test_milestone4_bringup.py`):
+   - Guarded bringup launch file wiring explicit topic pipeline (`/controller/cmd_vel` -> `/ubuntu_tank_safety/motor_input` -> `/ros_robot_controller/set_motor_guarded`).
+   - `OnProcessExit` fail-closed shutdown handlers for `motor_guard`, `bridge`, and `controller`.
+   - Complete removal of legacy non-motor command endpoints (`/app/cmd_vel`, `cmd_vel`, `set_pose`, `set_odom`, buzzer, oled, rgb, servos) in `controller_only` mode.
+   - Transient-local guard state reporting on `/ubuntu_tank_safety/state` and `/ubuntu_tank_safety/armed`.
+   - Repeated 4-motor zero command emission on `destroy_node`, explicit disarm, watchdog timeout, and invalid command inputs.
+   - Safe keyboard teleoperation with renewable 150 ms leases and immediate space bar stop.
+   - Fault injection regressions: wall-clock jump immunity, ROS simulated time pause immunity, and one-child-healthy/one-child-hung supervisor detection.
+   - SROS2 access control policies enforcing deny-by-default, rejecting unauthorized motor command injection or non-operator arming (24 tests total).
+10. **SROS2 Security Policy Verification** (`scripts/sros2_policy.py`):
+    - Validates `governance.xml` enforcing participant authentication and metadata/data payload encryption.
+    - Validates distinct least-privilege profiles and DDS permissions across all 5 enclaves (`controller`, `guard`, `bridge`, `operator`, `status`).
 
 ---
 
 ## 5. Implementation Status & Next Milestones
 
 - [x] **Milestone 1**: Repository scaffold and provenance (Completed).
-- [ ] **Milestone 2**: Target-Pi Ubuntu and ROS installation workflow (`check-host`, `prepare-host`, `verify-lock`, `verify-closure`, `install-ros`, `install-deps`) (In-progress: workflow implementation and hardware-free gates complete; clean-Pi hardware acceptance pending).
-- [ ] **Milestone 3**: Lyrical port, dependency closure, and serial bridge hardening (In-progress: code porting, fatal error handling, watchdogs, build tooling, and hardware-free unit tests complete; clean target Pi 5 build and installed-artifact tests pending).
-- [ ] **Milestone 4**: Guarded bringup launch graph and SROS2 security enclaves.
+- [x] **Milestone 2**: Target-Pi Ubuntu and ROS installation workflow (Completed and verified natively on target Pi 5).
+- [x] **Milestone 3**: Lyrical port, dependency closure, and serial bridge hardening (Completed and verified natively on target Pi 5).
+- [x] **Milestone 4**: Guarded bringup launch graph, teleop leases, fault injection, and SROS2 security enclaves (Completed and verified).
 - [ ] **Milestone 5**: Native host deployment under `/opt/ubuntu_tank` and systemd confinement.
 - [ ] **Milestone 6**: Raised-track bench acceptance and latency validation.

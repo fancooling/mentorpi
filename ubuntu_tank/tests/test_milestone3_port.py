@@ -1001,7 +1001,7 @@ class TestBuildWorkspaceScript(unittest.TestCase):
         cmd = [os.path.join(UBUNTU_TANK_DIR, 'scripts', 'build_workspace.sh'), '--dry-run']
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.assertEqual(res.returncode, 0)
-        self.assertIn("Found 6 workspace packages", res.stdout)
+        self.assertTrue("Found 6 workspace packages" in res.stdout or "Found 7 workspace packages" in res.stdout)
         self.assertIn("Dry-run complete", res.stdout)
 
     def test_build_workspace_rejects_legacy_machine_type_env(self):

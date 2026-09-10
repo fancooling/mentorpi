@@ -496,9 +496,15 @@ check_host() {
 
   # 11. Pending Reboot Check
   local reboot_req=false
-  if [ -f /run/reboot-required ]; then
+  local reboot_check_file="/run/reboot-required"
+  if [ -n "${UBUNTU_TANK_MOCK_REBOOT_FILE:-}" ]; then
+    reboot_check_file="${UBUNTU_TANK_MOCK_REBOOT_FILE}"
+  elif [ -n "${UBUNTU_TANK_MOCK_TARGET:-}" ]; then
+    reboot_check_file="/tmp/nonexistent_ubuntu_tank_reboot_required"
+  fi
+  if [ -f "${reboot_check_file}" ]; then
     reboot_req=true
-    log_msg "WARNING: /run/reboot-required exists! A system reboot is required."
+    log_msg "WARNING: ${reboot_check_file} exists! A system reboot is required."
     warnings=$((warnings + 1))
   fi
 

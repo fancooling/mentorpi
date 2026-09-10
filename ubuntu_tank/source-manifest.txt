@@ -1,10 +1,6 @@
-# Ubuntu Tank Source and Provenance Manifest
-# Format: key: value
-# Verified against upstream commit ca32e0c (mentorpi/src)
-
 destination: ubuntu_tank/README.md
 origin: authored
-destination_sha256: 69b1f5e911f09523954f11ed887dd8026e57d08123f8f20f71a9f19dded48d3c
+destination_sha256: 0847bed4296e27ebda05f06c289a7b3fafb884935ca809749bf1e03da2b5b155
 status: new
 rationale: Canonical operator guide for the native tank controller.
 
@@ -26,9 +22,63 @@ destination_sha256: be5764af4181e5b87c58de83a197b86de27aed498bbed6d7b6a1406cc1e7
 status: new
 rationale: SROS2 security governance and enclave access control specification placeholder
 
+destination: ubuntu_tank/config/sros2/governance.xml
+origin: authored
+destination_sha256: 8aad52a03e847508c5a253fd1688a746788c56d3ba60b38c9b52861124098b88
+status: new
+rationale: SROS2/DDS Security governance policy enforcing encryption and deny-by-default access control for native controller
+
+destination: ubuntu_tank/config/sros2/permissions/bridge_permissions.xml
+origin: authored
+destination_sha256: c52ff8ba2fec46c9c287d81cac38a05f9e4375b14338e9f00b32c68a6be80e14
+status: new
+rationale: DDS Security permissions XML for serial bridge enclave
+
+destination: ubuntu_tank/config/sros2/permissions/controller_permissions.xml
+origin: authored
+destination_sha256: 4194e18cdabc4804051a13104b0a89938f29e9711173d337c73afd40022ed834
+status: new
+rationale: DDS Security permissions XML for controller enclave
+
+destination: ubuntu_tank/config/sros2/permissions/guard_permissions.xml
+origin: authored
+destination_sha256: f7afbcaf8f7b70bf8bddfe8f1dc518c630b3d4c2d5e0a7821e1437323d6daef3
+status: new
+rationale: DDS Security permissions XML for motor guard enclave
+
+destination: ubuntu_tank/config/sros2/permissions/operator_permissions.xml
+origin: authored
+destination_sha256: 322dd0d6a716ed334630dbf3b4f478341bb33683e2827fa677b4b396a25a0c20
+status: new
+rationale: DDS Security permissions XML for operator enclave
+
+destination: ubuntu_tank/config/sros2/permissions/status_permissions.xml
+origin: authored
+destination_sha256: 8d619ccd046498d3995e9a308fd260e47dd4879e924821306f5b4adc950d5a06
+status: new
+rationale: DDS Security permissions XML for read-only status monitor enclave
+
+destination: ubuntu_tank/config/sros2/policies.xml
+origin: authored
+destination_sha256: 06ee9347ffab59df53978cc78a5718d3af7f1a0d9b1d93b32ec7d713e2b5de14
+status: new
+rationale: SROS2 enclave policy specifications for controller, guard, bridge, operator, and status enclaves
+
+destination: ubuntu_tank/config/sros2/schemas/omg_shared_ca_governance.xsd
+origin: authored
+destination_sha256: 1367ea915f811cc92f70115debb1d73cd8f95ee3cb776503db37ba99dda68532
+status: new
+rationale: Official OMG DDS-Security governance XSD schema specification for SROS2 validation.
+
+destination: ubuntu_tank/config/sros2/schemas/omg_shared_ca_permissions.xsd
+origin: authored
+destination_sha256: c8f5723b48bb2fae320f429ae8811bae3254b1ab8d8c3230645e4ba2a6130e52
+status: new
+rationale: Official OMG DDS-Security permissions XSD schema specification for SROS2 validation.
+
 destination: ubuntu_tank/deploy.sh
 origin: authored
-destination_sha256: f25467d0388d18e60c3c463ac709592283612cad1d62fedfbd6551965fcb4655
+destination_sha256: 9ed862c9ad76bf06204273a5f4127ee7d1fc53e75fbbf2dd90a148de21980aee
 status: new
 rationale: Unified deployment and operations entrypoint for the native controller workspace.
 
@@ -70,13 +120,13 @@ rationale: Host colcon build and rosdep resolution script scaffold with constrai
 
 destination: ubuntu_tank/scripts/check_host.sh
 origin: authored
-destination_sha256: 8286c366242fb9f4da3da452b64fc7084e0672c5e48f921afd98bfa6c3d15766
+destination_sha256: 8886bd34ba6195f406d766474cd1ad3bb27285f638d7c53da0d1be063a52fb31
 status: new
 rationale: Read-only host OS, architecture, EEPROM, and device preflight script scaffold
 
 destination: ubuntu_tank/scripts/install_ros2.sh
 origin: authored
-destination_sha256: 9242b20d869cf89c05eb78a84d89200e8381e3c42a9cf20365d6a22528a27882
+destination_sha256: 9f48d4a15c5699744a4f68993a90b5c6219fcb48933d46d34ee60468c75bff5b
 status: new
 rationale: Ubuntu and ROS 2 Lyrical package repository, solver closure verification, and installation script scaffold
 
@@ -86,9 +136,15 @@ destination_sha256: e1fc1c1a95b3d59b729c684df0119572d5732494a376b59515047cd8d9ea
 status: new
 rationale: Boot-time write-ahead transaction recovery runner script scaffold
 
+destination: ubuntu_tank/scripts/sros2_policy.py
+origin: authored
+destination_sha256: 75607ae1e8e4f1a8e2fbd70c69890f0adf03baae0d9f1edb9fc7265770866e4f
+status: new
+rationale: SROS2 security governance and enclave access control verification utility
+
 destination: ubuntu_tank/scripts/verify_runtime.sh
 origin: authored
-destination_sha256: e57dbf7265220e12ae7900f80efafa12f338b3b9a7107146e042842708f60e48
+destination_sha256: 0e5a106169db6d5be98a24eb584956b2df23883c73f39881774766f872bc83ea
 status: new
 rationale: ROS graph, topic ownership, and guard state runtime verification script scaffold
 
@@ -178,7 +234,7 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/setup.py
 source_commit: ca32e0c
 source_sha256: 8557221396045252f9640ae631a2295745a6be263c89ddfafc42fae8d04607c5
-destination_sha256: 509dd3b0beb2a95248474c469a2c3bcfcc0f2eb3f8aa58d3357f674d5957dcaa
+destination_sha256: 3d5d4a528f6354ff80115055d092b48fa3d9d3add6839094f25ace99567ef189
 status: adapted
 adaptations: Export only odom_publisher console script; omit legacy launch and config files; synchronize version (1.0.0), maintainer dev@mentorpi.local, and Apache-2.0 license with package.xml.
 
@@ -250,7 +306,7 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_node.py
 source_commit: ca32e0c
 source_sha256: 455e6362c71a2d8ba7dacf7db3a81d42183f371b7a04b6364d360fc37fb339d9
-destination_sha256: bf0ffa09b2c3501050bf6951230a2573f527e44b86942bcf2c92ee2ed8079a14
+destination_sha256: 5b3e038002ffeea79859052d9b1680d1f74dc2a69a4dcfb66021dad504d4f9fc
 status: adapted
 adaptations: Removed legacy MACHINE_TYPE and hardcoded paths; added 250ms command freshness watchdog; made serial read/write/silence failures fatal and suppress supervisor heartbeats; added dedicated 1Hz battery polling in controller_only mode; restricted topics.
 
@@ -295,7 +351,7 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/ros_robot_controller/setup.py
 source_commit: ca32e0c
 source_sha256: 5f224475228e0a75d9b621788f0942d577b8854d5170b2d8bb0ed3b7a586da83
-destination_sha256: 3b8d205a87c9df1cab57477fc0932a9fde65c15a08b5effef83cdc377c41e19a
+destination_sha256: def9fbb3187004b57e504167f7e0cd660c1390defa4958a5fcf4526372128254
 status: adapted
 adaptations: Synchronize package version (1.0.0), maintainer dev@mentorpi.local, description, and Apache-2.0 license declaration with package.xml.
 
@@ -524,6 +580,60 @@ destination_sha256: 66af61d64375fdc7b16780b72ff3edb8fac29e5703e4e11e21dcbbea4d8b
 status: identical
 adaptations: none
 
+destination: ubuntu_tank/src/ubuntu_tank_bringup/launch/tank.launch.py
+origin: authored
+destination_sha256: b460ab82363624fa0fd270e0ccb83512b6f7f6805f8dbbd745c64b09db06d2b5
+status: new
+rationale: Guarded bringup launch file wiring explicit topic pipeline and fail-closed shutdown handlers
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/launch/teleop.launch.py
+origin: authored
+destination_sha256: 42dcc39b78ef2c4b38a53ef2f4c988c71396792cb5169da0ac1cc7e1f71159f2
+status: new
+rationale: Safe teleoperation launch file with configurable renewable motion leases
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/package.xml
+origin: authored
+destination_sha256: 2e003cce95430e1eeb843c83fde3e5d658d052ddb700458549e221cac1ad1344
+status: new
+rationale: Package metadata and dependencies declaration for ubuntu_tank_bringup
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/resource/ubuntu_tank_bringup
+origin: authored
+destination_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+status: new
+rationale: Ament index resource marker for ubuntu_tank_bringup package
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/setup.cfg
+origin: authored
+destination_sha256: 300b48782143c784c5a8f8b3c274ab46df6601b02bdf2f8b0d9f88a6a5c91b1c
+status: new
+rationale: Setuptools configuration for script installation in ubuntu_tank_bringup
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/setup.py
+origin: authored
+destination_sha256: 267b9dfccab12158c367d108ef534458c6b9e338323f9123f273cb17bb1dce70
+status: new
+rationale: Setuptools build specification and launch file packaging for ubuntu_tank_bringup
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/__init__.py
+origin: authored
+destination_sha256: 1bf49b6028adc756bfd3bcafdd57388a382460d81b58407bc60446d523e54464
+status: new
+rationale: Package init module for ubuntu_tank_bringup
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/operator_client.py
+origin: authored
+destination_sha256: c4476df37fc5c0b83838b627e44772523f335969c86726ffa50eb7a8b52ee144
+status: new
+rationale: Dedicated operator CLI client for arm and disarm operations with unneeded services disabled
+
+destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/status_client.py
+origin: authored
+destination_sha256: 5082ffea4c4bdfa6901e4a10bd4fdb33b1ecfbb796a73be24408beef7f40ee36
+status: new
+rationale: Dedicated status CLI client for reading guard state and telemetry with unneeded services disabled
+
 destination: ubuntu_tank/src/ubuntu_tank_safety/package.xml
 origin: authored
 destination_sha256: 191fa37849e58e232d7ae4a3bb620495668ab3a4793e0693330d3e92c6154729
@@ -544,7 +654,7 @@ rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 m
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/setup.py
 origin: authored
-destination_sha256: 849814672290b657926d8d12d521e723bcab8b84046cf113fc6d556f3482c7a4
+destination_sha256: 76a48dce9d3beaf696dd7761861b574c93bc42ade05a195aea7bcc8320e3ea99
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
@@ -568,7 +678,7 @@ rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 m
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/motor_guard_node.py
 origin: authored
-destination_sha256: be53ace000d5a417c562926acd35c09180df71e832cafd691eb9c4553fa972dd
+destination_sha256: 579d27bb1ba4f750a5591b55066365054ac713d22bc4a372bdfb6bffdff2978d
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
@@ -592,7 +702,7 @@ rationale: Implements trusted AND-gating supervisor for separate guard and bridg
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/setup.py
 origin: authored
-destination_sha256: 8118b9bf0bad58d49f78a20794b2867c13ac2975d79a8a709659cad38ea8ab82
+destination_sha256: ad6506fdb85b90eb0e7dcdf0ec26a265b7697c65831cae208d33706d5a8c22c2
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
@@ -652,13 +762,13 @@ rationale: Safe teleoperation package scaffolding and pure-logic renewable lease
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/setup.py
 origin: authored
-destination_sha256: f90521981dff312b65fa5c33e31692dc9ffc9035e9e4c4476724249334744087
+destination_sha256: fb8f6c0dec70be082af0558c54d67537b04ae6df30957fd1ad798650826fa27f
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/test/test_teleop_lease.py
 origin: authored
-destination_sha256: 368452c894c12154bfe7049aac5516cafd362707b681ce59a6778d935bf374a5
+destination_sha256: 3f72ccdab8cd4ac07de5ad5b63556b36a7b223d1debf1ab22d138b78d86381e5
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
@@ -670,7 +780,7 @@ rationale: Safe teleoperation package scaffolding and pure-logic renewable lease
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/ubuntu_tank_teleop/lease.py
 origin: authored
-destination_sha256: 6b428c69ffed9fd5363bf7e2e92c8ea95c76a7efe524f59f9d6c1f0c3d15fcd5
+destination_sha256: 04953bafd869193c59a81886afc8f491c11b5269446c216d71b38cd66bf21cb3
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
@@ -679,27 +789,9 @@ origin: mentorpi/src
 source_path: mentorpi/src/peripherals/peripherals/teleop_key_control.py
 source_commit: ca32e0c
 source_sha256: 33cf2a768b7851c245f8b3918c61dc69a363c8db7341827bf95a31502aa7ddd2
-destination_sha256: 26ce05ce37b76bb77f9d1cecdf72dd15d4c84625ace55805b48a4b6d85d54a72
+destination_sha256: ea36fcf4ce68bbfb0ba9c5fa9fd2a160e4253ccb61d091de5e21d5d248223da6
 status: adapted
 adaptations: Replaced latched linear commands with 150 ms renewable leases; periodic 20 Hz publishing; auto-zero on lease expiry/SIGINT/SIGTERM; removed unused servo and camera code.
-
-destination: ubuntu_tank/tests/test_negative_boundary.sh
-origin: authored
-destination_sha256: 8983ab68a678e4f606ee1c4f00bec7d57b431045a763ba2e7ca0d0026737ed9e
-status: new
-rationale: Negative regression test verifying that test_source_boundary.sh rejects omitted cross-workspace and external dependencies.
-
-destination: ubuntu_tank/tests/test_source_boundary.sh
-origin: authored
-destination_sha256: e0aece2083f09478c9b5e0f8d823af306d7f05710c4c3a650baf5a1cafc60e2e
-status: new
-rationale: Automated source boundary gate validating workspace provenance, Git baseline integrity, and dependency closure.
-
-destination: ubuntu_tank/versions.lock
-origin: authored
-destination_sha256: 80dd5fd6018834dc6051d49978fe74eeba52311ec24f8dd54e4eb26d4d71c0f2
-status: new
-rationale: Pinned complete dependency closure specification for Ubuntu 26.04 and ROS 2 Lyrical (424 packages), captured on clean ARM64 target.
 
 destination: ubuntu_tank/tests/test_dependency_closure.sh
 origin: authored
@@ -715,6 +807,36 @@ rationale: Unit test suite for host preflight, mutual exclusion, lock verificati
 
 destination: ubuntu_tank/tests/test_milestone3_port.py
 origin: authored
-destination_sha256: 30fafda5054950049d3295ee577a4b23f30a19836f8f69d1bf13c33d8f81bba2
+destination_sha256: d5e7ace58e944c4ec557623c6c35a603e69bc5b08fb444fc4b082bcf0e8e0d49
 status: new
 rationale: Unit test suite verifying Milestone 3 porting: legacy variable removal, mock SDK, serial error handling, freshness watchdogs, non-ROS supervisor heartbeats, and workspace build scripts.
+
+destination: ubuntu_tank/tests/test_milestone4_bringup.py
+origin: authored
+destination_sha256: 6f6bd31fc0feca9817004ff7471f76cffc69cfcbacc1505c2e0657dc583f8a89
+status: new
+rationale: Automated hardware-free test suite for Milestone 4 guarded bringup, teleop leases, fault injection, and SROS2 security
+
+destination: ubuntu_tank/tests/test_negative_boundary.sh
+origin: authored
+destination_sha256: 8983ab68a678e4f606ee1c4f00bec7d57b431045a763ba2e7ca0d0026737ed9e
+status: new
+rationale: Negative regression test verifying that test_source_boundary.sh rejects omitted cross-workspace and external dependencies.
+
+destination: ubuntu_tank/tests/test_rmw_integration.py
+origin: authored
+destination_sha256: 00dbc15cb596852b4bbdaab6155727ae354a0a0ccfb927c7459cbf9798ef45b4
+status: new
+rationale: Hardware-free Lyrical and RMW integration test harness verifying authentic SROS2 signed keystore, untrusted CA rejection, tampered signature rejection, virtual PTY serial bridge communication, real-time scheduling / clock pauses, and supervisor process faults.
+
+destination: ubuntu_tank/tests/test_source_boundary.sh
+origin: authored
+destination_sha256: 1798d7e3a84186f98ef87f15c65f48244331daedbcca909c19441353c95fdaff
+status: new
+rationale: Automated source boundary gate validating workspace provenance, Git baseline integrity, and dependency closure.
+
+destination: ubuntu_tank/versions.lock
+origin: authored
+destination_sha256: 80dd5fd6018834dc6051d49978fe74eeba52311ec24f8dd54e4eb26d4d71c0f2
+status: new
+rationale: Pinned complete dependency closure specification for Ubuntu 26.04 and ROS 2 Lyrical (424 packages), captured on clean ARM64 target.

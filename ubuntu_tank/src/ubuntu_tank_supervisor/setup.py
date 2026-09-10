@@ -16,7 +16,6 @@ setup(
     maintainer_email='dev@mentorpi.local',
     description='Trusted AND-gating process and heartbeat supervisor for systemd watchdog integration',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'supervisor = ubuntu_tank_supervisor.supervisor_node:main',
