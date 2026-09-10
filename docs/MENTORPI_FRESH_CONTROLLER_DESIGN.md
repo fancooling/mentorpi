@@ -938,15 +938,15 @@ through the locked apt/ROS workflow, and no Python virtual-environment activatio
 step is part of service startup or operator setup. The production wrapper still
 sources the required ROS setup scripts as described in Section 6.4.
 
-- [ ] Implement idempotent `check-host`, `prepare-host`, `verify-lock`, `install-ros`, and `install-deps` commands.
-- [ ] Validate Ubuntu 26.04, ARM64, EEPROM, locale, disk, and time preconditions.
-- [ ] Configure the official `ros2-apt-source` package for Resolute.
-- [ ] Reject factory/sidecar/replacement containers, factory boot units, and conflicting ROS/device owners before install, activation, start, or arm.
-- [ ] Record and accept the security-current Ubuntu baseline separately from the locked ROS/application dependency closure.
+- [x] Implement idempotent `check-host`, `prepare-host`, `verify-lock`, `install-ros`, and `install-deps` commands.
+- [x] Validate Ubuntu 26.04, ARM64, EEPROM, locale, disk, and time preconditions.
+- [x] Configure the official `ros2-apt-source` package for Resolute.
+- [x] Reject factory/sidecar/replacement containers, factory boot units, and conflicting ROS/device owners before install, activation, start, or arm.
+- [x] Record and accept the security-current Ubuntu baseline separately from the locked ROS/application dependency closure.
 - [ ] Create and verify `versions.lock` for the complete Ubuntu/ROS/tooling dependency closure; never resolve a `latest` release during installation.
 - [ ] Install ROS 2 Lyrical ros-base, SROS2, EEPROM, packaging, archive, and only other demonstrated dependencies at locked versions.
-- [ ] Stop for a required reboot after base upgrades and re-run host preflight.
-- [ ] Add clear recovery behavior for partial apt or network failures.
+- [x] Stop for a required reboot after base upgrades and re-run host preflight.
+- [x] Add clear recovery behavior for partial apt or network failures.
 - [ ] Test the instructions from a clean Ubuntu 26.04 Raspberry Pi image.
 
 Exit criterion: a clean Pi can install ROS and pass `check-host` by following only
