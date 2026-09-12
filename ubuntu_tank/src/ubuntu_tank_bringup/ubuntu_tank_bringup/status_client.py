@@ -19,7 +19,6 @@ try:
     from std_msgs.msg import Bool, UInt16
 except ImportError:
     rclpy = None
-    Node = object
     Parameter = None
     QoSProfile = None
     DurabilityPolicy = None
@@ -27,11 +26,32 @@ except ImportError:
     Bool = None
     UInt16 = None
 
+    class _FallbackNode:
+        def __init__(self, *args, context=None, **kwargs):
+            self._fallback_context = context
+
+        @property
+        def context(self):
+            return self._fallback_context
+
+        def destroy_node(self):
+            pass
+
+    Node = _FallbackNode
+
+SingleThreadedExecutor = None
+if rclpy is not None:
+    try:
+        from rclpy.executors import SingleThreadedExecutor as _STE
+        SingleThreadedExecutor = _STE
+    except (ImportError, AttributeError):
+        SingleThreadedExecutor = getattr(getattr(rclpy, 'executors', None), 'SingleThreadedExecutor', None)
+
 
 class StatusClientNode(Node):
     """Client node for reading guard state and telemetry with unneeded services stripped."""
 
-    def __init__(self, node_name: str = 'status_client'):
+    def __init__(self, node_name: str = 'status_client', context=None):
         overrides = []
         if Parameter is not None:
             overrides.append(Parameter('start_type_description_service', Parameter.Type.BOOL, False))
@@ -39,13 +59,30 @@ class StatusClientNode(Node):
         self.guard_state = None
         self.guard_armed = None
         self.battery_mv = None
+        self._fallback_context = context
+        self._executor = None
 
         if rclpy is not None:
-            super().__init__(
-                node_name,
-                start_parameter_services=False,
-                parameter_overrides=overrides
-            )
+            kwargs = {
+                'start_parameter_services': False,
+                'parameter_overrides': overrides
+            }
+            if context is not None:
+                try:
+                    super().__init__(node_name, context=context, **kwargs)
+                except TypeError:
+                    super().__init__(node_name, **kwargs)
+            else:
+                super().__init__(node_name, **kwargs)
+
+            if SingleThreadedExecutor is not None:
+                try:
+                    ctx = getattr(self, 'context', None) or self._fallback_context
+                    self._executor = SingleThreadedExecutor(context=ctx)
+                    self._executor.add_node(self)
+                except Exception:
+                    self._executor = None
+
             if QoSProfile and DurabilityPolicy and ReliabilityPolicy:
                 transient_qos = QoSProfile(
                     depth=1,
@@ -80,6 +117,14 @@ class StatusClientNode(Node):
                     self._battery_cb,
                     standard_qos
                 )
+        else:
+            try:
+                super().__init__(node_name, context=context)
+            except TypeError:
+                super().__init__()
+            self.sub_state = None
+            self.sub_armed = None
+            self.sub_battery = None
 
     def _state_cb(self, msg):
         self.guard_state = msg.data
@@ -90,14 +135,52 @@ class StatusClientNode(Node):
     def _battery_cb(self, msg):
         self.battery_mv = msg.data
 
+    def _is_ok(self) -> bool:
+        ctx = getattr(self, 'context', None) or self._fallback_context
+        if ctx is not None:
+            try:
+                return ctx.ok()
+            except Exception:
+                pass
+        if rclpy is not None:
+            try:
+                return rclpy.ok()
+            except Exception:
+                pass
+        return True
+
+    def _spin_once(self, timeout_sec: float = 0.1):
+        if self._executor is not None:
+            try:
+                self._executor.spin_once(timeout_sec=timeout_sec)
+                return
+            except Exception:
+                pass
+        if rclpy is not None and rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=timeout_sec)
+
+    def destroy_node(self):
+        if self._executor is not None:
+            try:
+                self._executor.remove_node(self)
+            except Exception:
+                pass
+            try:
+                self._executor.shutdown()
+            except Exception:
+                pass
+            self._executor = None
+        if rclpy is not None and hasattr(super(), 'destroy_node'):
+            super().destroy_node()
+
     def collect_status(self, timeout_sec: float = 3.0) -> dict:
         """Wait and collect guard status and battery telemetry until timeout."""
         if rclpy is None:
             return {'guard_state': None, 'guard_armed': None, 'battery_mv': None}
 
         start_time = time.monotonic()
-        while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.1)
+        while self._is_ok():
+            self._spin_once(timeout_sec=0.1)
             if self.guard_state is not None and self.guard_armed is not None:
                 if self.battery_mv is None and (time.monotonic() - start_time < min(timeout_sec, 0.5)):
                     continue

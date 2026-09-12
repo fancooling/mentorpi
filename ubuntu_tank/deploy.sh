@@ -108,8 +108,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
 
   echo ""
+  echo "--> Running Milestone 6 Raised-Track Controller Acceptance tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, & 5 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, & 6 tests PASSED successfully!"
   echo "============================================================"
 }
 
@@ -256,6 +260,74 @@ cmd_status() {
   else
     echo "ros2 CLI not available in current environment."
   fi
+}
+
+cmd_bench() {
+  local ack=""
+  for arg in "$@"; do
+    if [ "$arg" = "--ack-tracks-raised" ]; then
+      ack="true"
+      break
+    fi
+  done
+
+  if [ "${ack}" != "true" ]; then
+    echo "ERROR: Bench testing requires physical safety acknowledgment: --ack-tracks-raised" >&2
+    echo "Tracks must be physically raised clear of the surface before motor commands are enabled." >&2
+    echo "Under NO circumstances does Milestone 6 authorize on-ground motion." >&2
+    exit 1
+  fi
+
+  # Deployment lock check
+  local lock_file="${UBUNTU_TANK_LOCK_FILE:-/run/lock/ubuntu_tank/deploy.lock}"
+  if [ -f "${lock_file}" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      if ! python3 -c "import fcntl, os, sys; fd = os.open('${lock_file}', os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB); fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)" 2>/dev/null; then
+        echo "ERROR: Deployment lock is held by another process; cannot run bench test." >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  # Mutual exclusion: ensure factory or replacement containers are not running
+  if [ -n "${UBUNTU_TANK_MOCK_DOCKER_FAIL:-}" ]; then
+    echo "ERROR: Docker is installed but container inventory check failed. Cannot verify mutual exclusion. Bench test blocked." >&2
+    exit 1
+  elif [ -n "${UBUNTU_TANK_MOCK_DOCKER_PS:-}" ]; then
+    local docker_out="${UBUNTU_TANK_MOCK_DOCKER_PS}"
+    if [ "${docker_out}" = "none" ] || [ "${docker_out}" = "EMPTY" ]; then
+      docker_out=""
+    fi
+    if [ -n "${docker_out}" ] && echo "${docker_out}" | grep -E -qw "MentorPi|MentorPiFan|mentorpi|runtime-core|tank_runtime"; then
+      echo "ERROR: Conflicting container (MentorPi, MentorPiFan, mentorpi, or runtime-core) is running or present." >&2
+      exit 1
+    fi
+  elif [ -z "${UBUNTU_TANK_BENCH_MOCK:-}" ] && command -v docker >/dev/null 2>&1; then
+    local docker_out
+    if ! docker_out="$(docker ps -a --format '{{.Names}}' 2>&1)"; then
+      echo "ERROR: Docker command is available but container inventory could not be enumerated: ${docker_out}" >&2
+      echo "Cannot verify mutual exclusion with containerized stacks. Failing closed." >&2
+      exit 1
+    fi
+    if echo "${docker_out}" | grep -E -qw "MentorPi|MentorPiFan|mentorpi|runtime-core"; then
+      echo "ERROR: Conflicting container (MentorPi, MentorPiFan, mentorpi, or runtime-core) is running." >&2
+      echo "Native Ubuntu controller must never run beside containerized stacks." >&2
+      exit 1
+    fi
+  fi
+
+  if [ -f /opt/ros/lyrical/setup.bash ]; then
+    set +u
+    source /opt/ros/lyrical/setup.bash
+    set -u
+  fi
+  local sec_keystore="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}"
+  echo "--> Running Milestone 6 raised-track bench acceptance..."
+  ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
+  ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+  ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+  ROS_SECURITY_KEYSTORE="${sec_keystore}" \
+  PYTHONPATH="${WORKSPACE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${SCRIPT_DIR}/scripts/bench_acceptance.py" "$@"
 }
 
 cmd_package() {
@@ -491,7 +563,7 @@ case "${COMMAND}" in
     cmd_status "$@"
     ;;
   bench)
-    cmd_stub "${COMMAND}" "Milestone 6 (Raised-track controller acceptance)"
+    cmd_bench "$@"
     ;;
 
   *)

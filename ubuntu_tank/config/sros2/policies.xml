@@ -111,6 +111,7 @@
         </profile>
         <profile ns="/" node="operator_client">
           <topics publish="ALLOW">
+            <topic>/controller/cmd_vel</topic>
             <topic>/rosout</topic>
             <topic>/parameter_events</topic>
           </topics>

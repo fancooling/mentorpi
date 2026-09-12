@@ -23,6 +23,7 @@ setup(
         'console_scripts': [
             'operator_client = ubuntu_tank_bringup.operator_client:main',
             'status_client = ubuntu_tank_bringup.status_client:main',
+            'bench_client = ubuntu_tank_bringup.bench_client:main',
         ],
     },
 )

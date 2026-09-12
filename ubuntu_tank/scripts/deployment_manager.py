@@ -110,7 +110,8 @@ def check_hardware_mutual_exclusion(
     serial_dev: Optional[str] = None,
     mock_containers: Optional[str] = None,
     mock_docker_fail: bool = False,
-    mock_serial_holder: Optional[str] = None
+    mock_serial_holder: Optional[str] = None,
+    allowed_serial_pid: Optional[int] = None
 ) -> Tuple[bool, List[str]]:
     """
     Verify hardware mutual exclusion invariants before startup, activation, or recovery:
@@ -122,6 +123,8 @@ def check_hardware_mutual_exclusion(
     3. Serial device exclusivity:
        /dev/rrc (or configured device) must not be held open by another process.
        If character device exists, fuser must be available and confirm exclusivity.
+       Bench clients may pass a separately verified managed bridge PID as
+       allowed_serial_pid; startup callers leave it unset.
     """
     errors: List[str] = []
 
@@ -196,7 +199,7 @@ def check_hardware_mutual_exclusion(
                     )
                     holders = fuser_res.stdout.strip().split()
                     my_pid = str(os.getpid())
-                    foreign_holders = [p for p in holders if p != my_pid]
+                    foreign_holders = [p for p in holders if p not in (my_pid, str(allowed_serial_pid))]
                     if foreign_holders:
                         errors.append(
                             f"Conflicting process PID(s) {', '.join(foreign_holders)} hold serial device '{real_dev}' open."

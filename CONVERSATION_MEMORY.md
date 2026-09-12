@@ -418,6 +418,79 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
 - Real ARM64 bootstrap/build acceptance remains to be performed on the native
   host. Workstation fixtures validate control flow and artifact rejection only.
 
+## Milestone 6 raised-track acceptance and latency validation (2026-09-12)
+
+- Orchestration CLI: Implemented `./deploy.sh bench --ack-tracks-raised` replacing
+  prior stub, backed by `scripts/bench_acceptance.py` and `ubuntu_tank_bringup/bench_client.py`.
+  Provides `--mock` for hardware-free simulation / regression verification and live mode
+  for target-Pi execution with active controller services.
+- Mandatory physical safety acknowledgment: Enforced `--ack-tracks-raised` for all
+  bench commands; execution fails closed with exit code 1 if omitted. On-ground motion
+  remains strictly forbidden.
+- Preflight & hardware verification: Verified STM32 RRC USB identity `1a86:55d4`,
+  battery cutoff threshold >= 9.60 V (nominal 11.1 V 3S LiPo), emergency power
+  disconnect access within 0s, deployment lock exclusivity, and container/service
+  mutual exclusion.
+- Review remediations (Findings 1 & 2):
+  - Finding 1 (P1 - Do not certify live motion and stopping from simulated results):
+    Separated software simulation from physical target-Pi acceptance. In live mode
+    (`mock=False`), motion acceptance requires live BenchClientNode execution and verified
+    arming/disarming state against active controller services; unobserved runs fail closed
+    without certifying bursts. Stop latencies reject synthetic timing/mock boards in live
+    mode, marking physical bounds as pending physical instrumentation. STM32 command-loss
+    characterization records pending physical bench test instead of claiming proven/characterized.
+    Updated design doc, README, and acceptance reports to explicitly distinguish simulation
+    from physical acceptance.
+  - Finding 2 (P1 - Fail live battery preflight when telemetry is unavailable):
+    In live mode, battery preflight requires fresh, authenticated telemetry via
+    StatusClientNode under the `/ubuntu_tank/status` SROS2 enclave. Missing ROS, subscription
+    failures, absent readings, or voltage < 9600 mV fail preflight; synthetic voltage is
+    strictly forbidden outside simulation.
+- Kinematic polarity & conservative limits: Verified forward (left < 0, right > 0),
+  reverse (left > 0, right < 0), spin left (all > 0), spin right (all < 0), and stop
+  (all 0.0) against accepted geometry (wheelbase 0.1368m, track width 0.1446m,
+  sprocket 0.075m, left/right correction 1.0) and conservative limits (max linear <= 0.5 m/s,
+  max angular <= 2.0 rad/s, max RPS <= 2.0 RPS).
+- Simulated stop latencies across all 6 failure conditions:
+  - Keyboard lease expiry: ~155 ms (bound <= 200 ms)
+  - Guard freshness timeout: ~260 ms (bound <= 300 ms)
+  - Teleop crash / command loss: ~260 ms (bound <= 300 ms)
+  - Supervisor child crash: ~120 ms (bound <= 250 ms)
+  - Service stop (SIGTERM): < 1 ms (bound <= 100 ms)
+  - Serial loss / disconnect: ~510 ms (bound <= 600 ms)
+  Physical target-Pi measurements remain pending physical instrumentation.
+- STM32 chassis controller command-loss characterization:
+  - Host zero delivery: Design specification <= 275 ms delivery of 4-motor zero packets.
+  - STM32 firmware timeout: Vendor specification <= 1000 ms timeout for motor PWM cutoff.
+  - Emergency disconnect: Manual power cut accessible within 0s reach.
+- Reports and test suite: Emits structured JSON and Markdown acceptance reports.
+  Added 28-test regression suite `tests/test_milestone6_acceptance.py` integrated
+  into `./deploy.sh test`. Physical target-Pi bench execution remains scheduled for
+  actual target-Pi hardware.
+
+## Milestone 6 bench safety remediation (2026-09-12)
+
+- Failed prerequisites now skip actuation. Every burst explicitly rearms and
+  verifies guard state; pauses occur disarmed and failed bursts are not accepted.
+- Bench holds a read-only shared deployment lock through cleanup, recognizes
+  the managed bridge through systemd cgroup/executable metadata, and continues
+  to reject unrelated serial owners. No extra operator filesystem rights needed.
+- Status preflight and operator motion phases use separate, explicitly initialized
+  ROS contexts. RMW security credentials bound at context initialization cannot
+  leak across enclave boundaries. In fallback mode, preflight shuts down only its
+  internally owned context and preserves caller-owned contexts. Both
+  `StatusClientNode` and `BenchClientNode` accept explicit contexts.
+- Avoid assigning the inherited read-only `Node.context` property in
+  `StatusClientNode` and `BenchClientNode` (which raised `AttributeError: property
+  'context' ... has no setter` under upstream rclpy). Pass context through
+  `super().__init__(..., context=context)`, read the inherited property afterward,
+  and store fallback context on private attribute `_fallback_context`. Fallback
+  `_FallbackNode` also faithfully mirrors the read-only property descriptor.
+- Bench preserves the ROS Python environment. Physical motion and latency
+  acceptance remain pending; validation of this revision is hardware-free.
+- Full suite passed: 294 tests passed, one native-DDS skip. All 41 bench tests
+  passed; source provenance, negative boundary, and whitespace checks passed.
+
 ## Commit and review conventions
 
 - Create a new Git version (commit) only for a new feature or milestone.

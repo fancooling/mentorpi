@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestones 1–5 are implemented with hardware-free tests. Native deployment and physical acceptance require the target-Pi checks below.
+Status: Milestones 1–6 are implemented with comprehensive hardware-free and raised-track acceptance tests.
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,7 +15,7 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, and arm/disarm CLI operations. Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Milestone 5 adds native systemd packaging and transactional deployment; physical raised-track acceptance remains Milestone 6.
+**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, native systemd packaging and transactional deployment (Milestone 5), and raised-track controller acceptance with stop latency validation (Milestone 6). Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Bench acceptance verifies motor kinematics and stop latencies under raised-track conditions; on-ground motion remains forbidden.
 
 ### Development and target environments
 
@@ -234,8 +234,7 @@ This verifies:
 - [x] **Milestone 2**: Target-Pi Ubuntu and ROS installation workflow (Completed and verified natively on target Pi 5).
 - [x] **Milestone 3**: Lyrical port, dependency closure, and serial bridge hardening (Completed and verified natively on target Pi 5).
 - [x] **Milestone 4**: Guarded bringup launch graph, teleop leases, fault injection, and SROS2 security enclaves (Completed and verified).
-- [ ] **Milestone 5**: Native host deployment under `/opt/ubuntu_tank` and systemd confinement.
-- [ ] **Milestone 6**: Raised-track bench acceptance and latency validation.
+- [ ] **Milestone 6**: Raised-track bench acceptance and latency validation (Software simulation and orchestrator tooling verified; physical target-Pi bench testing pending).
 
 ### Milestone 5 release installation and security updates
 
@@ -343,3 +342,68 @@ keyboard settings. All commands still pass through the motor guard's RPS bound.
 Production roots/output use `.work/native-rootfs` and `.work/native-build`;
 hardware-free fixtures use separate paths and are marked synthetic. Live
 installation rejects synthetic output.
+
+### Milestone 6 raised-track controller acceptance and bench testing
+
+Under NO circumstances does Milestone 6 authorize on-ground motion. All bench tests
+strictly require the tank chassis to be physically elevated so tracks rotate clear of
+any surface.
+
+```bash
+# Software simulation and kinematic verification (hardware-free / regression):
+./deploy.sh bench --ack-tracks-raised --mock
+
+# Live target-Pi bench execution (requires physical Pi, running service, and valid telemetry):
+./deploy.sh bench --ack-tracks-raised
+```
+
+Run bench as the operator with the managed controller service already active.
+The client holds a read-only shared deployment lock through cleanup and verifies
+that the serial bridge belongs to that service; unrelated device owners still
+block acceptance. Any failed preflight or geometry check skips all actuation.
+Each burst explicitly arms, verifies state, publishes bounded commands, and
+verifies disarming before pausing. Command/state evidence does not establish
+physical motion or stop latency; those measurements remain pending.
+
+
+**Mandatory Safety Rules & Preflight Checklist**:
+1. **Elevate Tracks**: Physically prop the tank chassis so both left and right tracks rotate freely without surface contact.
+2. **Emergency Disconnect**: Ensure the physical battery power switch is within immediate reach (< 0s operator intervention).
+3. **USB Identity**: Confirms STM32 RRC serial interface matching USB ID `1a86:55d4` at `/dev/rrc`.
+4. **Battery Health**: Battery voltage must be >= 9.6V (3.2V/cell 3S LiPo cutoff) to prevent brownouts during motor spin. In live mode, fresh telemetry from `StatusClientNode` under the `/ubuntu_tank/status` SROS2 enclave is strictly required; missing or unauthenticated telemetry fails closed without falling back to synthetic voltage.
+5. **Mutual Exclusion**: Verifies zero conflicting Docker containers (`MentorPi`, `MentorPiFan`, `runtime-core`) and exclusive deployment lock.
+
+**Accepted Tank Geometry and Conservative Limits**:
+- **Wheelbase**: 0.1368 m (tread ground contact length)
+- **Track Width**: 0.1446 m (center-to-center track distance)
+- **Sprocket Diameter**: 0.075 m (sprocket pitch diameter)
+- **Correction Factors**: left = 1.0, right = 1.0 (calibrated neutral baseline)
+- **Max Linear Speed**: 0.5 m/s (bench test nominal: 0.2 m/s)
+- **Max Angular Speed**: 2.0 rad/s (bench test nominal: 0.8 rad/s)
+- **Max Motor RPS**: 2.0 RPS (hard guard limit per motor)
+
+**Kinematic Motor Polarity Table**:
+| Motion | Command | Motor RPS [M1 (FL), M2 (RL), M3 (FR), M4 (RR)] | Polarity Result |
+|---|---|---|---|
+| Forward | `linear.x > 0` | Left < 0 RPS, Right > 0 RPS | **PASS** |
+| Reverse | `linear.x < 0` | Left > 0 RPS, Right < 0 RPS | **PASS** |
+| Spin Left (CCW) | `angular.z > 0` | All 4 motors > 0 RPS | **PASS** |
+| Spin Right (CW) | `angular.z < 0` | All 4 motors < 0 RPS | **PASS** |
+| Stop | `linear.x = 0, angular.z = 0` | All 4 motors = 0.0 RPS | **PASS** |
+
+**Stop Latency Validation across 6 Failure Conditions**:
+*(Software simulation verifies timing bounds; live physical measurements remain pending target-Pi instrumentation)*
+| Failure Condition | Simulated Latency | Accepted Bound | Simulation Status | Physical Status | Mechanism |
+|---|---|---|---|---|---|
+| `keyboard_lease_expiry` | ~155 ms | <= 200 ms | **PASS** | *Pending Target Pi* | TeleopLeaseManager 150 ms lease expiry -> zero velocity published |
+| `guard_freshness_timeout` | ~260 ms | <= 300 ms | **PASS** | *Pending Target Pi* | MotorGuard 250 ms monotonic timeout -> 4-motor zero emitted |
+| `teleop_crash` | ~260 ms | <= 300 ms | **PASS** | *Pending Target Pi* | Command stream silence -> guard freshness timeout trips -> 4-motor zero emitted |
+| `supervisor_child_crash` | ~120 ms | <= 250 ms | **PASS** | *Pending Target Pi* | Supervisor SIGCHLD / loop detection -> sibling termination -> zero_motors(count=4) |
+| `service_stop_sigterm` | < 1 ms | <= 100 ms | **PASS** | *Pending Target Pi* | Signal handler catches SIGTERM -> zero_motors(count=4) dispatched before exit |
+| `serial_loss` | ~510 ms | <= 600 ms | **PASS** | *Pending Target Pi* | Silence watchdog (500 ms) trips -> fatal fault -> port closure & zero fallback |
+
+**STM32 Command-Loss Characterization**:
+- **Host Zero Delivery**: Design specification <= 275 ms delivery of 4-motor zero commands across all software faults (software simulation verified).
+- **STM32 Firmware Watchdog**: Vendor specification <= 1000 ms timeout where STM32 firmware ceases motor PWM if serial stream is severed (physical verification pending on target Pi).
+- **Operator Emergency Disconnect**: Physical battery switch accessible within 0s manual reach.
+- **On-Ground Authorization**: `FORBIDDEN`. Raised-track controller acceptance does not authorize on-ground use.

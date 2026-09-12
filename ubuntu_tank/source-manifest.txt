@@ -1,6 +1,6 @@
 destination: ubuntu_tank/README.md
 origin: authored
-destination_sha256: 3ad12436e12acbf6fcee98713885450be8aa50629b6a1e2bb0c4b9a7d8e29780
+destination_sha256: e81eff13ca23e668cce4132fa034292484d09ace2c0848b9dacc3fcd66f9d9ee
 status: new
 rationale: Canonical operator guide for the native tank controller.
 
@@ -66,7 +66,7 @@ rationale: DDS Security permissions XML for read-only status monitor enclave
 
 destination: ubuntu_tank/config/sros2/policies.xml
 origin: authored
-destination_sha256: 06ee9347ffab59df53978cc78a5718d3af7f1a0d9b1d93b32ec7d713e2b5de14
+destination_sha256: 1f2959835f3c7af4c824bf6bf94c47bd3cf0fcd4ece3b0877ef4b50ff83bf8eb
 status: new
 rationale: SROS2 enclave policy specifications for controller, guard, bridge, operator, and status enclaves
 
@@ -84,7 +84,7 @@ rationale: Official OMG DDS-Security permissions XSD schema specification for SR
 
 destination: ubuntu_tank/deploy.sh
 origin: authored
-destination_sha256: e57c50472210e3f3cc6ff02c515717a1ac8115f4d7d82f6d0c0b6cf5d5fc810c
+destination_sha256: 44571fdff3bc489b09d6be2e3926e86ac6487a39d95920bcfe43d6c201ce3ed6
 status: new
 rationale: Unified deployment and operations entrypoint for the native controller workspace.
 
@@ -130,6 +130,12 @@ destination_sha256: ba6eb03fcc73b5dd3b6d370d9ea0161a04ff93a82b8483499fcaafdb3a2e
 status: new
 rationale: Systemd-tmpfiles configuration establishing runtime and persistent state directories with secure permissions.
 
+destination: ubuntu_tank/scripts/bench_acceptance.py
+origin: authored
+destination_sha256: 4d3c7078cf463216c78d875017ed8e99a6dc3cd301b51836b98869c0f31827c5
+status: new
+rationale: Orchestrator CLI for Milestone 6 raised-track controller acceptance and stop latency validation.
+
 destination: ubuntu_tank/scripts/build_disposable_root.sh
 origin: authored
 destination_sha256: 8dbce4e29913e06b947f62e3fb8b5dbc76598a75e6fcb3cf2105276e648bcb81
@@ -156,7 +162,7 @@ rationale: Configuration schema validation, forward migration, and downgrade res
 
 destination: ubuntu_tank/scripts/deployment_manager.py
 origin: authored
-destination_sha256: 740599c39e78ccde521ed75e6e39312d8c2746b038f4069b13bba7ee9c6de35c
+destination_sha256: 3753fcdf7404a8a370fc1e02a983b28958541e3c5df8e4d16725e4447ddbc3e0
 status: new
 rationale: Packaging, immutable installation, atomic 6-step activation, offline rollback, and crash recovery manager.
 
@@ -648,7 +654,7 @@ rationale: Setuptools configuration for script installation in ubuntu_tank_bring
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/setup.py
 origin: authored
-destination_sha256: 267b9dfccab12158c367d108ef534458c6b9e338323f9123f273cb17bb1dce70
+destination_sha256: 4db41dda151f0add87cb5f633aa030ec6aebc40ec3221f13df0dfca9c7f55186
 status: new
 rationale: Setuptools build specification and launch file packaging for ubuntu_tank_bringup
 
@@ -658,6 +664,12 @@ destination_sha256: 1bf49b6028adc756bfd3bcafdd57388a382460d81b58407bc60446d523e5
 status: new
 rationale: Package init module for ubuntu_tank_bringup
 
+destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/bench_client.py
+origin: authored
+destination_sha256: a19f970da505c8bf7a1e3869b69f0dd8c75dab9e5e3673e3f8f9836d09fa68e1
+status: new
+rationale: Dedicated operator client node for raised-track acceptance and latency measurement under operator enclave
+
 destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/operator_client.py
 origin: authored
 destination_sha256: c4476df37fc5c0b83838b627e44772523f335969c86726ffa50eb7a8b52ee144
@@ -666,7 +678,7 @@ rationale: Dedicated operator CLI client for arm and disarm operations with unne
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/status_client.py
 origin: authored
-destination_sha256: 5082ffea4c4bdfa6901e4a10bd4fdb33b1ecfbb796a73be24408beef7f40ee36
+destination_sha256: e86f0aeff3f0f879d1c32095aed4effbe44e28016886bb58487f7725d2f05845
 status: new
 rationale: Dedicated status CLI client for reading guard state and telemetry with unneeded services disabled
 
@@ -858,6 +870,12 @@ origin: authored
 destination_sha256: 1a82ad5d87cfd97a94585738a9c291ba0afae3a2bc60fa9d0a2b6e6c7a970841
 status: new
 rationale: Unit and integration regression test suite for Milestone 5 packaging, installation, activation, rollback, and recovery.
+
+destination: ubuntu_tank/tests/test_milestone6_acceptance.py
+origin: authored
+destination_sha256: 49ddd7a82e866e4258a6c82d1a40451779d9408d131bf4da333cf2d397e0fdae
+status: new
+rationale: Unit and integration regression test suite for Milestone 6 raised-track acceptance and stop latency bounds
 
 destination: ubuntu_tank/tests/test_negative_boundary.sh
 origin: authored

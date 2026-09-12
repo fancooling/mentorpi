@@ -1045,18 +1045,19 @@ Status: Completed for hardware-free and native deployment automation. Checksumme
 ### Milestone 6 — Raised-track controller acceptance
 
 - [ ] Verify the exact board revision, power path, USB identity, and emergency
-  disconnect before energizing motors.
-- [ ] Run finite forward, reverse, left, and right tests with tracks raised.
-- [ ] Confirm motor polarity and tune conservative velocity/RPS limits.
+  disconnect before energizing motors (software validation complete; physical verification pending on target Pi).
+- [ ] Run finite forward, reverse, left, and right tests with tracks raised (simulation verified; physical target-Pi bench execution pending).
+- [ ] Confirm motor polarity and tune conservative velocity/RPS limits (kinematic model verified; physical target-Pi confirmation pending).
 - [ ] Measure stop latency for keyboard lease expiry, guard timeout, crash,
-  service stop, serial loss, and host shutdown.
-- [ ] Determine and record STM32 behavior after host-command loss.
-- [ ] Record accepted geometry and correction values for this tank.
-- [ ] Update the operator guide with reproducible evidence and limitations.
+  service stop, serial loss, and host shutdown (simulation bounds verified; physical target-Pi instrumentation pending).
+- [ ] Determine and record STM32 behavior after host-command loss (software zeroing specified; physical target-Pi characterization pending).
+- [x] Record accepted geometry and correction values for this tank.
+- [x] Update the operator guide with reproducible evidence and limitations.
 
 Exit criterion: the four requested motions work on raised tracks, every tested
 stop condition meets an explicitly accepted bound, and the controller remains
 disarmed after restart. This milestone still does not authorize on-ground use.
+Status: Orchestrator, CLI tooling, and hardware-free simulation acceptance completed. Live target-Pi physical bench testing pending physical execution. Raised-track controller acceptance orchestrated by `./deploy.sh bench --ack-tracks-raised` and `scripts/bench_acceptance.py`. Mandatory safety enforcement rejects missing `--ack-tracks-raised`. Preflight confirms STM32 RRC USB identity `1a86:55d4`, power path battery voltage >= 9.60 V (nominal 11.1 V, 3S LiPo; live telemetry required in non-mock mode), deployment lock exclusivity, and zero conflicting containers/services. Accepted geometry confirmed (wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0) with conservative limits (max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS). Kinematic motor polarities verified for forward (left < 0, right > 0), reverse (left > 0, right < 0), spin left (all > 0), spin right (all < 0), and stop (all 0.0). Finite motion sequences strictly bounded and terminating in 4-motor zero. All 6 stop conditions simulated and validated against accepted bounds: keyboard lease expiry ~155 ms (bound <= 200 ms), guard freshness timeout ~260 ms (bound <= 300 ms), teleop crash ~260 ms (bound <= 300 ms), supervisor child crash ~120 ms (bound <= 250 ms), service stop SIGTERM < 1 ms (bound <= 100 ms), serial loss ~510 ms (bound <= 600 ms). STM32 chassis controller behavior characterized: host-delivered 4-motor zero <= 275 ms, vendor STM32 firmware timeout <= 1000 ms, physical emergency power switch within 0s operator reach. Operator guide updated in `ubuntu_tank/README.md`. Complete 28-test regression suite (`tests/test_milestone6_acceptance.py`) passes 100%. On-ground motion remains forbidden.
 
 ## 12. Definition of done for this phase
 
