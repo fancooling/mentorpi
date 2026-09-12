@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestones 1, 2, 3, and 4 completed and verified (154 automated tests passing); Milestone 5 (native host deployment and operations) next.
+Status: Milestones 1–5 are implemented with hardware-free tests. Native deployment and physical acceptance require the target-Pi checks below.
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,7 +15,7 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, and arm/disarm CLI operations. Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Native systemd packaging and deployment remain Milestone 5; physical raised-track acceptance remains Milestone 6.
+**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, and arm/disarm CLI operations. Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Milestone 5 adds native systemd packaging and transactional deployment; physical raised-track acceptance remains Milestone 6.
 
 ### Development and target environments
 
@@ -236,3 +236,110 @@ This verifies:
 - [x] **Milestone 4**: Guarded bringup launch graph, teleop leases, fault injection, and SROS2 security enclaves (Completed and verified).
 - [ ] **Milestone 5**: Native host deployment under `/opt/ubuntu_tank` and systemd confinement.
 - [ ] **Milestone 6**: Raised-track bench acceptance and latency validation.
+
+### Milestone 5 release installation and security updates
+
+On the supported Ubuntu 26.04 ARM64 Pi 5, stop the managed service before
+installing or activating a release. Both operations rerun strict host preflight
+and hardware exclusion while holding the deployment lock. Busy or unsupported
+hosts are rejected before provisioning or changing release assets. The CLI does
+not permit disabling these live checks.
+
+```bash
+sudo ./deploy.sh stop  # for an existing deployment
+sudo ./deploy.sh install dist/ubuntu-tank-RELEASE-arm64.tar.zst --operator-user ubuntu
+sudo ./deploy.sh activate RELEASE
+```
+
+Replace `RELEASE` with the packaged release ID and `ubuntu` with the authorized
+operator login. `--operator-user` defaults to the non-root sudo caller; direct
+root invocations must specify it. Log out and back in after initial installation
+to apply the `ubuntu-tank-operators` and `ubuntu-tank-status` group memberships.
+The operator can then use the sourced release's arm/disarm, teleop and status
+commands without root. Operator access does not confer access to `/dev/rrc`,
+service participant keys, or private CA keys. A read-only observer may be added
+to `ubuntu-tank-status` alone by the administrator.
+
+Initial activation requires exactly one connected `1a86:55d4` adapter to bind
+the udev template to its serial number, or its stable USB port if no usable serial
+exists. Later activations retain this discriminator. With a port-bound identity,
+keep the controller connected to that port; relocating it requires an explicit
+administrator update of the recorded rule while stopped. Ambiguous selection,
+wildcards and unresolved identity placeholders are rejected.
+
+Security credentials live at `/etc/opt/ubuntu_tank/security/keystore`, a stable
+symlink to a complete generation. Governance and permissions use S/MIME signed
+by the permissions CA. Installation of another release preserves active grants;
+activation validates and signs the selected release's policies using existing
+CA/participant identities, then selects the generation while stopped. Legacy
+PEM signatures are repaired on activation. Incomplete existing key/certificate
+pairs fail closed and require restoration from a known backup.
+
+Transaction snapshots include signed policies, identities, ownership and modes.
+Rollback and interrupted-activation recovery restore that security state with
+the matching release. Old credential generations remain on disk for recovery;
+there is no automatic garbage collection. Snapshots made before security-state
+support cannot safely restore a policy baseline and are rejected.
+
+`./deploy.sh test` includes production OpenSSL signing, legacy repair and policy
+rollback tests. Its DDS participant check runs with native ROS 2 available and
+explicitly skips otherwise. It creates no motion endpoints and opens no serial
+device. Run the suite with `/opt/ros/lyrical/setup.bash` sourced on the Pi to
+exercise the actual pinned middleware before controller startup.
+
+### First production package and rebuilds
+
+After `install-ros`, `install-deps`, `build`, and `test` on the native Ubuntu
+26.04 ARM64 host, authorize the isolated builder and package as your normal user:
+
+```bash
+sudo -v
+./deploy.sh package
+```
+
+Packaging ignores the development `install/` tree. If `.work/native-rootfs` is absent,
+the builder bootstraps it offline from the host's installed `/usr`, runtime
+libraries and `/opt/ros`, after verifying installed versions against
+`versions.lock`. It copies a small set of system configuration files and creates
+fresh root-only account records; it does not copy home directories, robot
+releases, host credentials or physical devices. Allow disk space for a second
+copy of the system tools/ROS plus build output. Bootstrap never changes host apt
+packages. Keep apt upgrades idle while building.
+
+To prepare or inspect this step explicitly:
+
+```bash
+python3 scripts/prepare_build_root.py --dry-run
+sudo python3 scripts/prepare_build_root.py
+```
+
+An existing root is preserved. To bootstrap again after changing the dependency
+lock, select a fresh directory under `.work` with `--rootfs` when invoking
+`scripts/build_disposable_root.sh`. The builder uses `systemd-nspawn` when
+available, otherwise chroot with temporary proc mounted for the build; it builds
+with the final `/opt/ubuntu_tank/releases/RELEASE/install` prefix. No synthetic
+install option is needed for this native workflow. This bootstrap is not an
+x86-to-ARM cross-build installer.
+
+Each completed tree has `production-build.json` recording its actual prefix,
+source identity and installed file hashes. Packaging rejects a supplied tree
+with missing/mismatched provenance; stale automatic build candidates are rebuilt.
+Installation checks the production prefix again. An identical release archive
+may be installed again, but a different payload with the same ID is rejected.
+Use a new release ID for changed software.
+
+### Host speed and keyboard settings
+
+`controller.max_linear_speed` and `controller.max_angular_speed` are applied at
+the controller command boundary, including commands from callers other than the
+keyboard. Excess velocity is clamped; non-finite velocity becomes a stop.
+`deploy.sh teleop` reads `UBUNTU_TANK_CONFIG`, defaulting to
+`/etc/opt/ubuntu_tank/controller.yaml`, and applies `teleop.linear_speed`,
+`teleop.angular_speed` and `teleop.lease_duration_sec`. Keyboard speeds are capped
+by the controller limits. A missing/invalid configuration prevents teleop startup.
+Restart the controller after changing its limits and restart teleop after changing
+keyboard settings. All commands still pass through the motor guard's RPS bound.
+
+Production roots/output use `.work/native-rootfs` and `.work/native-build`;
+hardware-free fixtures use separate paths and are marked synthetic. Live
+installation rejects synthetic output.

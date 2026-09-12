@@ -175,18 +175,23 @@ import subprocess
 
 root = "${WORKSPACE_ROOT}"
 tank_dir = "${UBUNTU_TANK_DIR}"
-required_dirs = ['config', 'config/sros2', 'host', 'scripts', 'src', 'tests', 'docs']
+required_dirs = ['bin', 'config', 'config/sros2', 'host', 'scripts', 'src', 'tests', 'docs']
 required_files = [
+    'bin/mentorpi-tank-run',
     'config/controller.yaml',
     'config/sros2/README.md',
     'host/99-mentorpi-rrc.rules',
     'host/mentorpi-tank.service',
+    'host/mentorpi-tank-recover.service',
     'host/mentorpi-tank.env',
+    'host/ubuntu-tank.conf',
     'scripts/install_ros2.sh',
     'scripts/build_workspace.sh',
     'scripts/check_host.sh',
     'scripts/recover_activation.sh',
     'scripts/verify_runtime.sh',
+    'scripts/deployment_manager.py',
+    'scripts/config_migration.py',
     'docs/RELEASE_MANIFEST_SPEC.md',
     'docs/DEPENDENCY_CLOSURE.md',
     'versions.lock',
@@ -198,8 +203,10 @@ required_files = [
     'tests/test_dependency_closure.sh',
     'tests/test_install_workflow.py',
     'tests/test_milestone3_port.py',
+    'tests/test_milestone5_deployment.py',
     'source-manifest.txt'
 ]
+
 
 try:
     git_tracked_out = subprocess.check_output(['git', 'ls-files', 'ubuntu_tank'], cwd=root, text=True)

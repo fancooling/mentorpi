@@ -82,6 +82,7 @@ def generate_launch_description():
     right_correction_factor = LaunchConfiguration('right_correction_factor')
     serial_read_timeout_sec = LaunchConfiguration('serial_read_timeout_sec')
     write_timeout_sec = LaunchConfiguration('write_timeout_sec')
+    freshness_timeout_sec = LaunchConfiguration('freshness_timeout_sec')
     serial_silence_timeout_sec = LaunchConfiguration('serial_silence_timeout_sec')
 
     localhost_only = LaunchConfiguration('localhost_only')
@@ -100,6 +101,8 @@ def generate_launch_description():
         parameters=[{
             'machine_type': machine_type,
             'controller_only': controller_only,
+            'max_linear_speed': LaunchConfiguration('max_linear_speed'),
+            'max_angular_speed': LaunchConfiguration('max_angular_speed'),
             'wheelbase': wheelbase,
             'track_width': track_width,
             'wheel_diameter': wheel_diameter,
@@ -143,6 +146,7 @@ def generate_launch_description():
             'baud_rate': baud_rate,
             'serial_read_timeout_sec': serial_read_timeout_sec,
             'write_timeout_sec': write_timeout_sec,
+            'freshness_timeout_sec': freshness_timeout_sec,
             'serial_silence_timeout_sec': serial_silence_timeout_sec,
             'motor_topic': '/ros_robot_controller/set_motor_guarded',
         }],
@@ -203,6 +207,8 @@ def generate_launch_description():
         DeclareLaunchArgument('baud_rate', default_value='1000000', description='STM32 baud rate'),
         DeclareLaunchArgument('max_rps', default_value='2.0', description='Maximum motor revolutions per second'),
         DeclareLaunchArgument('guard_timeout_sec', default_value='0.250', description='Guard command freshness timeout (sec)'),
+        DeclareLaunchArgument('max_linear_speed', default_value='0.5', description='Controller linear velocity cap in m/s'),
+        DeclareLaunchArgument('max_angular_speed', default_value='2.0', description='Controller angular velocity cap in rad/s'),
         DeclareLaunchArgument('check_rate_hz', default_value='50.0', description='Guard watchdog frequency (Hz)'),
         DeclareLaunchArgument('guard_heartbeat_interval_sec', default_value='0.200', description='Guard supervisor heartbeat interval (sec)'),
         DeclareLaunchArgument('wheelbase', default_value='0.1368', description='Wheelbase in meters'),
@@ -215,6 +221,7 @@ def generate_launch_description():
         DeclareLaunchArgument('right_correction_factor', default_value='1.0', description='Right tread correction factor'),
         DeclareLaunchArgument('serial_read_timeout_sec', default_value='0.050', description='Serial read poll timeout (sec)'),
         DeclareLaunchArgument('write_timeout_sec', default_value='0.100', description='Serial write timeout (sec)'),
+        DeclareLaunchArgument('freshness_timeout_sec', default_value='0.250', description='Bridge command freshness timeout (sec)'),
         DeclareLaunchArgument('serial_silence_timeout_sec', default_value='0.500', description='Fatal serial silence timeout (sec)'),
 
         # Nodes

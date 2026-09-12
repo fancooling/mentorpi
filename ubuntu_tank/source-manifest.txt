@@ -1,6 +1,6 @@
 destination: ubuntu_tank/README.md
 origin: authored
-destination_sha256: 0847bed4296e27ebda05f06c289a7b3fafb884935ca809749bf1e03da2b5b155
+destination_sha256: 3ad12436e12acbf6fcee98713885450be8aa50629b6a1e2bb0c4b9a7d8e29780
 status: new
 rationale: Canonical operator guide for the native tank controller.
 
@@ -10,6 +10,12 @@ destination_sha256: 59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45
 status: new
 rationale: Root semantic version definition for native release packaging.
 
+destination: ubuntu_tank/bin/mentorpi-tank-run
+origin: authored
+destination_sha256: e835f9b7f44e04b8fed87258e33806960931b13f5a8777f4c2aa6e290dfdf9f5
+status: new
+rationale: Non-interactive ROS launch wrapper and supervisor runner for systemd service.
+
 destination: ubuntu_tank/config/controller.yaml
 origin: authored
 destination_sha256: 08102a501f07701a8c2ff6cb21fe7e2dda7f7b89addd261f6fdbf4ad788a9f83
@@ -18,7 +24,7 @@ rationale: Version-controlled production kinematic and safety defaults for nativ
 
 destination: ubuntu_tank/config/sros2/README.md
 origin: authored
-destination_sha256: be5764af4181e5b87c58de83a197b86de27aed498bbed6d7b6a1406cc1e7dc77
+destination_sha256: 439e4e471595c085463f46a0f7777c12041c12c774cdc4322e2f037f995f888b
 status: new
 rationale: SROS2 security governance and enclave access control specification placeholder
 
@@ -78,7 +84,7 @@ rationale: Official OMG DDS-Security permissions XSD schema specification for SR
 
 destination: ubuntu_tank/deploy.sh
 origin: authored
-destination_sha256: 9ed862c9ad76bf06204273a5f4127ee7d1fc53e75fbbf2dd90a148de21980aee
+destination_sha256: e57c50472210e3f3cc6ff02c515717a1ac8115f4d7d82f6d0c0b6cf5d5fc810c
 status: new
 rationale: Unified deployment and operations entrypoint for the native controller workspace.
 
@@ -100,21 +106,39 @@ destination_sha256: 24088766efc2e1b6c0ea64f3a218be1c9ae5f21425da8af0133762f735cb
 status: new
 rationale: Restricted and verified udev serial character device ownership rule template
 
+destination: ubuntu_tank/host/mentorpi-tank-recover.service
+origin: authored
+destination_sha256: cfc0d123652ebac3f33aa93fe3e04919998e81832fcc06cdf8c14fbf3b3adc33
+status: new
+rationale: Oneshot boot activation recovery systemd service unit executing recover-activation before controller.
+
 destination: ubuntu_tank/host/mentorpi-tank.env
 origin: authored
-destination_sha256: c4f09c675a9d399106da06bb16a25a6f2a899b7e634b554fbda0fd2194ae9574
+destination_sha256: c4c02a304dd0931db5d83c46d0a119662c58c93ef7dc732259e665dc086ae58c
 status: new
 rationale: Pinned non-secret runtime environment defaults template for systemd service
 
 destination: ubuntu_tank/host/mentorpi-tank.service
 origin: authored
-destination_sha256: e3f1bf3d8176db021e792b9b73b8da4272bf6c71e9bce59aaef0242db3946a00
+destination_sha256: 7a0f02118385f12c84385161c602d99c05b74f5fa7aa8a7a6dec5151d9d59daf
 status: new
 rationale: Hardened native systemd service unit template with Type=notify and sandboxing
 
+destination: ubuntu_tank/host/ubuntu-tank.conf
+origin: authored
+destination_sha256: ba6eb03fcc73b5dd3b6d370d9ea0161a04ff93a82b8483499fcaafdb3a2e0223
+status: new
+rationale: Systemd-tmpfiles configuration establishing runtime and persistent state directories with secure permissions.
+
+destination: ubuntu_tank/scripts/build_disposable_root.sh
+origin: authored
+destination_sha256: 8dbce4e29913e06b947f62e3fb8b5dbc76598a75e6fcb3cf2105276e648bcb81
+status: new
+rationale: Isolated disposable build root script producing production install tree targeting release prefix without leaked paths.
+
 destination: ubuntu_tank/scripts/build_workspace.sh
 origin: authored
-destination_sha256: 361be9f7f314b1a88f7672d5e1a9f3417ecfd1716d424ce70a68b72f01d8d0c0
+destination_sha256: 840ee2de445c59b9135052164eec32c18ac94c17756eff4d9f4fd2553cf0f946
 status: new
 rationale: Host colcon build and rosdep resolution script scaffold with constrained cleanup path validation
 
@@ -124,6 +148,18 @@ destination_sha256: 8886bd34ba6195f406d766474cd1ad3bb27285f638d7c53da0d1be063a52
 status: new
 rationale: Read-only host OS, architecture, EEPROM, and device preflight script scaffold
 
+destination: ubuntu_tank/scripts/config_migration.py
+origin: authored
+destination_sha256: 47c9d339450c2d2e2ec3032ff30c134e6a0f1860754ea4517f272bcbba62d672
+status: new
+rationale: Configuration schema validation, forward migration, and downgrade restoration utility preserving user calibrations.
+
+destination: ubuntu_tank/scripts/deployment_manager.py
+origin: authored
+destination_sha256: 740599c39e78ccde521ed75e6e39312d8c2746b038f4069b13bba7ee9c6de35c
+status: new
+rationale: Packaging, immutable installation, atomic 6-step activation, offline rollback, and crash recovery manager.
+
 destination: ubuntu_tank/scripts/install_ros2.sh
 origin: authored
 destination_sha256: 9f48d4a15c5699744a4f68993a90b5c6219fcb48933d46d34ee60468c75bff5b
@@ -132,7 +168,7 @@ rationale: Ubuntu and ROS 2 Lyrical package repository, solver closure verificat
 
 destination: ubuntu_tank/scripts/recover_activation.sh
 origin: authored
-destination_sha256: e1fc1c1a95b3d59b729c684df0119572d5732494a376b59515047cd8d9eaeb6d
+destination_sha256: 1f680f9e557eb41d0ae1040e731b7dbd90f0e536d781d33a16eca77b27b2430f
 status: new
 rationale: Boot-time write-ahead transaction recovery runner script scaffold
 
@@ -198,7 +234,7 @@ origin: mentorpi/src
 source_path: mentorpi/src/driver/controller/controller/odom_publisher_node.py
 source_commit: ca32e0c
 source_sha256: e99e5d8ae07b923fd6b024735767607b3e1f32689fffff69cd8c62ad066f128c
-destination_sha256: c723e5492d87a3e3a7742a6425e9a016d95e3ffe421100e227d92fb2fd4001c2
+destination_sha256: 96ac0a8bfedb87f14378b403491d0edd26d71075593764e6b3ffa24a5c88d71c
 status: adapted
 adaptations: Removed legacy MACHINE_TYPE environment dependency and hardcoded paths; parameterized kinematics and guarded topics; applied and validated correction factors; documented dead reckoning command integration; guarded Pose2D import for ROS 2 Lyrical.
 
@@ -582,7 +618,7 @@ adaptations: none
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/launch/tank.launch.py
 origin: authored
-destination_sha256: b460ab82363624fa0fd270e0ccb83512b6f7f6805f8dbbd745c64b09db06d2b5
+destination_sha256: 5266f885087d16e02d3eabb719d88dca184d6c5a4be44ba61c908350f5434c9a
 status: new
 rationale: Guarded bringup launch file wiring explicit topic pipeline and fail-closed shutdown handlers
 
@@ -807,7 +843,7 @@ rationale: Unit test suite for host preflight, mutual exclusion, lock verificati
 
 destination: ubuntu_tank/tests/test_milestone3_port.py
 origin: authored
-destination_sha256: d5e7ace58e944c4ec557623c6c35a603e69bc5b08fb444fc4b082bcf0e8e0d49
+destination_sha256: 1963ba759bdbc721e0dd85069732c11343bffd29eb1fe05deb7b8a5cf6b5a5dc
 status: new
 rationale: Unit test suite verifying Milestone 3 porting: legacy variable removal, mock SDK, serial error handling, freshness watchdogs, non-ROS supervisor heartbeats, and workspace build scripts.
 
@@ -816,6 +852,12 @@ origin: authored
 destination_sha256: 6f6bd31fc0feca9817004ff7471f76cffc69cfcbacc1505c2e0657dc583f8a89
 status: new
 rationale: Automated hardware-free test suite for Milestone 4 guarded bringup, teleop leases, fault injection, and SROS2 security
+
+destination: ubuntu_tank/tests/test_milestone5_deployment.py
+origin: authored
+destination_sha256: 1a82ad5d87cfd97a94585738a9c291ba0afae3a2bc60fa9d0a2b6e6c7a970841
+status: new
+rationale: Unit and integration regression test suite for Milestone 5 packaging, installation, activation, rollback, and recovery.
 
 destination: ubuntu_tank/tests/test_negative_boundary.sh
 origin: authored
@@ -831,7 +873,7 @@ rationale: Hardware-free Lyrical and RMW integration test harness verifying auth
 
 destination: ubuntu_tank/tests/test_source_boundary.sh
 origin: authored
-destination_sha256: 1798d7e3a84186f98ef87f15c65f48244331daedbcca909c19441353c95fdaff
+destination_sha256: eda60063434974194298a8f8305ccedd9e1b11a75c2443e2352f079e9f3f8740
 status: new
 rationale: Automated source boundary gate validating workspace provenance, Git baseline integrity, and dependency closure.
 
@@ -840,3 +882,9 @@ origin: authored
 destination_sha256: 80dd5fd6018834dc6051d49978fe74eeba52311ec24f8dd54e4eb26d4d71c0f2
 status: new
 rationale: Pinned complete dependency closure specification for Ubuntu 26.04 and ROS 2 Lyrical (424 packages), captured on clean ARM64 target.
+
+destination: ubuntu_tank/scripts/prepare_build_root.py
+origin: authored
+destination_sha256: e9a16ffe835d04ef3552257681f0a0cfb2374c5bc05d0b4803191473fd6830c7
+status: new
+rationale: Offline bootstrap of a disposable production build root from a prepared native host.

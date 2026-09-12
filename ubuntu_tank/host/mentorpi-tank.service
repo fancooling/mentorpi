@@ -1,7 +1,8 @@
 [Unit]
 Description=MentorPi Tank Native Motion Controller
-After=network.target
+After=network.target mentorpi-tank-recover.service
 Wants=network.target
+Requires=mentorpi-tank-recover.service
 
 [Service]
 Type=notify
@@ -15,18 +16,27 @@ Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=5s
 WatchdogSec=2s
+StartLimitIntervalSec=30s
+StartLimitBurst=5
 
 # Hardened sandboxing constraints
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelTunables=yes
+ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
 DeviceAllow=/dev/rrc rw
 DevicePolicy=closed
 ReadWritePaths=/var/opt/ubuntu_tank /run/ubuntu_tank
+ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank
 
 [Install]
 WantedBy=multi-user.target

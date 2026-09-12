@@ -104,10 +104,15 @@ cmd_test() {
   python3 "${SCRIPT_DIR}/scripts/sros2_policy.py"
 
   echo ""
+  echo "--> Running Milestone 5 Native Host Deployment & Operations tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, & 4 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, & 5 tests PASSED successfully!"
   echo "============================================================"
 }
+
 
 cmd_arm() {
   local ack=""
@@ -189,19 +194,54 @@ cmd_teleop() {
     exit 1
   fi
 
+  local teleop_config_args
+  if ! teleop_config_args="$(python3 "${SCRIPT_DIR}/scripts/config_migration.py" teleop-args "${UBUNTU_TANK_CONFIG:-/etc/opt/ubuntu_tank/controller.yaml}")"; then
+    return 1
+  fi
+  local -a host_teleop_args
+  mapfile -t host_teleop_args <<< "${teleop_config_args}"
   echo "--> Launching interactive keyboard teleoperation..."
   exec env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
       ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
       ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
       ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
       ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
-    ros2 run ubuntu_tank_teleop teleop_key "$@"
+    ros2 run ubuntu_tank_teleop teleop_key "$@" --ros-args "${host_teleop_args[@]}"
 }
 
 cmd_status() {
   echo "============================================================"
   echo "MentorPi Tank Controller Status"
   echo "============================================================"
+
+  # 1. Release information
+  if [ -L "/opt/ubuntu_tank/current" ]; then
+    local target
+    target="$(readlink -f /opt/ubuntu_tank/current 2>/dev/null || true)"
+    echo "Active Release: $(basename "${target}") (${target})"
+  else
+    echo "Active Release: None (/opt/ubuntu_tank/current not linked)"
+  fi
+
+  # 2. Systemd service status
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet mentorpi-tank.service 2>/dev/null; then
+      echo "Service: ACTIVE (mentorpi-tank.service)"
+    else
+      echo "Service: INACTIVE (mentorpi-tank.service)"
+    fi
+  else
+    echo "Service: systemctl not available"
+  fi
+
+  # 3. Serial hardware status
+  if [ -e "/dev/rrc" ]; then
+    echo "Hardware Serial: PRESENT (/dev/rrc -> $(readlink -f /dev/rrc 2>/dev/null || echo '/dev/rrc'))"
+  else
+    echo "Hardware Serial: ABSENT (/dev/rrc not found)"
+  fi
+
+  # 4. Guard state and telemetry (if ROS is active)
   if command -v ros2 >/dev/null 2>&1; then
     echo "--> Querying guard state and telemetry..."
     if ! env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
@@ -218,11 +258,171 @@ cmd_status() {
   fi
 }
 
+cmd_package() {
+  echo "--> Packaging release..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" package "$@"
+}
+
+cmd_install() {
+  echo "--> Installing release artifact..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" install "$@"
+}
+
+cmd_activate() {
+  echo "--> Activating release..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" activate "$@"
+}
+
+cmd_rollback() {
+  echo "--> Rolling back to previous release..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" rollback "$@"
+}
+
+cmd_start() {
+  # 1. Mutual exclusion: Docker container inventory
+  if [ -n "${UBUNTU_TANK_MOCK_DOCKER_FAIL:-}" ]; then
+    echo "ERROR: Docker is installed but container inventory check failed. Cannot verify mutual exclusion. Startup blocked." >&2
+    exit 1
+  elif [ -n "${UBUNTU_TANK_MOCK_DOCKER_PS:-}" ]; then
+    local docker_out="${UBUNTU_TANK_MOCK_DOCKER_PS}"
+    if [ "${docker_out}" = "none" ] || [ "${docker_out}" = "EMPTY" ]; then
+      docker_out=""
+    fi
+    if [ -n "${docker_out}" ] && echo "${docker_out}" | grep -E -qw "MentorPi|MentorPiFan|mentorpi|runtime-core|tank_runtime"; then
+      echo "ERROR: Conflicting container (MentorPi, MentorPiFan, mentorpi, or runtime-core) is running or present." >&2
+      exit 1
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    local docker_out
+    if ! docker_out="$(docker ps -a --format '{{.Names}}' 2>&1)"; then
+      echo "ERROR: Docker is installed but container inventory check failed: ${docker_out}" >&2
+      echo "Cannot verify mutual exclusion of factory container. Startup blocked." >&2
+      exit 1
+    fi
+    if echo "${docker_out}" | grep -E -qw "MentorPi|MentorPiFan|mentorpi|runtime-core|tank_runtime"; then
+      echo "ERROR: Conflicting container (MentorPi, MentorPiFan, mentorpi, or runtime-core) is running or present." >&2
+      exit 1
+    fi
+  fi
+
+  # 2. Conflicting host services
+  if [ -z "${UBUNTU_TANK_MOCK_TARGET:-}" ]; then
+    local factory_units=("mentorpi.service" "mentorpi-start.service" "mentorpi-fan.service" "hiwonder-chassis.service")
+    for unit in "${factory_units[@]}"; do
+      if [ -f "/etc/systemd/system/${unit}" ] || [ -f "/lib/systemd/system/${unit}" ]; then
+        if command -v systemctl >/dev/null 2>&1; then
+          if systemctl is-active --quiet "${unit}" 2>/dev/null; then
+            echo "ERROR: Conflicting factory systemd unit is active: ${unit}. Startup blocked." >&2
+            exit 1
+          fi
+        fi
+      elif command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet "${unit}" 2>/dev/null; then
+          echo "ERROR: Conflicting factory systemd unit is active: ${unit}. Startup blocked." >&2
+          exit 1
+        fi
+      fi
+    done
+  fi
+
+  # 3. Serial port device exclusivity check
+  local serial_dev="${UBUNTU_TANK_MOCK_SERIAL_DEV:-/dev/rrc}"
+  if [ -n "${UBUNTU_TANK_MOCK_SERIAL_HOLDER:-}" ]; then
+    echo "ERROR: Conflicting process PID(s) ${UBUNTU_TANK_MOCK_SERIAL_HOLDER} hold ${serial_dev} open. Startup blocked." >&2
+    exit 1
+  elif [ -e "${serial_dev}" ]; then
+    local real_dev
+    real_dev="$(readlink -f "${serial_dev}" || echo "${serial_dev}")"
+    if [ -c "${real_dev}" ]; then
+      if ! command -v fuser >/dev/null 2>&1; then
+        echo "ERROR: ${serial_dev} character device is present but 'fuser' command is not available to verify exclusivity. Startup blocked." >&2
+        exit 1
+      else
+        local holder
+        holder="$(fuser "${real_dev}" 2>/dev/null || true)"
+        if [ -n "${holder}" ]; then
+          echo "ERROR: Conflicting process PID(s) ${holder} currently hold ${real_dev} open. Startup blocked." >&2
+          exit 1
+        fi
+      fi
+    fi
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "ERROR: systemctl not found on this system." >&2
+    exit 1
+  fi
+
+  # Check deployment lock and journal state before starting
+  local lock_file="${UBUNTU_TANK_LOCK_FILE:-/run/lock/ubuntu_tank/deploy.lock}"
+  local journal_file="${UBUNTU_TANK_JOURNAL_FILE:-/var/opt/ubuntu_tank/deployment/activation-journal}"
+  if [ -f "${lock_file}" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      if ! python3 -c "import fcntl, os, sys; fd = os.open('${lock_file}', os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB); fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)" 2>/dev/null; then
+        echo "ERROR: Deployment lock is held by another process; cannot start controller." >&2
+        exit 1
+      fi
+    fi
+  fi
+  local dep_dir
+  dep_dir="$(dirname "${journal_file}")"
+  if [ -f "${journal_file}" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      if ! python3 -c "import json, sys
+try:
+    with open('${journal_file}', 'r', encoding='utf-8') as f:
+        d = json.load(f)
+    if not isinstance(d, dict) or 'format_version' not in d:
+        sys.exit(1)
+    if d.get('current_transaction') is not None:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)" 2>/dev/null; then
+        echo "ERROR: Activation journal at '${journal_file}' has uncommitted transaction or invalid state; cannot start controller." >&2
+        exit 1
+      fi
+    fi
+  elif [ -d "${dep_dir}" ]; then
+    echo "ERROR: Activation journal missing at '${journal_file}'; cannot start controller." >&2
+    exit 1
+  fi
+
+  echo "--> Starting mentorpi-tank.service..."
+  sudo systemctl start mentorpi-tank.service
+  if systemctl is-active --quiet mentorpi-tank.service; then
+    echo "mentorpi-tank.service is ACTIVE."
+    echo "NOTE: Controller starts in DISARMED state. Use './deploy.sh arm --ack-tracks-raised' to arm motors."
+  else
+    echo "ERROR: Failed to start mentorpi-tank.service. Check logs with './deploy.sh logs'." >&2
+    exit 1
+  fi
+}
+
+cmd_stop() {
+  echo "--> Stopping mentorpi-tank.service..."
+  if command -v ros2 >/dev/null 2>&1; then
+    cmd_disarm 2>/dev/null || true
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl stop mentorpi-tank.service
+    echo "mentorpi-tank.service is STOPPED."
+  fi
+}
+
+cmd_logs() {
+  local lines="${1:-50}"
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl -u mentorpi-tank.service -n "${lines}" --no-pager
+  else
+    echo "journalctl not available."
+  fi
+}
+
 cmd_stub() {
   local cmd="$1"
   local milestone="$2"
   echo "Command '${cmd}' is planned for ${milestone} according to MENTORPI_FRESH_CONTROLLER_DESIGN.md." >&2
-  echo "Milestone 2 (Target-Pi Ubuntu and ROS installation workflow) is current." >&2
   exit 1
 }
 
@@ -257,6 +457,27 @@ case "${COMMAND}" in
   build)
     "${SCRIPT_DIR}/scripts/build_workspace.sh" "$@"
     ;;
+  package)
+    cmd_package "$@"
+    ;;
+  install)
+    cmd_install "$@"
+    ;;
+  activate)
+    cmd_activate "$@"
+    ;;
+  rollback)
+    cmd_rollback "$@"
+    ;;
+  start)
+    cmd_start "$@"
+    ;;
+  stop)
+    cmd_stop "$@"
+    ;;
+  logs)
+    cmd_logs "$@"
+    ;;
   arm)
     cmd_arm "$@"
     ;;
@@ -269,12 +490,10 @@ case "${COMMAND}" in
   status)
     cmd_status "$@"
     ;;
-  package|install|activate|rollback|start|stop|logs)
-    cmd_stub "${COMMAND}" "Milestone 5 (Native host deployment and operations)"
-    ;;
   bench)
     cmd_stub "${COMMAND}" "Milestone 6 (Raised-track controller acceptance)"
     ;;
+
   *)
     echo "Unknown command: ${COMMAND}" >&2
     usage

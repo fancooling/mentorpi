@@ -99,6 +99,8 @@ class Controller(Node):
 
         # Declare parameters
         self.declare_parameter('machine_type', 'MentorPi_Tank')
+        self.declare_parameter('max_linear_speed', 0.5)
+        self.declare_parameter('max_angular_speed', 2.0)
         self.declare_parameter('wheelbase', 0.1368)
         self.declare_parameter('track_width', 0.1446)
         self.declare_parameter('wheel_diameter', 0.075)
@@ -116,6 +118,10 @@ class Controller(Node):
         self.declare_parameter('angular_correction_factor', 1.00)
 
         # Retrieve parameter values
+        self.max_linear_speed = float(self.get_parameter('max_linear_speed').value)
+        self.max_angular_speed = float(self.get_parameter('max_angular_speed').value)
+        if any(not math.isfinite(v) or v <= 0 for v in (self.max_linear_speed, self.max_angular_speed)):
+            raise ValueError('Velocity limits must be finite positive values')
         self.machine_type = str(self.get_parameter('machine_type').value)
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.track_width = float(self.get_parameter('track_width').value)
@@ -268,6 +274,16 @@ class Controller(Node):
 
 
     def cmd_vel_callback(self, msg):
+        """Clamp incoming velocities to host limits before kinematics and publication.
+
+        Non-finite input becomes a stop; limits apply even to non-teleop callers.
+        """
+        values = (msg.linear.x, msg.linear.y, msg.angular.z)
+        if not all(math.isfinite(value) for value in values):
+            msg.linear.x = msg.linear.y = msg.angular.z = 0.0
+        msg.linear.x = max(-self.max_linear_speed, min(self.max_linear_speed, msg.linear.x))
+        msg.linear.y = max(-self.max_linear_speed, min(self.max_linear_speed, msg.linear.y))
+        msg.angular.z = max(-self.max_angular_speed, min(self.max_angular_speed, msg.angular.z))
         if self.machine_type == 'MentorPi_Tank':
             self.linear_x = msg.linear.x
             self.linear_y = 0.0
@@ -282,6 +298,7 @@ class Controller(Node):
             #     self.get_logger().info(f'self.right_correction: {self.right_correction}')
             #     self.get_logger().info(f'self.left_correction: {self.left_correction}')
             # self.get_logger().info(f'self.angular_z: {self.angular_z}')
+            self.angular_z = max(-self.max_angular_speed, min(self.max_angular_speed, self.angular_z))
             speeds = self.mecanum.set_velocity(self.linear_x, self.linear_y, self.angular_z)
             self.motor_pub.publish(speeds)
 

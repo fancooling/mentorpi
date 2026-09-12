@@ -1,0 +1,15 @@
+[Unit]
+Description=MentorPi Tank Boot Activation Recovery
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=mentorpi-tank.service shutdown.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/ubuntu_tank/libexec/recover-activation
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

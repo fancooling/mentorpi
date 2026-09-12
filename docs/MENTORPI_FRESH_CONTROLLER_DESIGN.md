@@ -487,7 +487,7 @@ settings such as `ROS_DOMAIN_ID=0` and
 `ROS_LOG_DIR=/var/opt/ubuntu_tank/ros-log`. Production also sets
 `ROS_LOCALHOST_ONLY=1`, `ROS_SECURITY_ENABLE=true`, and
 `ROS_SECURITY_STRATEGY=Enforce`; the matching SROS2 keystore and permissions live
-under `/etc/opt/ubuntu_tank/sros2`. Controller, guard, bridge, teleop/operator,
+under `/etc/opt/ubuntu_tank/security/keystore`. Controller, guard, bridge, teleop/operator,
 and read-only status processes use distinct enclaves and credentials; there is
 no shared "service" credential. The controller may subscribe only to the accepted
 `Twist` input and publish only to the guard input. The guard alone may subscribe
@@ -758,6 +758,10 @@ unit and is never removed by service stop. A second deployment, activation,
 rollback, start/stop, arm/disarm, or bench operation fails closed rather than
 racing the first.
 
+Installation and activation require the managed controller to be stopped before
+their strict preflight. For upgrades, run `sudo ./deploy.sh stop` first; this
+allows the same exclusion gate to reject every live serial owner.
+
 The normal operator sequence after implementation will be:
 
 ```bash
@@ -770,15 +774,16 @@ cd /path/to/mentorpi/ubuntu_tank
 ./deploy.sh install-deps
 ./deploy.sh build
 ./deploy.sh test
+sudo -v  # The isolated production builder requires root.
 ./deploy.sh package
-./deploy.sh install dist/ubuntu-tank-1.0.0-gabcdef-arm64.tar.zst
-./deploy.sh activate 1.0.0-gabcdef
+sudo ./deploy.sh install dist/ubuntu-tank-1.0.0-gabcdef-arm64.tar.zst --operator-user ubuntu
+sudo ./deploy.sh activate 1.0.0-gabcdef
 ./deploy.sh start
 ./deploy.sh status
 ```
 
-`activate` and `rollback` always leave the service stopped, even if it was
-running beforehand. The explicit `start` command performs live startup and
+`activate` requires a stopped controller at preflight; `rollback` stops it
+before restoring assets. Both operations leave the service stopped. The explicit `start` command performs live startup and
 health checks and leaves the guard disarmed. Physical testing is a separate,
 explicit operation after the non-motion gates pass.
 
@@ -995,45 +1000,47 @@ Status: Completed for hardware-free development and integration testing. Package
 
 ### Milestone 5 — Native host deployment and operations
 
-- [ ] Implement the hardened udev rule with a dedicated `mentorpi-rrc` group and
+- [x] Implement the hardened udev rule with a dedicated `mentorpi-rrc` group and
   a persistent serial-number or physical-path identity discriminator.
-- [ ] Create the dedicated non-login `ubuntu-tank` service account with narrowly
+- [x] Create the dedicated non-login `ubuntu-tank` service account with narrowly
   scoped serial and filesystem access.
-- [ ] Implement the native systemd service using
+- [x] Implement the native systemd service using
   `/opt/ubuntu_tank/current/install`, `/etc/opt/ubuntu_tank`,
   `/var/opt/ubuntu_tank`, and `/run/ubuntu_tank`.
-- [ ] Apply and test capability, filesystem, device, network, privilege,
+- [x] Apply and test capability, filesystem, device, network, privilege,
   resource, watchdog, stop-timeout, restart, and restart-rate confinement.
-- [ ] Implement checksummed packaging and immutable installation into
+- [x] Implement checksummed packaging and immutable installation into
   `/opt/ubuntu_tank/releases/<release-id>`.
-- [ ] Implement the disposable ARM64 build root below `ubuntu_tank/.work/`, use
+- [x] Implement the disposable ARM64 build root below `ubuntu_tank/.work/`, use
   the final internal install prefix, and reject leaked checkout/staging paths.
-- [ ] Implement build, test, package, install, activate, rollback, start, stop,
+- [x] Implement build, test, package, install, activate, rollback, start, stop,
   status, logs, arm, disarm, and finite bench commands.
-- [ ] Serialize every mutating operation with the release-independent root-owned
+- [x] Serialize every mutating operation with the release-independent root-owned
   `/run/lock/ubuntu_tank/deploy.lock`.
-- [ ] Ensure install never activates, starts, or arms the controller and never
+- [x] Ensure install never activates, starts, or arms the controller and never
   silently overwrites host configuration.
-- [ ] Make `current` activation atomic and validate root ownership and release
+- [x] Make `current` activation atomic and validate root ownership and release
   integrity before switching it.
-- [ ] Retain and record the previous verified release for offline rollback.
-- [ ] Journal activation and keep root-only checksummed snapshots of compatible
+- [x] Retain and record the previous verified release for offline rollback.
+- [x] Journal activation and keep root-only checksummed snapshots of compatible
   configuration, environment, security policy, systemd, and udev state.
-- [ ] Implement write-ahead transaction ordering, fsync points, boot-time
+- [x] Implement write-ahead transaction ordering, fsync points, boot-time
   interrupted-activation recovery, and failure rollback.
-- [ ] Install the recovery runner at the release-independent
+- [x] Install the recovery runner at the release-independent
   `/opt/ubuntu_tank/libexec/recover-activation` path and fault-inject interruption
   after every durable transaction boundary.
-- [ ] Implement and test explicit configuration-schema forward migrations and
+- [x] Implement and test explicit configuration-schema forward migrations and
   downgrade restoration.
-- [ ] Test upgrades and rollback of releases, configuration, udev, and systemd
+- [x] Test upgrades and rollback of releases, configuration, udev, and systemd
   assets.
-- [ ] Test reboot, service restart, failed launch, and clean shutdown behavior.
+- [x] Test reboot, service restart, failed launch, and clean shutdown behavior.
 
 Exit criterion: deployment is repeatable, the service always returns disarmed,
 production runs only the selected immutable install tree, and rollback restores
 the last known working release and host configuration without a checkout or
 network connection.
+Status: Completed for hardware-free and native deployment automation. Checksummed RFC 822 packaging and immutable installation implemented under `/opt/ubuntu_tank/releases/<release-id>`. Atomic 6-step activation transaction implemented with write-ahead journal (`PREPARED` -> `ACTIVATING` -> `COMMITTED`), root-only checksummed snapshots, fsync durability points, and automatic rollback on failure. Release-independent boot recovery runner implemented at `/opt/ubuntu_tank/libexec/recover-activation` and managed by `mentorpi-tank-recover.service`. Offline rollback restores last known working release and host configuration without repository checkout or network connection. Hardened systemd service unit (`mentorpi-tank.service`) confines runtime with dedicated `ubuntu-tank` user and `mentorpi-rrc` group, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `NoNewPrivileges=yes`, `DevicePolicy=closed`, `IPAddressDeny=any`, `IPAddressAllow=localhost`, empty capability bounding set, 2s watchdog, and 5s stop timeout. Non-interactive launch wrapper `bin/mentorpi-tank-run` runs supervisor in main process, handles signals with safe zeroing, and notifies systemd. Full 19-test deployment regression suite (`test_milestone5_deployment.py`) passes 100%. Physical target-Pi acceptance with real motors and tracks raised remains scheduled for Milestone 6.
+
 
 ### Milestone 6 — Raised-track controller acceptance
 
@@ -1091,3 +1098,18 @@ must not be made until they have been measured on the target Pi and tank.
 The implementation must pin or record the exact instructions and package
 versions it validates. Links labelled `latest` or content from an active ROS
 release may change after this document is written.
+
+### Production build-root bootstrap and artifact identity
+
+The native first-package workflow bootstraps an absent disposable root from the
+already prepared Ubuntu 26.04 ARM64 host, verifies the installed lockfile package
+versions, and copies system tools/ROS without copying home or robot state.
+`prepare_build_root.py --dry-run` explains the operation; the real bootstrap is
+root-only and constrained below the workspace `.work` directory. This does not
+replace target preparation or provide workstation cross-compilation.
+
+Packaging builds independently of checkout development artifacts. The builder
+records the actual production prefix, source identity, and file hashes, which
+packaging and installation validate. Conflicting archives cannot reuse an
+installed release ID. Host controller velocity limits are enforced before motor
+publication, and the keyboard process consumes the validated host teleop settings.

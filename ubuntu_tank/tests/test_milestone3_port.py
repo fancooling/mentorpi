@@ -829,6 +829,22 @@ class TestRosRobotControllerNode(unittest.TestCase):
 class TestOdomPublisherNode(unittest.TestCase):
     """Verify Controller (odom_publisher_node) parameterization and topic topology."""
 
+    def test_host_velocity_caps_enforced_before_motor_publication(self):
+        """Non-teleop commands cannot exceed lower host caps; invalid input stops."""
+        from controller import odom_publisher_node
+        from types import SimpleNamespace
+        node = odom_publisher_node.Controller('test_controller')
+        node.max_linear_speed = 0.05
+        node.max_angular_speed = 0.1
+        node.mecanum.set_velocity = MagicMock(return_value='bounded motors')
+        for linear, angular, expected in [(0.2, 0.8, (0.05, 0.0, 0.1)),
+                                            (-0.2, -0.8, (-0.05, 0.0, -0.1)),
+                                            (float('nan'), 0.1, (0.0, 0.0, 0.0))]:
+            message = SimpleNamespace(linear=SimpleNamespace(x=linear, y=0.0), angular=SimpleNamespace(z=angular))
+            node.cmd_vel_callback(message)
+            node.mecanum.set_velocity.assert_called_with(*expected)
+            node.motor_pub.publish.assert_called_with('bounded motors')
+
     def test_parameter_declarations_and_geometry(self):
         """Verify parameterized geometry and correction factors."""
         from controller import odom_publisher_node

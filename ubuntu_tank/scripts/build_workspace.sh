@@ -18,6 +18,9 @@ Options:
   --clean                  Remove build/, install/, and log/ directories before building
   --dry-run                Validate workspace and print build plan without mutating filesystem
   --merge-install          Build using colcon --merge-install layout
+  --production             Build self-contained production tree without symlinks
+  --symlink-install        Build using colcon --symlink-install (development default)
+  --no-symlink-install     Disable --symlink-install for isolated production artifacts
   --packages <pkg1,pkg2>   Comma-separated list of packages to build (default: all)
   --install-base <dir>     Directory for colcon --install-base (default: ubuntu_tank/install)
   --build-base <dir>       Directory for colcon --build-base (default: ubuntu_tank/build)
@@ -34,6 +37,7 @@ fi
 CLEAN=false
 DRY_RUN=false
 MERGE_INSTALL=false
+USE_SYMLINK_INSTALL=true
 SELECTED_PACKAGES=""
 INSTALL_BASE="${UBUNTU_TANK_DIR}/install"
 BUILD_BASE="${UBUNTU_TANK_DIR}/build"
@@ -54,6 +58,18 @@ while [ $# -gt 0 ]; do
       ;;
     --merge-install)
       MERGE_INSTALL=true
+      shift
+      ;;
+    --production)
+      USE_SYMLINK_INSTALL=false
+      shift
+      ;;
+    --symlink-install)
+      USE_SYMLINK_INSTALL=true
+      shift
+      ;;
+    --no-symlink-install)
+      USE_SYMLINK_INSTALL=false
       shift
       ;;
     --packages)
@@ -191,7 +207,8 @@ COLCON_CMD=("colcon" "build" "--base-paths" "${SRC_DIR}")
 
 if [ "${MERGE_INSTALL}" = true ]; then
   COLCON_CMD+=("--merge-install")
-else
+fi
+if [ "${USE_SYMLINK_INSTALL}" = true ]; then
   COLCON_CMD+=("--symlink-install")
 fi
 
