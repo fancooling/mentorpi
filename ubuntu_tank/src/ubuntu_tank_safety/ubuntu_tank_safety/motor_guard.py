@@ -17,7 +17,9 @@ class MotorGuard:
         if max_rps <= 0.0 or not math.isfinite(max_rps):
             raise ValueError(f"max_rps must be a positive finite float, got {max_rps}")
         if timeout_sec <= 0.0 or not math.isfinite(timeout_sec):
-            raise ValueError(f"timeout_sec must be a positive finite float, got {timeout_sec}")
+            raise ValueError(
+                f"timeout_sec must be a positive finite float, got {timeout_sec}"
+            )
 
         self.max_rps: float = float(max_rps)
         self.timeout_sec: float = float(timeout_sec)
@@ -60,7 +62,9 @@ class MotorGuard:
         """Return the standard four-motor zero command."""
         return [(1, 0.0), (2, 0.0), (3, 0.0), (4, 0.0)]
 
-    def validate_command(self, motor_states: List[Tuple[int, float]]) -> Tuple[bool, str]:
+    def validate_command(
+        self, motor_states: List[Tuple[int, float]]
+    ) -> Tuple[bool, str]:
         """
         Validate incoming motor command states.
 
@@ -97,14 +101,15 @@ class MotorGuard:
                 return False, f"Motor {m_id} RPS {rps} exceeds limit {self.max_rps}"
 
         if seen_ids != {1, 2, 3, 4}:
-            return False, f"Motor IDs do not cover complete set {{1, 2, 3, 4}}: {seen_ids}"
+            return (
+                False,
+                f"Motor IDs do not cover complete set {{1, 2, 3, 4}}: {seen_ids}",
+            )
 
         return True, "Valid"
 
     def handle_command(
-        self,
-        motor_states: List[Tuple[int, float]],
-        now_monotonic: float
+        self, motor_states: List[Tuple[int, float]], now_monotonic: float
     ) -> Tuple[Optional[List[Tuple[int, float]]], bool, str]:
         """
         Process an incoming motor command at the given monotonic timestamp.
@@ -130,8 +135,7 @@ class MotorGuard:
         return ordered, False, "Command accepted and forwarded"
 
     def check_timeout(
-        self,
-        now_monotonic: float
+        self, now_monotonic: float
     ) -> Tuple[bool, Optional[List[Tuple[int, float]]]]:
         """
         Check if the active motion lease has timed out according to monotonic clock.

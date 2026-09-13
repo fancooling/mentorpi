@@ -24,8 +24,12 @@ for p in [REPO_ROOT, UBUNTU_TANK_DIR, SCRIPTS_DIR]:
         sys.path.insert(0, p)
 
 for pkg in [
-    "ubuntu_tank_safety", "ubuntu_tank_supervisor", "ubuntu_tank_teleop",
-    "controller", "ros_robot_controller", "ubuntu_tank_bringup"
+    "ubuntu_tank_safety",
+    "ubuntu_tank_supervisor",
+    "ubuntu_tank_teleop",
+    "controller",
+    "ros_robot_controller",
+    "ubuntu_tank_bringup",
 ]:
     pkg_path = os.path.join(SRC_DIR, pkg)
     if pkg_path not in sys.path:
@@ -61,22 +65,31 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_physical_safety_acknowledgment_enforced(self):
         """Orchestrator must fail closed if --ack-tracks-raised is not provided."""
         res = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "bench_acceptance.py"), "--mock"],
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "bench_acceptance.py"),
+                "--mock",
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
-        self.assertNotEqual(res.returncode, 0, "Must exit with failure code when ack is missing")
-        self.assertIn("Physical safety acknowledgment required: --ack-tracks-raised", res.stderr)
-        self.assertIn("Under NO circumstances does Milestone 6 authorize on-ground motion", res.stderr)
+        self.assertNotEqual(
+            res.returncode, 0, "Must exit with failure code when ack is missing"
+        )
+        self.assertIn(
+            "Physical safety acknowledgment required: --ack-tracks-raised", res.stderr
+        )
+        self.assertIn(
+            "Under NO circumstances does Milestone 6 authorize on-ground motion",
+            res.stderr,
+        )
 
     # 2. Deployment Lock Exclusivity
     def test_deployment_lock_held_fails_preflight(self):
         """If another process holds the deployment lock, preflight checks must fail."""
         with DeploymentLock(self.lock_path, timeout_sec=0.2):
             orch = BenchAcceptanceOrchestrator(
-                lock_path=self.lock_path,
-                mock=True,
-                mock_containers="EMPTY"
+                lock_path=self.lock_path, mock=True, mock_containers="EMPTY"
             )
             ok, errors = orch.run_preflight_checks()
             self.assertFalse(ok)
@@ -87,9 +100,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_conflicting_containers_fail_preflight(self):
         """Conflicting factory/replacement containers must fail preflight."""
         orch = BenchAcceptanceOrchestrator(
-            lock_path=self.lock_path,
-            mock=True,
-            mock_containers="MentorPi"
+            lock_path=self.lock_path, mock=True, mock_containers="MentorPi"
         )
         ok, errors = orch.run_preflight_checks()
         self.assertFalse(ok)
@@ -100,9 +111,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_usb_identity_verification(self):
         """USB identity 1a86:55d4 must pass in mock mode and report identity."""
         orch = BenchAcceptanceOrchestrator(
-            lock_path=self.lock_path,
-            mock=True,
-            mock_containers="EMPTY"
+            lock_path=self.lock_path, mock=True, mock_containers="EMPTY"
         )
         ok, errors = orch.run_preflight_checks()
         self.assertTrue(ok, f"Preflight failed: {errors}")
@@ -117,19 +126,21 @@ class TestMilestone6Acceptance(unittest.TestCase):
             lock_path=self.lock_path,
             mock=True,
             mock_battery_mv=9200,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         ok, errors = orch_low.run_preflight_checks()
         self.assertFalse(ok)
         self.assertTrue(any("Battery voltage too low" in e for e in errors))
-        self.assertEqual(orch_low.results["preflight"]["battery_status"], "LOW_VOLTAGE_FAULT")
+        self.assertEqual(
+            orch_low.results["preflight"]["battery_status"], "LOW_VOLTAGE_FAULT"
+        )
 
         # Healthy voltage
         orch_ok = BenchAcceptanceOrchestrator(
             lock_path=self.lock_path,
             mock=True,
             mock_battery_mv=12200,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         ok, errors = orch_ok.run_preflight_checks()
         self.assertTrue(ok, f"Healthy battery check failed: {errors}")
@@ -139,9 +150,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_accepted_geometry_and_limits_validation(self):
         """Verify accepted geometry and conservative limits against controller.yaml."""
         orch = BenchAcceptanceOrchestrator(
-            config_path=self.config_path,
-            lock_path=self.lock_path,
-            mock=True
+            config_path=self.config_path, lock_path=self.lock_path, mock=True
         )
         ok, errors = orch.verify_geometry_and_limits()
         self.assertTrue(ok, f"Geometry/limits failed: {errors}")
@@ -164,14 +173,13 @@ class TestMilestone6Acceptance(unittest.TestCase):
                 "wheel_diameter": 0.1000,
                 "max_linear_speed": 1.2,
                 "max_angular_speed": 4.0,
-                "correction_factor": {"left": 1.5, "right": 1.0}
+                "correction_factor": {"left": 1.5, "right": 1.0},
             },
-            "motor_guard": {
-                "max_rps": 5.0
-            }
+            "motor_guard": {"max_rps": 5.0},
         }
         with open(bad_config_path, "w", encoding="utf-8") as f:
             import yaml
+
             yaml.safe_dump(bad_cfg, f)
 
         orch = BenchAcceptanceOrchestrator(config_path=bad_config_path, mock=True)
@@ -190,7 +198,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             angular_z=0.0,
             wheelbase=0.1368,
             track_width=0.1446,
-            wheel_diameter=0.075
+            wheel_diameter=0.075,
         )
         ok, msg = check_motor_polarity("forward", speeds)
         self.assertTrue(ok, msg)
@@ -207,7 +215,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             angular_z=0.0,
             wheelbase=0.1368,
             track_width=0.1446,
-            wheel_diameter=0.075
+            wheel_diameter=0.075,
         )
         ok, msg = check_motor_polarity("reverse", speeds)
         self.assertTrue(ok, msg)
@@ -224,7 +232,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             angular_z=0.8,
             wheelbase=0.1368,
             track_width=0.1446,
-            wheel_diameter=0.075
+            wheel_diameter=0.075,
         )
         ok, msg = check_motor_polarity("spin_left", speeds)
         self.assertTrue(ok, msg)
@@ -239,7 +247,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             angular_z=-0.8,
             wheelbase=0.1368,
             track_width=0.1446,
-            wheel_diameter=0.075
+            wheel_diameter=0.075,
         )
         ok, msg = check_motor_polarity("spin_right", speeds)
         self.assertTrue(ok, msg)
@@ -254,7 +262,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             angular_z=0.0,
             wheelbase=0.1368,
             track_width=0.1446,
-            wheel_diameter=0.075
+            wheel_diameter=0.075,
         )
         ok, msg = check_motor_polarity("stop", speeds)
         self.assertTrue(ok, msg)
@@ -269,7 +277,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             config_path=self.config_path,
             lock_path=self.lock_path,
             mock=True,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         ok, errors = orch.run_motion_acceptance_tests()
         self.assertTrue(ok, f"Motion tests failed: {errors}")
@@ -288,7 +296,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             config_path=self.config_path,
             lock_path=self.lock_path,
             mock=True,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         ok, errors = orch.measure_stop_latencies()
         self.assertTrue(ok, f"Latency tests failed: {errors}")
@@ -297,32 +305,50 @@ class TestMilestone6Acceptance(unittest.TestCase):
         # Condition 1: Keyboard lease expiry <= 200 ms
         self.assertIn("keyboard_lease_expiry", lats)
         self.assertTrue(lats["keyboard_lease_expiry"]["passed"])
-        self.assertLessEqual(lats["keyboard_lease_expiry"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["keyboard_lease_expiry"])
+        self.assertLessEqual(
+            lats["keyboard_lease_expiry"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["keyboard_lease_expiry"],
+        )
 
         # Condition 2: Guard freshness timeout <= 300 ms
         self.assertIn("guard_freshness_timeout", lats)
         self.assertTrue(lats["guard_freshness_timeout"]["passed"])
-        self.assertLessEqual(lats["guard_freshness_timeout"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["guard_freshness_timeout"])
+        self.assertLessEqual(
+            lats["guard_freshness_timeout"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["guard_freshness_timeout"],
+        )
 
         # Condition 3: Teleop crash <= 300 ms
         self.assertIn("teleop_crash", lats)
         self.assertTrue(lats["teleop_crash"]["passed"])
-        self.assertLessEqual(lats["teleop_crash"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["teleop_crash"])
+        self.assertLessEqual(
+            lats["teleop_crash"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["teleop_crash"],
+        )
 
         # Condition 4: Supervisor child crash <= 250 ms
         self.assertIn("supervisor_child_crash", lats)
         self.assertTrue(lats["supervisor_child_crash"]["passed"])
-        self.assertLessEqual(lats["supervisor_child_crash"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["supervisor_child_crash"])
+        self.assertLessEqual(
+            lats["supervisor_child_crash"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["supervisor_child_crash"],
+        )
 
         # Condition 5: Service stop SIGTERM <= 100 ms
         self.assertIn("service_stop_sigterm", lats)
         self.assertTrue(lats["service_stop_sigterm"]["passed"])
-        self.assertLessEqual(lats["service_stop_sigterm"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["service_stop_sigterm"])
+        self.assertLessEqual(
+            lats["service_stop_sigterm"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["service_stop_sigterm"],
+        )
 
         # Condition 6: Serial loss <= 600 ms
         self.assertIn("serial_loss", lats)
         self.assertTrue(lats["serial_loss"]["passed"])
-        self.assertLessEqual(lats["serial_loss"]["measured_ms"], ACCEPTED_LATENCY_BOUNDS_MS["serial_loss"])
+        self.assertLessEqual(
+            lats["serial_loss"]["measured_ms"],
+            ACCEPTED_LATENCY_BOUNDS_MS["serial_loss"],
+        )
 
     # 19. STM32 Command-Loss Characterization
     def test_stm32_command_loss_characterization(self):
@@ -334,7 +360,9 @@ class TestMilestone6Acceptance(unittest.TestCase):
         self.assertLessEqual(stm["host_zero_delivery_ms"], 275.0)
         self.assertLessEqual(stm["stm32_firmware_timeout_ms"], 1000.0)
         self.assertEqual(stm["operator_emergency_disconnect_sec"], 0.0)
-        self.assertFalse(stm["safe_for_on_ground"], "On-ground motion must remain forbidden")
+        self.assertFalse(
+            stm["safe_for_on_ground"], "On-ground motion must remain forbidden"
+        )
         self.assertIn("DESIGN_SPECIFICATION", stm["host_zero_delivery_status"])
 
     # 20. Complete Acceptance Suite Run & Report Generation
@@ -347,7 +375,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             config_path=self.config_path,
             lock_path=self.lock_path,
             mock=True,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         passed = orch.run_acceptance_suite()
         self.assertTrue(passed)
@@ -425,12 +453,12 @@ class TestMilestone6Acceptance(unittest.TestCase):
 
         # Missing acknowledgment fails
         res_fail = subprocess.run(
-            ["bash", deploy_sh, "bench"],
-            capture_output=True,
-            text=True
+            ["bash", deploy_sh, "bench"], capture_output=True, text=True
         )
         self.assertNotEqual(res_fail.returncode, 0)
-        self.assertIn("physical safety acknowledgment: --ack-tracks-raised", res_fail.stderr)
+        self.assertIn(
+            "physical safety acknowledgment: --ack-tracks-raised", res_fail.stderr
+        )
 
         # With acknowledgment and mock mode
         env = dict(os.environ)
@@ -439,10 +467,16 @@ class TestMilestone6Acceptance(unittest.TestCase):
             ["bash", deploy_sh, "bench", "--ack-tracks-raised", "--mock"],
             capture_output=True,
             text=True,
-            env=env
+            env=env,
         )
-        self.assertEqual(res_pass.returncode, 0, f"bench failed: {res_pass.stderr}\n{res_pass.stdout}")
-        self.assertIn("Milestone 6 Acceptance Result: SIMULATION_PASSED", res_pass.stdout)
+        self.assertEqual(
+            res_pass.returncode,
+            0,
+            f"bench failed: {res_pass.stderr}\n{res_pass.stdout}",
+        )
+        self.assertIn(
+            "Milestone 6 Acceptance Result: SIMULATION_PASSED", res_pass.stdout
+        )
 
     # --- Review Remediation Tests (Findings 1 & 2) ---
 
@@ -451,30 +485,35 @@ class TestMilestone6Acceptance(unittest.TestCase):
         orch = BenchAcceptanceOrchestrator(
             lock_path=self.lock_path,
             mock=False,
-            mock_battery_mv=12500  # Should be ignored in live mode!
+            mock_battery_mv=12500,  # Should be ignored in live mode!
         )
         with patch.dict("sys.modules", {"rclpy": None}):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertFalse(ok)
-            self.assertIsNone(val, "Synthetic voltage must never be returned in live mode")
+            self.assertIsNone(
+                val, "Synthetic voltage must never be returned in live mode"
+            )
             self.assertIn("unavailable", msg.lower())
 
     def test_finding2_live_battery_preflight_fails_when_status_node_throws(self):
         """Finding 2: In live mode, status client exceptions must fail preflight."""
         orch = BenchAcceptanceOrchestrator(
-            lock_path=self.lock_path,
-            mock=False,
-            mock_battery_mv=12500
+            lock_path=self.lock_path, mock=False, mock_battery_mv=12500
         )
         mock_rclpy = MagicMock()
         mock_rclpy.ok.return_value = True
         mock_client_cls = MagicMock()
         mock_client_cls.side_effect = RuntimeError("Failed to create subscription")
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_client_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_client_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertFalse(ok)
             self.assertIsNone(val)
@@ -483,9 +522,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_finding2_live_battery_preflight_fails_when_reading_absent_or_invalid(self):
         """Finding 2: In live mode, absent or non-positive reading must fail preflight."""
         orch = BenchAcceptanceOrchestrator(
-            lock_path=self.lock_path,
-            mock=False,
-            mock_battery_mv=12500
+            lock_path=self.lock_path, mock=False, mock_battery_mv=12500
         )
         mock_rclpy = MagicMock()
         mock_rclpy.ok.return_value = True
@@ -493,10 +530,15 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_node.collect_status.return_value = {"battery_mv": None}
         mock_client_cls = MagicMock(return_value=mock_node)
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_client_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_client_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertFalse(ok)
             self.assertIsNone(val)
@@ -512,9 +554,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_finding2_live_battery_preflight_fails_when_voltage_low(self):
         """Finding 2: In live mode, fresh reading below 9600 mV must fail preflight."""
         orch = BenchAcceptanceOrchestrator(
-            lock_path=self.lock_path,
-            mock=False,
-            mock_battery_mv=12500
+            lock_path=self.lock_path, mock=False, mock_battery_mv=12500
         )
         mock_rclpy = MagicMock()
         mock_rclpy.ok.return_value = True
@@ -522,10 +562,15 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_node.collect_status.return_value = {"battery_mv": 9200}
         mock_client_cls = MagicMock(return_value=mock_node)
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_client_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_client_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertFalse(ok)
             self.assertEqual(val, 9200)
@@ -536,7 +581,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
         orch = BenchAcceptanceOrchestrator(
             lock_path=self.lock_path,
             mock=False,
-            mock_battery_mv=8000  # Even if mock is low, live observation takes precedence
+            mock_battery_mv=8000,  # Even if mock is low, live observation takes precedence
         )
         mock_rclpy = MagicMock()
         mock_rclpy.ok.return_value = True
@@ -544,10 +589,15 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_node.collect_status.return_value = {"battery_mv": 11800}
         mock_client_cls = MagicMock(return_value=mock_node)
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_client_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_client_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertTrue(ok)
             self.assertEqual(val, 11800)
@@ -556,9 +606,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_finding1_live_motion_fails_closed_when_unobserved(self):
         """Finding 1: Non-mock motion acceptance must fail closed without live ROS/service."""
         orch = BenchAcceptanceOrchestrator(
-            config_path=self.config_path,
-            lock_path=self.lock_path,
-            mock=False
+            config_path=self.config_path, lock_path=self.lock_path, mock=False
         )
         with patch.dict("sys.modules", {"rclpy": None}):
             ok, errors = orch.run_motion_acceptance_tests()
@@ -575,9 +623,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     def test_finding1_live_motion_executes_with_observed_client(self):
         """Finding 1: Non-mock motion acceptance executes bursts and verifies disarm via BenchClientNode."""
         orch = BenchAcceptanceOrchestrator(
-            config_path=self.config_path,
-            lock_path=self.lock_path,
-            mock=False
+            config_path=self.config_path, lock_path=self.lock_path, mock=False
         )
         mock_rclpy = MagicMock()
         mock_rclpy.ok.return_value = True
@@ -587,34 +633,46 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_node.wait_for_state.side_effect = [
             {"guard_state": True, "guard_armed": True},
             {"guard_state": True, "guard_armed": True},
-            {"guard_state": False, "guard_armed": False}
+            {"guard_state": False, "guard_armed": False},
         ] * 4
         mock_bench_cls = MagicMock(return_value=mock_node)
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "ubuntu_tank_bringup.bench_client": MagicMock(BenchClientNode=mock_bench_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "ubuntu_tank_bringup.bench_client": MagicMock(
+                    BenchClientNode=mock_bench_cls
+                ),
+            },
+        ):
             ok, errors = orch.run_motion_acceptance_tests()
-            self.assertTrue(ok, f"Expected live motion with mock BenchClient to pass: {errors}")
+            self.assertTrue(
+                ok, f"Expected live motion with mock BenchClient to pass: {errors}"
+            )
             seq = orch.results["motion_tests"]["execution_sequence"]
             self.assertEqual(seq["mode"], "live_hardware")
             self.assertTrue(seq["passed"])
             self.assertTrue(seq["armed_before_run"])
-            self.assertEqual(seq["finite_bursts_executed"], ["forward", "reverse", "spin_left", "spin_right"])
+            self.assertEqual(
+                seq["finite_bursts_executed"],
+                ["forward", "reverse", "spin_left", "spin_right"],
+            )
             self.assertTrue(seq["all_bursts_ended_in_zero"])
             self.assertTrue(seq["disarmed_after_run"])
 
     def test_finding1_live_latency_measurement_rejects_synthetic_timing(self):
         """Finding 1: Non-mock latency measurement must reject synthetic timing and report pending."""
         orch = BenchAcceptanceOrchestrator(
-            config_path=self.config_path,
-            lock_path=self.lock_path,
-            mock=False
+            config_path=self.config_path, lock_path=self.lock_path, mock=False
         )
         ok, errors = orch.measure_stop_latencies()
         self.assertFalse(ok)
-        self.assertTrue(any("synthetic measurements are forbidden in live mode" in e for e in errors))
+        self.assertTrue(
+            any(
+                "synthetic measurements are forbidden in live mode" in e for e in errors
+            )
+        )
         lats = orch.results["latency_measurements"]
         for cond in ACCEPTED_LATENCY_BOUNDS_MS.keys():
             self.assertIn(cond, lats)
@@ -630,8 +688,12 @@ class TestMilestone6Acceptance(unittest.TestCase):
         self.assertEqual(stm["mode"], "live_hardware")
         self.assertIsNone(stm["host_zero_delivery_ms"])
         self.assertIsNone(stm["stm32_firmware_timeout_ms"])
-        self.assertEqual(stm["host_zero_delivery_status"], "PENDING_PHYSICAL_MEASUREMENT")
-        self.assertIn("PENDING_PHYSICAL_BENCH_TEST", stm["stm32_firmware_timeout_status"])
+        self.assertEqual(
+            stm["host_zero_delivery_status"], "PENDING_PHYSICAL_MEASUREMENT"
+        )
+        self.assertIn(
+            "PENDING_PHYSICAL_BENCH_TEST", stm["stm32_firmware_timeout_status"]
+        )
         self.assertFalse(stm["safe_for_on_ground"])
 
     def test_finding1_full_live_suite_fails_without_physical_hardware(self):
@@ -640,7 +702,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             config_path=self.config_path,
             lock_path=self.lock_path,
             mock=False,
-            mock_containers="EMPTY"
+            mock_containers="EMPTY",
         )
         passed = orch.run_acceptance_suite()
         self.assertFalse(passed)
@@ -653,7 +715,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             config_path=self.config_path,
             lock_path=self.lock_path,
             mock=False,
-            mock_battery_mv=12000
+            mock_battery_mv=12000,
         )
 
         created_contexts = []
@@ -687,16 +749,23 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_bench_node.wait_for_state.side_effect = [
             {"guard_state": True, "guard_armed": True},
             {"guard_state": True, "guard_armed": True},
-            {"guard_state": False, "guard_armed": False}
+            {"guard_state": False, "guard_armed": False},
         ] * 4
         mock_bench_cls = MagicMock(return_value=mock_bench_node)
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "rclpy.context": mock_rclpy.context,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_status_cls),
-            "ubuntu_tank_bringup.bench_client": MagicMock(BenchClientNode=mock_bench_cls),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "rclpy.context": mock_rclpy.context,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_status_cls
+                ),
+                "ubuntu_tank_bringup.bench_client": MagicMock(
+                    BenchClientNode=mock_bench_cls
+                ),
+            },
+        ):
             # 1. Run battery preflight
             bat_ok, val, msg = orch._verify_battery_voltage()
             self.assertTrue(bat_ok)
@@ -704,7 +773,9 @@ class TestMilestone6Acceptance(unittest.TestCase):
             self.assertEqual(len(created_contexts), 1)
             status_ctx = created_contexts[0]
             self.assertEqual(status_ctx.enclave, "/ubuntu_tank/status")
-            self.assertFalse(status_ctx.ok(), "Status context must be shut down following preflight")
+            self.assertFalse(
+                status_ctx.ok(), "Status context must be shut down following preflight"
+            )
             self.assertEqual(mock_status_cls.call_args[1].get("context"), status_ctx)
 
             # 2. Run motion acceptance
@@ -713,8 +784,15 @@ class TestMilestone6Acceptance(unittest.TestCase):
             self.assertEqual(len(created_contexts), 2)
             operator_ctx = created_contexts[1]
             self.assertEqual(operator_ctx.enclave, "/ubuntu_tank/operator")
-            self.assertFalse(operator_ctx.ok(), "Operator context must be shut down following motion run")
-            self.assertIsNot(operator_ctx, status_ctx, "Motion must not reuse status preflight context")
+            self.assertFalse(
+                operator_ctx.ok(),
+                "Operator context must be shut down following motion run",
+            )
+            self.assertIsNot(
+                operator_ctx,
+                status_ctx,
+                "Motion must not reuse status preflight context",
+            )
             self.assertEqual(mock_bench_cls.call_args[1].get("context"), operator_ctx)
 
     def test_finding1_sros2_permissions_and_fake_guard_enforcement(self):
@@ -723,23 +801,37 @@ class TestMilestone6Acceptance(unittest.TestCase):
 
         # Status enclave: strictly read-only
         self.assertTrue(
-            sros2_policy.simulate_participant_access('/ubuntu_tank/status', 'subscribe_topic', '/ros_robot_controller/battery')
+            sros2_policy.simulate_participant_access(
+                "/ubuntu_tank/status",
+                "subscribe_topic",
+                "/ros_robot_controller/battery",
+            )
         )
         self.assertFalse(
-            sros2_policy.simulate_participant_access('/ubuntu_tank/status', 'request_service', '/ubuntu_tank_safety/set_arm'),
-            "Status enclave must NOT be permitted to call /ubuntu_tank_safety/set_arm"
+            sros2_policy.simulate_participant_access(
+                "/ubuntu_tank/status", "request_service", "/ubuntu_tank_safety/set_arm"
+            ),
+            "Status enclave must NOT be permitted to call /ubuntu_tank_safety/set_arm",
         )
         self.assertFalse(
-            sros2_policy.simulate_participant_access('/ubuntu_tank/status', 'publish_topic', '/controller/cmd_vel'),
-            "Status enclave must NOT be permitted to publish /controller/cmd_vel"
+            sros2_policy.simulate_participant_access(
+                "/ubuntu_tank/status", "publish_topic", "/controller/cmd_vel"
+            ),
+            "Status enclave must NOT be permitted to publish /controller/cmd_vel",
         )
 
         # Operator enclave: permitted to arm and publish cmd_vel
         self.assertTrue(
-            sros2_policy.simulate_participant_access('/ubuntu_tank/operator', 'request_service', '/ubuntu_tank_safety/set_arm')
+            sros2_policy.simulate_participant_access(
+                "/ubuntu_tank/operator",
+                "request_service",
+                "/ubuntu_tank_safety/set_arm",
+            )
         )
         self.assertTrue(
-            sros2_policy.simulate_participant_access('/ubuntu_tank/operator', 'publish_topic', '/controller/cmd_vel')
+            sros2_policy.simulate_participant_access(
+                "/ubuntu_tank/operator", "publish_topic", "/controller/cmd_vel"
+            )
         )
 
         # Verify interaction with fake guard without touching hardware motors
@@ -747,22 +839,31 @@ class TestMilestone6Acceptance(unittest.TestCase):
         self.assertFalse(fake_guard.is_armed)
 
         # Operator arms and disarms
-        can_arm = sros2_policy.simulate_participant_access('/ubuntu_tank/operator', 'request_service', '/ubuntu_tank_safety/set_arm')
+        can_arm = sros2_policy.simulate_participant_access(
+            "/ubuntu_tank/operator", "request_service", "/ubuntu_tank_safety/set_arm"
+        )
         if can_arm:
             fake_guard.arm()
         self.assertTrue(fake_guard.is_armed)
 
-        can_disarm = sros2_policy.simulate_participant_access('/ubuntu_tank/operator', 'request_service', '/ubuntu_tank_safety/set_arm')
+        can_disarm = sros2_policy.simulate_participant_access(
+            "/ubuntu_tank/operator", "request_service", "/ubuntu_tank_safety/set_arm"
+        )
         if can_disarm:
             fake_guard.disarm()
         self.assertFalse(fake_guard.is_armed)
 
         # Rejection: If status enclave attempts to arm, policy must forbid it
-        can_status_arm = sros2_policy.simulate_participant_access('/ubuntu_tank/status', 'request_service', '/ubuntu_tank_safety/set_arm')
+        can_status_arm = sros2_policy.simulate_participant_access(
+            "/ubuntu_tank/status", "request_service", "/ubuntu_tank_safety/set_arm"
+        )
         self.assertFalse(can_status_arm)
         if can_status_arm:
             fake_guard.arm()
-        self.assertFalse(fake_guard.is_armed, "Fake guard must remain disarmed when status enclave is rejected")
+        self.assertFalse(
+            fake_guard.is_armed,
+            "Fake guard must remain disarmed when status enclave is rejected",
+        )
 
     def test_finding1_caller_owned_context_is_not_shut_down(self):
         """Finding 1: Preflight must NOT shut down a caller-owned default context in fallback mode."""
@@ -777,11 +878,16 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_status_cls = MagicMock(return_value=mock_node)
 
         # Hide Context to test fallback path
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "rclpy.context": None,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_status_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "rclpy.context": None,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_status_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertTrue(ok)
             # Must NOT call rclpy.shutdown() on caller-owned context!
@@ -789,10 +895,13 @@ class TestMilestone6Acceptance(unittest.TestCase):
 
         # If rclpy was NOT ok before preflight (preflight owned it), verify shutdown IS called
         state = {"ok": False}
+
         def fake_init():
             state["ok"] = True
+
         def fake_shutdown():
             state["ok"] = False
+
         def fake_ok():
             return state["ok"]
 
@@ -803,11 +912,16 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_rclpy_not_owned.shutdown.side_effect = fake_shutdown
         mock_rclpy_not_owned.ok.side_effect = fake_ok
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy_not_owned,
-            "rclpy.context": None,
-            "ubuntu_tank_bringup.status_client": MagicMock(StatusClientNode=mock_status_cls)
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy_not_owned,
+                "rclpy.context": None,
+                "ubuntu_tank_bringup.status_client": MagicMock(
+                    StatusClientNode=mock_status_cls
+                ),
+            },
+        ):
             ok, val, msg = orch._verify_battery_voltage()
             self.assertTrue(ok)
             mock_rclpy_not_owned.shutdown.assert_called_once()
@@ -833,8 +947,11 @@ class TestMilestone6Acceptance(unittest.TestCase):
 
         class PinnedUpstreamNode:
             """Faithfully mirrors rclpy 10.0.10 BaseNode.context property descriptor."""
+
             def __init__(self, node_name: str, *, context=None, **kwargs):
-                self._context = context if context is not None else "default_rclpy_context"
+                self._context = (
+                    context if context is not None else "default_rclpy_context"
+                )
 
             @property
             def context(self):
@@ -881,21 +998,25 @@ class TestMilestone6Acceptance(unittest.TestCase):
         mock_rclpy.qos = mock_qos_mod
         mock_rclpy.ok = lambda: True
 
-        with patch.dict("sys.modules", {
-            "rclpy": mock_rclpy,
-            "rclpy.node": mock_node_mod,
-            "rclpy.parameter": mock_param_mod,
-            "rclpy.qos": mock_qos_mod,
-            "geometry_msgs": mock_geo_msgs,
-            "geometry_msgs.msg": mock_geo_msgs_msg,
-            "std_msgs": mock_std_msgs,
-            "std_msgs.msg": mock_std_msgs_msg,
-            "std_srvs": mock_std_srvs,
-            "std_srvs.srv": mock_std_srvs_srv,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "rclpy": mock_rclpy,
+                "rclpy.node": mock_node_mod,
+                "rclpy.parameter": mock_param_mod,
+                "rclpy.qos": mock_qos_mod,
+                "geometry_msgs": mock_geo_msgs,
+                "geometry_msgs.msg": mock_geo_msgs_msg,
+                "std_msgs": mock_std_msgs,
+                "std_msgs.msg": mock_std_msgs_msg,
+                "std_srvs": mock_std_srvs,
+                "std_srvs.srv": mock_std_srvs_srv,
+            },
+        ):
             import importlib
             import ubuntu_tank_bringup.status_client as sc
             import ubuntu_tank_bringup.bench_client as bc
+
             importlib.reload(sc)
             importlib.reload(bc)
 
@@ -960,20 +1081,38 @@ class TestBenchSafetyRegressions(unittest.TestCase):
     """Exercise real guard deadlines and deployment coordination without hardware."""
 
     def test_failed_prerequisites_never_enter_motion(self):
-        for fault in ('battery', 'USB', 'owner', 'lock', 'geometry'):
+        for fault in ("battery", "USB", "owner", "lock", "geometry"):
             with self.subTest(fault=fault):
                 orch = BenchAcceptanceOrchestrator(mock=True)
-                with patch.object(orch, 'run_preflight_checks', return_value=(fault == 'geometry', [fault])), \
-                     patch.object(orch, 'verify_geometry_and_limits', return_value=(fault != 'geometry', [fault])), \
-                     patch.object(orch, 'run_motion_acceptance_tests') as motion:
+                with (
+                    patch.object(
+                        orch,
+                        "run_preflight_checks",
+                        return_value=(fault == "geometry", [fault]),
+                    ),
+                    patch.object(
+                        orch,
+                        "verify_geometry_and_limits",
+                        return_value=(fault != "geometry", [fault]),
+                    ),
+                    patch.object(orch, "run_motion_acceptance_tests") as motion,
+                ):
                     self.assertFalse(orch.run_acceptance_suite())
                     motion.assert_not_called()
-                    self.assertEqual(orch.results['motion_tests']['execution_sequence']['status'], 'SKIPPED')
+                    self.assertEqual(
+                        orch.results["motion_tests"]["execution_sequence"]["status"],
+                        "SKIPPED",
+                    )
 
     def test_invalid_kinematics_never_construct_live_client(self):
         orch = BenchAcceptanceOrchestrator(mock=False)
-        with patch('scripts.bench_acceptance.check_motor_polarity', return_value=(False, 'wrong polarity')), \
-             patch('ubuntu_tank_bringup.bench_client.BenchClientNode') as client:
+        with (
+            patch(
+                "scripts.bench_acceptance.check_motor_polarity",
+                return_value=(False, "wrong polarity"),
+            ),
+            patch("ubuntu_tank_bringup.bench_client.BenchClientNode") as client,
+        ):
             self.assertFalse(orch.run_motion_acceptance_tests()[0])
             client.assert_not_called()
 
@@ -988,15 +1127,18 @@ class TestBenchSafetyRegressions(unittest.TestCase):
         clock = [0.0]
         forwarded = []
         arms = []
+
         def advance(seconds):
             clock[0] += seconds
             guard.check_timeout(clock[0])
+
         def set_arm(value, **kwargs):
             arms.append(value)
             if value:
                 return guard.arm()
             ok, message, _ = guard.disarm()
             return ok, message
+
         def burst(lx, az, **kwargs):
             command = compute_kinematic_motor_speeds(lx, az, 0.1368, 0.1446, 0.075)
             accepted, _, _ = guard.handle_command(command, clock[0])
@@ -1004,20 +1146,29 @@ class TestBenchSafetyRegressions(unittest.TestCase):
             if inject_fault:
                 guard.disarm()
             return accepted is not None
+
         def stop(**kwargs):
             guard.handle_command(guard.get_zero_command(), clock[0])
             return True
+
         node = MagicMock()
         node.call_set_arm.side_effect = set_arm
         node.run_motion_burst.side_effect = burst
         node.send_stop.side_effect = stop
-        node.wait_for_state.side_effect = lambda **kw: {'guard_state': guard.is_armed, 'guard_armed': guard.is_armed}
+        node.wait_for_state.side_effect = lambda **kw: {
+            "guard_state": guard.is_armed,
+            "guard_armed": guard.is_armed,
+        }
         ros = MagicMock()
         ros.ok.return_value = True
         orch = BenchAcceptanceOrchestrator(mock=False)
-        with patch.dict(sys.modules, {'rclpy': ros}), \
-             patch('ubuntu_tank_bringup.bench_client.BenchClientNode', return_value=node), \
-             patch('scripts.bench_acceptance.time.sleep', side_effect=advance):
+        with (
+            patch.dict(sys.modules, {"rclpy": ros}),
+            patch(
+                "ubuntu_tank_bringup.bench_client.BenchClientNode", return_value=node
+            ),
+            patch("scripts.bench_acceptance.time.sleep", side_effect=advance),
+        ):
             passed, errors = orch.run_motion_acceptance_tests()
         self.assertFalse(guard.is_armed)
         if inject_fault:
@@ -1031,14 +1182,15 @@ class TestBenchSafetyRegressions(unittest.TestCase):
 
     def test_shared_lock_is_read_only_and_held_until_suite_finishes(self):
         import fcntl
+
         with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, 'deploy.lock')
-            with open(path, 'w') as stream:
-                stream.write('unchanged metadata')
+            path = os.path.join(directory, "deploy.lock")
+            with open(path, "w") as stream:
+                stream.write("unchanged metadata")
             os.chmod(path, 0o444)
             orch = BenchAcceptanceOrchestrator(mock=False, lock_path=path)
             real_open = os.open
-            with patch('scripts.bench_acceptance.os.open', wraps=real_open) as opening:
+            with patch("scripts.bench_acceptance.os.open", wraps=real_open) as opening:
                 with orch.deployment_read_lock():
                     opening.assert_called_once_with(path, os.O_RDONLY)
                     fd = real_open(path, os.O_RDONLY)
@@ -1049,43 +1201,78 @@ class TestBenchSafetyRegressions(unittest.TestCase):
                     finally:
                         os.close(fd)
             with open(path) as stream:
-                self.assertEqual(stream.read(), 'unchanged metadata')
+                self.assertEqual(stream.read(), "unchanged metadata")
             fd = real_open(path, os.O_RDONLY)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 with self.assertRaises(BlockingIOError):
                     with orch.deployment_read_lock():
-                        self.fail('exclusive deployment must block bench')
+                        self.fail("exclusive deployment must block bench")
             finally:
                 os.close(fd)
 
     def test_only_verified_bridge_holder_is_allowed(self):
         from scripts.deployment_manager import check_hardware_mutual_exclusion
-        for holders, expected in [('42', True), ('42 77', False), ('77', False)]:
-            with self.subTest(holders=holders), \
-                 patch('scripts.deployment_manager.shutil.which', return_value='/usr/bin/fuser'), \
-                 patch('scripts.deployment_manager.subprocess.run') as run:
-                run.side_effect = lambda args, **kw: subprocess.CompletedProcess(args,
-                    0 if args[0] == 'fuser' else 3,
-                    stdout=holders if args[0] == 'fuser' else '', stderr='')
-                ok, errors = check_hardware_mutual_exclusion(serial_dev='/dev/null',
-                    mock_containers='EMPTY', allowed_serial_pid=42)
+
+        for holders, expected in [("42", True), ("42 77", False), ("77", False)]:
+            with (
+                self.subTest(holders=holders),
+                patch(
+                    "scripts.deployment_manager.shutil.which",
+                    return_value="/usr/bin/fuser",
+                ),
+                patch("scripts.deployment_manager.subprocess.run") as run,
+            ):
+                run.side_effect = lambda args, **kw: subprocess.CompletedProcess(
+                    args,
+                    0 if args[0] == "fuser" else 3,
+                    stdout=holders if args[0] == "fuser" else "",
+                    stderr="",
+                )
+                ok, errors = check_hardware_mutual_exclusion(
+                    serial_dev="/dev/null",
+                    mock_containers="EMPTY",
+                    allowed_serial_pid=42,
+                )
                 self.assertEqual(ok, expected, errors)
 
     def test_stale_bridge_pid_rejected(self):
         import io
+
         orch = BenchAcceptanceOrchestrator(mock=False)
-        for active, group, expected in [('active', '/system.slice/mentorpi-tank.service', True),
-                                         ('inactive', '/system.slice/mentorpi-tank.service', False),
-                                         ('active', '/another.service', False)]:
+        for active, group, expected in [
+            ("active", "/system.slice/mentorpi-tank.service", True),
+            ("inactive", "/system.slice/mentorpi-tank.service", False),
+            ("active", "/another.service", False),
+        ]:
             with self.subTest(active=active, group=group):
-                result = subprocess.CompletedProcess([], 0,
-                    'ActiveState=' + active + '\nControlGroup=/system.slice/mentorpi-tank.service\n')
-                with patch('scripts.bench_acceptance.subprocess.run', return_value=result), \
-                     patch('scripts.bench_acceptance.os.walk', return_value=[('/sys/fs/cgroup/service', [], ['cgroup.procs'])]), \
-                     patch('scripts.bench_acceptance.open', create=True, side_effect=[
-                         io.StringIO('42'), io.BytesIO(b'/opt/install/lib/ros_robot_controller/ros_robot_controller\0'),
-                         io.StringIO('0::' + group + '\n')]):
+                result = subprocess.CompletedProcess(
+                    [],
+                    0,
+                    "ActiveState="
+                    + active
+                    + "\nControlGroup=/system.slice/mentorpi-tank.service\n",
+                )
+                with (
+                    patch(
+                        "scripts.bench_acceptance.subprocess.run", return_value=result
+                    ),
+                    patch(
+                        "scripts.bench_acceptance.os.walk",
+                        return_value=[("/sys/fs/cgroup/service", [], ["cgroup.procs"])],
+                    ),
+                    patch(
+                        "scripts.bench_acceptance.open",
+                        create=True,
+                        side_effect=[
+                            io.StringIO("42"),
+                            io.BytesIO(
+                                b"/opt/install/lib/ros_robot_controller/ros_robot_controller\0"
+                            ),
+                            io.StringIO("0::" + group + "\n"),
+                        ],
+                    ),
+                ):
                     if expected:
                         self.assertEqual(orch.managed_bridge_pid(), 42)
                     else:

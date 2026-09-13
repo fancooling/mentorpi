@@ -132,7 +132,7 @@ rationale: Systemd-tmpfiles configuration establishing runtime and persistent st
 
 destination: ubuntu_tank/scripts/bench_acceptance.py
 origin: authored
-destination_sha256: 4d3c7078cf463216c78d875017ed8e99a6dc3cd301b51836b98869c0f31827c5
+destination_sha256: 207cf40a81d0fd13a90f6d6ab7e9472a21a4899ab449d2a2f8a5732b7dadc3b1
 status: new
 rationale: Orchestrator CLI for Milestone 6 raised-track controller acceptance and stop latency validation.
 
@@ -156,13 +156,13 @@ rationale: Read-only host OS, architecture, EEPROM, and device preflight script 
 
 destination: ubuntu_tank/scripts/config_migration.py
 origin: authored
-destination_sha256: 47c9d339450c2d2e2ec3032ff30c134e6a0f1860754ea4517f272bcbba62d672
+destination_sha256: bed8952ef35ca7ada78fd2b223d32c3f44be94787023a5afa28423eaa6fd539a
 status: new
 rationale: Configuration schema validation, forward migration, and downgrade restoration utility preserving user calibrations.
 
 destination: ubuntu_tank/scripts/deployment_manager.py
 origin: authored
-destination_sha256: 3753fcdf7404a8a370fc1e02a983b28958541e3c5df8e4d16725e4447ddbc3e0
+destination_sha256: 10aa89a017c70c7417d06a6ea89dc332931e5b475996bdf13564805a829b361f
 status: new
 rationale: Packaging, immutable installation, atomic 6-step activation, offline rollback, and crash recovery manager.
 
@@ -180,7 +180,7 @@ rationale: Boot-time write-ahead transaction recovery runner script scaffold
 
 destination: ubuntu_tank/scripts/sros2_policy.py
 origin: authored
-destination_sha256: 75607ae1e8e4f1a8e2fbd70c69890f0adf03baae0d9f1edb9fc7265770866e4f
+destination_sha256: 393a2df8081a7ba66b3e7777035d7c1738449e22cfd77068b5d547a0fd2bf647
 status: new
 rationale: SROS2 security governance and enclave access control verification utility
 
@@ -624,13 +624,13 @@ adaptations: none
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/launch/tank.launch.py
 origin: authored
-destination_sha256: 5266f885087d16e02d3eabb719d88dca184d6c5a4be44ba61c908350f5434c9a
+destination_sha256: e368ed536445d851a86b273951823aed732f9dd023ac11552b6d1a5643fa536d
 status: new
 rationale: Guarded bringup launch file wiring explicit topic pipeline and fail-closed shutdown handlers
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/launch/teleop.launch.py
 origin: authored
-destination_sha256: 42dcc39b78ef2c4b38a53ef2f4c988c71396792cb5169da0ac1cc7e1f71159f2
+destination_sha256: a8b0c53909941d2b7f6f4d97c8e803387a1c1a74cc6f272cd9d692ec56dc8d52
 status: new
 rationale: Safe teleoperation launch file with configurable renewable motion leases
 
@@ -654,7 +654,7 @@ rationale: Setuptools configuration for script installation in ubuntu_tank_bring
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/setup.py
 origin: authored
-destination_sha256: 4db41dda151f0add87cb5f633aa030ec6aebc40ec3221f13df0dfca9c7f55186
+destination_sha256: 85bd8bb97363b1a2443a6937990b6ebb927cc430d7cbae50c352153c98776e1a
 status: new
 rationale: Setuptools build specification and launch file packaging for ubuntu_tank_bringup
 
@@ -666,19 +666,19 @@ rationale: Package init module for ubuntu_tank_bringup
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/bench_client.py
 origin: authored
-destination_sha256: a19f970da505c8bf7a1e3869b69f0dd8c75dab9e5e3673e3f8f9836d09fa68e1
+destination_sha256: aeaa69ef3194e8893dc01006abff9759a74b612e36dd1ab504a5d67df050659b
 status: new
 rationale: Dedicated operator client node for raised-track acceptance and latency measurement under operator enclave
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/operator_client.py
 origin: authored
-destination_sha256: c4476df37fc5c0b83838b627e44772523f335969c86726ffa50eb7a8b52ee144
+destination_sha256: 713f8dbe14bec60f6b474e53d53fa2eab0c5ad8ae863f4b9b5de1b302e07ca8c
 status: new
 rationale: Dedicated operator CLI client for arm and disarm operations with unneeded services disabled
 
 destination: ubuntu_tank/src/ubuntu_tank_bringup/ubuntu_tank_bringup/status_client.py
 origin: authored
-destination_sha256: e86f0aeff3f0f879d1c32095aed4effbe44e28016886bb58487f7725d2f05845
+destination_sha256: 51478ff02fc11a2436bac4dca70370eb3aa211150ac3949d69a19dd27e2c8024
 status: new
 rationale: Dedicated status CLI client for reading guard state and telemetry with unneeded services disabled
 
@@ -702,13 +702,13 @@ rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 m
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/setup.py
 origin: authored
-destination_sha256: 76a48dce9d3beaf696dd7761861b574c93bc42ade05a195aea7bcc8320e3ea99
+destination_sha256: b9f0565706d31543a9173593297d14bf6f21a1fd9a019d2d7d5bdddadabea9c9
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/test/test_motor_guard.py
 origin: authored
-destination_sha256: 192887816e9f5c1bca1cf6e021981a2194fc003695d166154272dbbdf076b457
+destination_sha256: 3ca4edb8e4a3106badfafda905880d70740aea618488dff80def7db129eed1a3
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
@@ -720,13 +720,13 @@ rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 m
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/motor_guard.py
 origin: authored
-destination_sha256: 0d7b36f75612835862618acb9c28a7db69fab102ef7b763894f0f6717d24e13b
+destination_sha256: a90902ecb056fe716dc20d8e58ae0c8e324b2302236d6141ee7a150fc42a1538
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
 destination: ubuntu_tank/src/ubuntu_tank_safety/ubuntu_tank_safety/motor_guard_node.py
 origin: authored
-destination_sha256: 579d27bb1ba4f750a5591b55066365054ac713d22bc4a372bdfb6bffdff2978d
+destination_sha256: 258f4857163f92018b3d8f923b96c80d6039b9eea7ac74a5239153a4a6158960
 status: new
 rationale: Implements disarmed-by-default motor guard, 4-motor validation, 250 ms monotonic timeout, and repeated zero publishing because vendor stack lacks command watchdog and arming boundary.
 
@@ -750,19 +750,19 @@ rationale: Implements trusted AND-gating supervisor for separate guard and bridg
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/setup.py
 origin: authored
-destination_sha256: ad6506fdb85b90eb0e7dcdf0ec26a265b7697c65831cae208d33706d5a8c22c2
+destination_sha256: a16ae2c51aa1eb92e8ad2e06ee2ae93ae92899f4f5aa10e68afd7a2ebe3d8717
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/test/test_supervisor.py
 origin: authored
-destination_sha256: 23a16b962c880055884d5a333c760d8715cb8753d6ace4978161bdab672a8e6e
+destination_sha256: 99adb334d28b6aa77461ae9a1b0f577319c4851c7e8038d25955e805925e9ace
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/test/test_supervisor_spoofing.py
 origin: authored
-destination_sha256: 4fa7f8f8ff589fa9c9ad8ff51c490a21341ce56d952c8c628d4b49054ff4942d
+destination_sha256: dd78fcfd992764225fcc77fd1caf92c2e81c480cadc421f5596b299cdf9924e0
 status: new
 rationale: Integration test verifying supervisor credential PID mismatch rejection and trusted pipes
 
@@ -774,19 +774,19 @@ rationale: Implements trusted AND-gating supervisor for separate guard and bridg
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/heartbeat.py
 origin: authored
-destination_sha256: 3fe40fa5b37a6d0a237221cf99da26171b1bbf060a547a7d84d2e50fd05aeb79
+destination_sha256: 4292d7f76ef5ef39282c0eaef720fe57a55d2c0e09adc1bb7d425f51f94731cc
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/supervisor.py
 origin: authored
-destination_sha256: 15950ba2a7e0f65b04f2798c6f95770c6b879637933298e9b21665c72d62ccb4
+destination_sha256: cf3bbf34c30f6cfae0f3666840ad00e71535f9ddd0fe98e721a7a827cdea7dab
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
 destination: ubuntu_tank/src/ubuntu_tank_supervisor/ubuntu_tank_supervisor/supervisor_node.py
 origin: authored
-destination_sha256: d3a0f0e922481cf5bae9f14974652cb2ef0bcbce4934f1663ec04610a6905d25
+destination_sha256: a60db9c7f445c90faebaa106105074ffb655c03de3b38df679043f1d8de38428
 status: new
 rationale: Implements trusted AND-gating supervisor for separate guard and bridge non-ROS monotonic heartbeats via inherited pipes or dedicated credential-checked sockets.
 
@@ -810,13 +810,13 @@ rationale: Safe teleoperation package scaffolding and pure-logic renewable lease
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/setup.py
 origin: authored
-destination_sha256: fb8f6c0dec70be082af0558c54d67537b04ae6df30957fd1ad798650826fa27f
+destination_sha256: 63a9a8703435ebe2f4253801049aaf95387daf5bfeebaa9f7b232bc0f53deae5
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/test/test_teleop_lease.py
 origin: authored
-destination_sha256: 3f72ccdab8cd4ac07de5ad5b63556b36a7b223d1debf1ab22d138b78d86381e5
+destination_sha256: 1b6776a6e66b17a179d9133b3977e1d72b7d10ef6b2cde85634096bc8df452fe
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
@@ -828,7 +828,7 @@ rationale: Safe teleoperation package scaffolding and pure-logic renewable lease
 
 destination: ubuntu_tank/src/ubuntu_tank_teleop/ubuntu_tank_teleop/lease.py
 origin: authored
-destination_sha256: 04953bafd869193c59a81886afc8f491c11b5269446c216d71b38cd66bf21cb3
+destination_sha256: ca456e36e44a4517203aedf599d1c12b83bb6f6decbc3c7be751ed1e8f7464e6
 status: new
 rationale: Safe teleoperation package scaffolding and pure-logic renewable lease manager (< 250 ms) to guarantee automatic stop within configured lease after key repeat ceases or input is lost.
 
@@ -849,31 +849,31 @@ rationale: Automated dependency closure, lockfile verification, and tamper detec
 
 destination: ubuntu_tank/tests/test_install_workflow.py
 origin: authored
-destination_sha256: d4ab77d33a99ffb97acf140b27274815ab8136c7ab6f786f1211a0a31bc697d7
+destination_sha256: e03ce79ade1c1781d95151173dc9700532d927811ca84611eed5305317a5d9ab
 status: new
 rationale: Unit test suite for host preflight, mutual exclusion, lock verification, and dry-run flows.
 
 destination: ubuntu_tank/tests/test_milestone3_port.py
 origin: authored
-destination_sha256: 1963ba759bdbc721e0dd85069732c11343bffd29eb1fe05deb7b8a5cf6b5a5dc
+destination_sha256: 2304a41c6a9263e80d3a614f9f9796b4adf424c87ce1e7ab0c885120b8d5468d
 status: new
 rationale: Unit test suite verifying Milestone 3 porting: legacy variable removal, mock SDK, serial error handling, freshness watchdogs, non-ROS supervisor heartbeats, and workspace build scripts.
 
 destination: ubuntu_tank/tests/test_milestone4_bringup.py
 origin: authored
-destination_sha256: 6f6bd31fc0feca9817004ff7471f76cffc69cfcbacc1505c2e0657dc583f8a89
+destination_sha256: 7b07ddac5c3b4a8b6ee5b5f80b174dbeb5a5863b98693a2544c4d8de86f3f999
 status: new
 rationale: Automated hardware-free test suite for Milestone 4 guarded bringup, teleop leases, fault injection, and SROS2 security
 
 destination: ubuntu_tank/tests/test_milestone5_deployment.py
 origin: authored
-destination_sha256: 1a82ad5d87cfd97a94585738a9c291ba0afae3a2bc60fa9d0a2b6e6c7a970841
+destination_sha256: c66c2f7e2e4c7a8c8ccfdf05320398ac24cf4307a3bb6d3a73cbb038fb780ba2
 status: new
 rationale: Unit and integration regression test suite for Milestone 5 packaging, installation, activation, rollback, and recovery.
 
 destination: ubuntu_tank/tests/test_milestone6_acceptance.py
 origin: authored
-destination_sha256: 49ddd7a82e866e4258a6c82d1a40451779d9408d131bf4da333cf2d397e0fdae
+destination_sha256: 2221f64f40aaf3a400f315e87136c9b3e43af951101095dba09bed09a3356741
 status: new
 rationale: Unit and integration regression test suite for Milestone 6 raised-track acceptance and stop latency bounds
 
@@ -885,7 +885,7 @@ rationale: Negative regression test verifying that test_source_boundary.sh rejec
 
 destination: ubuntu_tank/tests/test_rmw_integration.py
 origin: authored
-destination_sha256: 00dbc15cb596852b4bbdaab6155727ae354a0a0ccfb927c7459cbf9798ef45b4
+destination_sha256: f1fa396ed146f07a5b7912bb325cebb6964216320c1cc5894cfecb2adb50e057
 status: new
 rationale: Hardware-free Lyrical and RMW integration test harness verifying authentic SROS2 signed keystore, untrusted CA rejection, tampered signature rejection, virtual PTY serial bridge communication, real-time scheduling / clock pauses, and supervisor process faults.
 
@@ -903,6 +903,6 @@ rationale: Pinned complete dependency closure specification for Ubuntu 26.04 and
 
 destination: ubuntu_tank/scripts/prepare_build_root.py
 origin: authored
-destination_sha256: e9a16ffe835d04ef3552257681f0a0cfb2374c5bc05d0b4803191473fd6830c7
+destination_sha256: 62c8ca1f3376b66ec1cb6458cc1646c8a7e7fcd06298a313060ff19320cc93ce
 status: new
 rationale: Offline bootstrap of a disposable production build root from a prepared native host.

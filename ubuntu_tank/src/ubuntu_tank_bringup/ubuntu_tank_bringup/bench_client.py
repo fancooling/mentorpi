@@ -63,6 +63,7 @@ except ImportError:
         class Request:
             def __init__(self):
                 self.data = False
+
         class Response:
             def __init__(self):
                 self.success = False
@@ -74,18 +75,23 @@ SingleThreadedExecutor = None
 if rclpy is not None:
     try:
         from rclpy.executors import SingleThreadedExecutor as _STE
+
         SingleThreadedExecutor = _STE
     except (ImportError, AttributeError):
-        SingleThreadedExecutor = getattr(getattr(rclpy, 'executors', None), 'SingleThreadedExecutor', None)
+        SingleThreadedExecutor = getattr(
+            getattr(rclpy, "executors", None), "SingleThreadedExecutor", None
+        )
 
 
 class BenchClientNode(Node):
     """Client node for executing bounded bench motions and measuring stop latencies."""
 
-    def __init__(self, node_name: str = 'operator_client', context=None):
+    def __init__(self, node_name: str = "operator_client", context=None):
         overrides = []
         if Parameter is not None:
-            overrides.append(Parameter('start_type_description_service', Parameter.Type.BOOL, False))
+            overrides.append(
+                Parameter("start_type_description_service", Parameter.Type.BOOL, False)
+            )
 
         self.guard_state: Optional[bool] = None
         self.guard_armed: Optional[bool] = None
@@ -95,8 +101,8 @@ class BenchClientNode(Node):
 
         if rclpy is not None:
             kwargs = {
-                'start_parameter_services': False,
-                'parameter_overrides': overrides
+                "start_parameter_services": False,
+                "parameter_overrides": overrides,
             }
             if context is not None:
                 try:
@@ -108,40 +114,34 @@ class BenchClientNode(Node):
 
             if SingleThreadedExecutor is not None:
                 try:
-                    ctx = getattr(self, 'context', None) or self._fallback_context
+                    ctx = getattr(self, "context", None) or self._fallback_context
                     self._executor = SingleThreadedExecutor(context=ctx)
                     self._executor.add_node(self)
                 except Exception:
                     self._executor = None
 
             # Arm/disarm service client
-            self.arm_client = self.create_client(SetBool, '/ubuntu_tank_safety/set_arm')
+            self.arm_client = self.create_client(SetBool, "/ubuntu_tank_safety/set_arm")
 
             # Velocity command publisher
-            self.cmd_vel_pub = self.create_publisher(Twist, '/controller/cmd_vel', 1)
+            self.cmd_vel_pub = self.create_publisher(Twist, "/controller/cmd_vel", 1)
 
             # Transient-local guard status subscriptions
             if QoSProfile and DurabilityPolicy and ReliabilityPolicy:
                 transient_qos = QoSProfile(
                     depth=1,
                     durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                    reliability=ReliabilityPolicy.RELIABLE
+                    reliability=ReliabilityPolicy.RELIABLE,
                 )
             else:
                 transient_qos = 1
 
             if Bool is not None:
                 self.sub_state = self.create_subscription(
-                    Bool,
-                    '/ubuntu_tank_safety/state',
-                    self._state_cb,
-                    transient_qos
+                    Bool, "/ubuntu_tank_safety/state", self._state_cb, transient_qos
                 )
                 self.sub_armed = self.create_subscription(
-                    Bool,
-                    '/ubuntu_tank_safety/armed',
-                    self._armed_cb,
-                    transient_qos
+                    Bool, "/ubuntu_tank_safety/armed", self._armed_cb, transient_qos
                 )
         else:
             try:
@@ -162,7 +162,7 @@ class BenchClientNode(Node):
         self._last_state_time = time.monotonic()
 
     def _is_ok(self) -> bool:
-        ctx = getattr(self, 'context', None) or self._fallback_context
+        ctx = getattr(self, "context", None) or self._fallback_context
         if ctx is not None:
             try:
                 return ctx.ok()
@@ -196,7 +196,7 @@ class BenchClientNode(Node):
             except Exception:
                 pass
             self._executor = None
-        if rclpy is not None and hasattr(super(), 'destroy_node'):
+        if rclpy is not None and hasattr(super(), "destroy_node"):
             super().destroy_node()
 
     def call_set_arm(self, arm: bool, timeout_sec: float = 5.0) -> Tuple[bool, str]:
@@ -207,7 +207,10 @@ class BenchClientNode(Node):
         start_time = time.monotonic()
         while not self.arm_client.wait_for_service(timeout_sec=0.2):
             if time.monotonic() - start_time >= timeout_sec:
-                return False, f"Timed out waiting for /ubuntu_tank_safety/set_arm after {timeout_sec:.1f}s"
+                return (
+                    False,
+                    f"Timed out waiting for /ubuntu_tank_safety/set_arm after {timeout_sec:.1f}s",
+                )
             if not self._is_ok():
                 return False, "ROS context was shut down"
 
@@ -224,7 +227,10 @@ class BenchClientNode(Node):
                 except Exception as exc:
                     return False, f"Service call exception: {exc}"
             if time.monotonic() - start_time >= timeout_sec:
-                return False, f"Timed out waiting for set_arm response after {timeout_sec:.1f}s"
+                return (
+                    False,
+                    f"Timed out waiting for set_arm response after {timeout_sec:.1f}s",
+                )
 
         return False, "ROS context stopped before receiving response"
 
@@ -257,13 +263,15 @@ class BenchClientNode(Node):
         linear_x: float,
         angular_z: float,
         duration_sec: float = 1.0,
-        rate_hz: float = 20.0
+        rate_hz: float = 20.0,
     ) -> bool:
         """
         Execute a finite, bounded motion burst, strictly self-terminating in a stop.
         """
         if duration_sec <= 0.0 or duration_sec > 5.0:
-            raise ValueError(f"duration_sec must be between 0.0 and 5.0s, got {duration_sec}")
+            raise ValueError(
+                f"duration_sec must be between 0.0 and 5.0s, got {duration_sec}"
+            )
         if rate_hz <= 0.0 or rate_hz > 100.0:
             raise ValueError(f"rate_hz must be between 0.0 and 100.0 Hz, got {rate_hz}")
 
@@ -273,7 +281,9 @@ class BenchClientNode(Node):
             while time.monotonic() - start_time < duration_sec:
                 if not self._is_ok():
                     return False
-                if self.guard_armed is False or not self.publish_cmd_vel(linear_x, angular_z):
+                if self.guard_armed is False or not self.publish_cmd_vel(
+                    linear_x, angular_z
+                ):
                     return False
                 if self._is_ok():
                     self._spin_once(timeout_sec=interval)
@@ -289,7 +299,9 @@ class BenchClientNode(Node):
         self.guard_state = None
         self.guard_armed = None
 
-    def wait_for_state(self, timeout_sec: float = 3.0, expected_armed: Optional[bool] = None) -> Dict[str, Optional[bool]]:
+    def wait_for_state(
+        self, timeout_sec: float = 3.0, expected_armed: Optional[bool] = None
+    ) -> Dict[str, Optional[bool]]:
         """Wait for fresh guard samples, optionally matching an expected arming state.
 
         Call reset_state before requesting a transition; callbacks dispatched
@@ -299,22 +311,24 @@ class BenchClientNode(Node):
         start = time.monotonic()
         while self._is_ok():
             self._spin_once(timeout_sec=0.05)
-            if (self.guard_state is not None and self.guard_armed is not None
-                    and (expected_armed is None or self.guard_armed == expected_armed)):
+            if (
+                self.guard_state is not None
+                and self.guard_armed is not None
+                and (expected_armed is None or self.guard_armed == expected_armed)
+            ):
                 break
             if time.monotonic() - start >= timeout_sec:
                 break
-        return {
-            'guard_state': self.guard_state,
-            'guard_armed': self.guard_armed
-        }
+        return {"guard_state": self.guard_state, "guard_armed": self.guard_armed}
 
 
 def main(args=None):
     """Entry point for bench_client console script."""
     target_args = sys.argv[1:] if args is None else args
-    if not target_args or '-h' in target_args or '--help' in target_args:
-        print("Usage: bench_client [--arm | --disarm | --stop | --motion <forward|reverse|left|right>]")
+    if not target_args or "-h" in target_args or "--help" in target_args:
+        print(
+            "Usage: bench_client [--arm | --disarm | --stop | --motion <forward|reverse|left|right>]"
+        )
         return 0
 
     if rclpy is None:
@@ -324,35 +338,41 @@ def main(args=None):
     rclpy.init(args=args)
     node = BenchClientNode()
     try:
-        if '--arm' in target_args:
+        if "--arm" in target_args:
             success, msg = node.call_set_arm(True)
             print(f"Arm result: success={success}, msg={msg}")
             return 0 if success else 1
-        elif '--disarm' in target_args:
+        elif "--disarm" in target_args:
             success, msg = node.call_set_arm(False)
             print(f"Disarm result: success={success}, msg={msg}")
             return 0 if success else 1
-        elif '--stop' in target_args:
+        elif "--stop" in target_args:
             node.send_stop(count=4)
             print("Stop commands sent.")
             return 0
-        elif '--motion' in target_args:
-            idx = target_args.index('--motion')
+        elif "--motion" in target_args:
+            idx = target_args.index("--motion")
             if idx + 1 >= len(target_args):
-                sys.stderr.write("ERROR: --motion requires motion name (forward, reverse, left, right)\n")
+                sys.stderr.write(
+                    "ERROR: --motion requires motion name (forward, reverse, left, right)\n"
+                )
                 return 1
             motion = target_args[idx + 1].lower()
             motions = {
-                'forward': (0.2, 0.0),
-                'reverse': (-0.2, 0.0),
-                'left': (0.0, 0.8),
-                'right': (0.0, -0.8),
+                "forward": (0.2, 0.0),
+                "reverse": (-0.2, 0.0),
+                "left": (0.0, 0.8),
+                "right": (0.0, -0.8),
             }
             if motion not in motions:
-                sys.stderr.write(f"ERROR: Unknown motion '{motion}'. Valid: {list(motions.keys())}\n")
+                sys.stderr.write(
+                    f"ERROR: Unknown motion '{motion}'. Valid: {list(motions.keys())}\n"
+                )
                 return 1
             lx, az = motions[motion]
-            print(f"Executing {motion} burst (linear.x={lx}, angular.z={az}, duration=1.0s)...")
+            print(
+                f"Executing {motion} burst (linear.x={lx}, angular.z={az}, duration=1.0s)..."
+            )
             node.run_motion_burst(lx, az, duration_sec=1.0)
             print("Motion completed. Zero commands sent.")
             return 0
@@ -364,5 +384,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

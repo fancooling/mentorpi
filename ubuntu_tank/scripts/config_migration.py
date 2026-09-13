@@ -25,33 +25,26 @@ DEFAULTS_V1_0 = {
         "wheel_diameter": 0.075,
         "max_linear_speed": 0.5,
         "max_angular_speed": 2.0,
-        "correction_factor": {
-            "left": 1.0,
-            "right": 1.0
-        }
+        "correction_factor": {"left": 1.0, "right": 1.0},
     },
     "serial_bridge": {
         "serial_device": "/dev/rrc",
         "baud_rate": 1000000,
         "controller_only": True,
-        "freshness_timeout_sec": 0.250
+        "freshness_timeout_sec": 0.250,
     },
     "motor_guard": {
         "max_rps": 2.0,
         "timeout_sec": 0.250,
         "check_rate_hz": 50.0,
-        "heartbeat_interval_sec": 0.200
+        "heartbeat_interval_sec": 0.200,
     },
     "supervisor": {
         "guard_deadline_sec": 1.0,
         "bridge_deadline_sec": 1.0,
-        "check_interval_sec": 0.200
+        "check_interval_sec": 0.200,
     },
-    "teleop": {
-        "linear_speed": 0.2,
-        "angular_speed": 0.8,
-        "lease_duration_sec": 0.150
-    }
+    "teleop": {"linear_speed": 0.2, "angular_speed": 0.8, "lease_duration_sec": 0.150},
 }
 
 # Schema v1.1 adds optional watchdog parameter in supervisor and telemetry rate in bridge
@@ -60,13 +53,21 @@ DEFAULTS_V1_1["supervisor"]["watchdog_ping_sec"] = 0.500
 DEFAULTS_V1_1["serial_bridge"]["telemetry_rate_hz"] = 50.0
 
 
-def validate_config(cfg: Dict[str, Any], version: str = "1.0") -> Tuple[bool, List[str]]:
+def validate_config(
+    cfg: Dict[str, Any], version: str = "1.0"
+) -> Tuple[bool, List[str]]:
     """Validate configuration dictionary against schema constraints."""
     errors = []
     if not isinstance(cfg, dict):
         return False, ["Root configuration must be a mapping/dict"]
 
-    required_sections = ["controller", "serial_bridge", "motor_guard", "supervisor", "teleop"]
+    required_sections = [
+        "controller",
+        "serial_bridge",
+        "motor_guard",
+        "supervisor",
+        "teleop",
+    ]
     for s in required_sections:
         if s not in cfg or not isinstance(cfg[s], dict):
             errors.append(f"Missing or invalid section '{s}'")
@@ -76,28 +77,47 @@ def validate_config(cfg: Dict[str, Any], version: str = "1.0") -> Tuple[bool, Li
 
     # Controller validation
     c = cfg["controller"]
-    for k in ["wheelbase", "track_width", "wheel_diameter", "max_linear_speed", "max_angular_speed"]:
-        if k not in c or not isinstance(c[k], (int, float)) or not math.isfinite(c[k]) or c[k] <= 0:
+    for k in [
+        "wheelbase",
+        "track_width",
+        "wheel_diameter",
+        "max_linear_speed",
+        "max_angular_speed",
+    ]:
+        if (
+            k not in c
+            or not isinstance(c[k], (int, float))
+            or not math.isfinite(c[k])
+            or c[k] <= 0
+        ):
             errors.append(f"controller.{k} must be a positive number")
 
     corr = c.get("correction_factor", {})
     if not isinstance(corr, dict) or "left" not in corr or "right" not in corr:
-        errors.append("controller.correction_factor must contain positive numbers for left and right")
+        errors.append(
+            "controller.correction_factor must contain positive numbers for left and right"
+        )
     else:
         for side in ["left", "right"]:
             if not isinstance(corr[side], (int, float)) or corr[side] <= 0:
-                errors.append(f"controller.correction_factor.{side} must be a positive number")
+                errors.append(
+                    f"controller.correction_factor.{side} must be a positive number"
+                )
 
     # Serial bridge validation
     sb = cfg["serial_bridge"]
     dev = sb.get("serial_device")
     if not isinstance(dev, str) or not dev.startswith("/dev/"):
-        errors.append("serial_bridge.serial_device must be an absolute path starting with /dev/")
+        errors.append(
+            "serial_bridge.serial_device must be an absolute path starting with /dev/"
+        )
     baud = sb.get("baud_rate")
     if baud not in [9600, 19200, 38400, 57600, 115200, 921600, 1000000]:
         errors.append(f"serial_bridge.baud_rate {baud} is not a supported baud rate")
     if sb.get("controller_only") is not True:
-        errors.append("serial_bridge.controller_only must be true in controller-only mode")
+        errors.append(
+            "serial_bridge.controller_only must be true in controller-only mode"
+        )
     freshness = sb.get("freshness_timeout_sec")
     if not isinstance(freshness, (int, float)) or freshness <= 0:
         errors.append("serial_bridge.freshness_timeout_sec must be positive")
@@ -105,7 +125,11 @@ def validate_config(cfg: Dict[str, Any], version: str = "1.0") -> Tuple[bool, Li
     if write_timeout is not None:
         if not isinstance(write_timeout, (int, float)) or write_timeout <= 0:
             errors.append("serial_bridge.write_timeout_sec must be positive")
-        elif freshness is not None and isinstance(freshness, (int, float)) and write_timeout >= freshness:
+        elif (
+            freshness is not None
+            and isinstance(freshness, (int, float))
+            and write_timeout >= freshness
+        ):
             errors.append(
                 f"serial_bridge.write_timeout_sec ({write_timeout}) must be strictly less than "
                 f"serial_bridge.freshness_timeout_sec ({freshness})"
@@ -134,7 +158,9 @@ def validate_config(cfg: Dict[str, Any], version: str = "1.0") -> Tuple[bool, Li
     if not isinstance(lease, (int, float)) or lease <= 0:
         errors.append("teleop.lease_duration_sec must be positive")
     elif timeout and lease >= timeout:
-        errors.append(f"teleop.lease_duration_sec ({lease}) must be strictly less than motor_guard.timeout_sec ({timeout})")
+        errors.append(
+            f"teleop.lease_duration_sec ({lease}) must be strictly less than motor_guard.timeout_sec ({timeout})"
+        )
 
     return len(errors) == 0, errors
 
@@ -145,10 +171,14 @@ def migrate_config(current_cfg: Dict[str, Any], target_version: str) -> Dict[str
     """
     ok, errs = validate_config(current_cfg)
     if not ok:
-        raise ValueError(f"Cannot migrate invalid source configuration: {'; '.join(errs)}")
+        raise ValueError(
+            f"Cannot migrate invalid source configuration: {'; '.join(errs)}"
+        )
 
     if target_version not in SCHEMA_VERSIONS:
-        raise ValueError(f"Unknown target schema version: '{target_version}'. Supported: {SCHEMA_VERSIONS}")
+        raise ValueError(
+            f"Unknown target schema version: '{target_version}'. Supported: {SCHEMA_VERSIONS}"
+        )
 
     migrated = copy.deepcopy(current_cfg)
 
@@ -161,42 +191,56 @@ def migrate_config(current_cfg: Dict[str, Any], target_version: str) -> Dict[str
 
     ok_migrated, errs_migrated = validate_config(migrated, version=target_version)
     if not ok_migrated:
-        raise RuntimeError(f"Migrated configuration failed validation: {'; '.join(errs_migrated)}")
+        raise RuntimeError(
+            f"Migrated configuration failed validation: {'; '.join(errs_migrated)}"
+        )
 
     return migrated
 
 
-def downgrade_config(current_cfg: Dict[str, Any], target_version: str) -> Dict[str, Any]:
+def downgrade_config(
+    current_cfg: Dict[str, Any], target_version: str
+) -> Dict[str, Any]:
     """
     Downgrade configuration to target_version while preserving user calibrations.
     """
     if target_version not in SCHEMA_VERSIONS:
-        raise ValueError(f"Unknown target schema version: '{target_version}'. Supported: {SCHEMA_VERSIONS}")
+        raise ValueError(
+            f"Unknown target schema version: '{target_version}'. Supported: {SCHEMA_VERSIONS}"
+        )
 
     downgraded = copy.deepcopy(current_cfg)
 
     if target_version == "1.0":
         # Remove fields introduced in v1.1+
-        if "supervisor" in downgraded and "watchdog_ping_sec" in downgraded["supervisor"]:
+        if (
+            "supervisor" in downgraded
+            and "watchdog_ping_sec" in downgraded["supervisor"]
+        ):
             del downgraded["supervisor"]["watchdog_ping_sec"]
-        if "serial_bridge" in downgraded and "telemetry_rate_hz" in downgraded["serial_bridge"]:
+        if (
+            "serial_bridge" in downgraded
+            and "telemetry_rate_hz" in downgraded["serial_bridge"]
+        ):
             del downgraded["serial_bridge"]["telemetry_rate_hz"]
 
     ok, errs = validate_config(downgraded, version=target_version)
     if not ok:
-        raise RuntimeError(f"Downgraded configuration failed validation: {'; '.join(errs)}")
+        raise RuntimeError(
+            f"Downgraded configuration failed validation: {'; '.join(errs)}"
+        )
 
     return downgraded
 
 
 def load_yaml(path: str) -> Dict[str, Any]:
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def save_yaml(path: str, data: Dict[str, Any]):
     tmp = f"{path}.tmp.{os.getpid()}"
-    with open(tmp, 'w', encoding='utf-8') as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         yaml.dump(data, f, sort_keys=False)
         f.flush()
         os.fsync(f.fileno())
@@ -213,22 +257,31 @@ def main():
     parser = argparse.ArgumentParser(description="Ubuntu Tank Config Migration Tool")
     sub = parser.add_subparsers(dest="command")
 
-    teleop_p = sub.add_parser("teleop-args", help="Print validated host keyboard settings as ROS parameter arguments")
+    teleop_p = sub.add_parser(
+        "teleop-args",
+        help="Print validated host keyboard settings as ROS parameter arguments",
+    )
     teleop_p.add_argument("file", help="Host controller.yaml path")
 
     val_p = sub.add_parser("validate", help="Validate a controller.yaml file")
     val_p.add_argument("file", help="Path to YAML configuration")
-    val_p.add_argument("--version", default="1.0", help="Schema version to check against")
+    val_p.add_argument(
+        "--version", default="1.0", help="Schema version to check against"
+    )
 
     mig_p = sub.add_parser("migrate", help="Forward-migrate a controller.yaml file")
     mig_p.add_argument("file", help="Path to YAML configuration")
     mig_p.add_argument("--target", default="1.1", help="Target schema version")
-    mig_p.add_argument("--inplace", action="store_true", help="Overwrite file in-place with fsync")
+    mig_p.add_argument(
+        "--inplace", action="store_true", help="Overwrite file in-place with fsync"
+    )
 
     down_p = sub.add_parser("downgrade", help="Downgrade a controller.yaml file")
     down_p.add_argument("file", help="Path to YAML configuration")
     down_p.add_argument("--target", default="1.0", help="Target schema version")
-    down_p.add_argument("--inplace", action="store_true", help="Overwrite file in-place with fsync")
+    down_p.add_argument(
+        "--inplace", action="store_true", help="Overwrite file in-place with fsync"
+    )
 
     args = parser.parse_args()
 
@@ -294,8 +347,12 @@ def teleop_arguments(config_path: str) -> List[str]:
         raise ValueError("Teleop settings must be finite positive values")
     if values["lease_duration_sec"] >= 0.250:
         raise ValueError("Teleop lease must be shorter than 250 ms")
-    return [argument for name, value in values.items() for argument in ("-p", f"{name}:={value}")]
+    return [
+        argument
+        for name, value in values.items()
+        for argument in ("-p", f"{name}:={value}")
+    ]
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

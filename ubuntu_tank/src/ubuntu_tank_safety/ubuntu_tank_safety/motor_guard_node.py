@@ -35,28 +35,36 @@ class MotorGuardNode(Node):
     """ROS 2 node enforcing motor command validation and guarding."""
 
     def __init__(self):
-        super().__init__('motor_guard')
+        super().__init__("motor_guard")
 
         # Declare ROS parameters with conservative defaults
-        self.declare_parameter('max_rps', 2.0)
-        self.declare_parameter('timeout_sec', 0.250)
-        self.declare_parameter('check_rate_hz', 50.0)
-        self.declare_parameter('heartbeat_interval_sec', 0.200)
+        self.declare_parameter("max_rps", 2.0)
+        self.declare_parameter("timeout_sec", 0.250)
+        self.declare_parameter("check_rate_hz", 50.0)
+        self.declare_parameter("heartbeat_interval_sec", 0.200)
 
-        max_rps = self.get_parameter('max_rps').value
-        timeout_sec = self.get_parameter('timeout_sec').value
-        check_rate_hz = self.get_parameter('check_rate_hz').value
-        heartbeat_interval_sec = self.get_parameter('heartbeat_interval_sec').value
+        max_rps = self.get_parameter("max_rps").value
+        timeout_sec = self.get_parameter("timeout_sec").value
+        check_rate_hz = self.get_parameter("check_rate_hz").value
+        heartbeat_interval_sec = self.get_parameter("heartbeat_interval_sec").value
 
         # Heartbeat communication channels (inherited FD preferred, dedicated socket fallback)
-        guard_fd_str = os.environ.get('UBUNTU_TANK_GUARD_HEARTBEAT_FD') or os.environ.get('UBUNTU_TANK_GUARD_PIPE_FD')
-        self.guard_pipe_fd = int(guard_fd_str) if guard_fd_str and guard_fd_str.isdigit() else None
-        self.guard_sock_path = os.environ.get('UBUNTU_TANK_GUARD_SOCK', '/run/ubuntu_tank/guard_heartbeat.sock')
+        guard_fd_str = os.environ.get(
+            "UBUNTU_TANK_GUARD_HEARTBEAT_FD"
+        ) or os.environ.get("UBUNTU_TANK_GUARD_PIPE_FD")
+        self.guard_pipe_fd = (
+            int(guard_fd_str) if guard_fd_str and guard_fd_str.isdigit() else None
+        )
+        self.guard_sock_path = os.environ.get(
+            "UBUNTU_TANK_GUARD_SOCK", "/run/ubuntu_tank/guard_heartbeat.sock"
+        )
 
-        guard_pid_file = os.environ.get('UBUNTU_TANK_GUARD_PID_FILE', '/run/ubuntu_tank/guard.pid')
+        guard_pid_file = os.environ.get(
+            "UBUNTU_TANK_GUARD_PID_FILE", "/run/ubuntu_tank/guard.pid"
+        )
         if os.path.exists(os.path.dirname(guard_pid_file)):
             try:
-                with open(guard_pid_file, 'w', encoding='utf-8') as pf:
+                with open(guard_pid_file, "w", encoding="utf-8") as pf:
                     pf.write(str(os.getpid()))
             except Exception:
                 pass
@@ -67,24 +75,25 @@ class MotorGuardNode(Node):
         state_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            reliability=ReliabilityPolicy.RELIABLE
+            reliability=ReliabilityPolicy.RELIABLE,
         )
 
-        self.armed_pub = self.create_publisher(Bool, '/ubuntu_tank_safety/armed', state_qos)
-        self.state_pub = self.create_publisher(Bool, '/ubuntu_tank_safety/state', state_qos)
-        self.guarded_pub = self.create_publisher(MotorsState, '/ros_robot_controller/set_motor_guarded', 10)
+        self.armed_pub = self.create_publisher(
+            Bool, "/ubuntu_tank_safety/armed", state_qos
+        )
+        self.state_pub = self.create_publisher(
+            Bool, "/ubuntu_tank_safety/state", state_qos
+        )
+        self.guarded_pub = self.create_publisher(
+            MotorsState, "/ros_robot_controller/set_motor_guarded", 10
+        )
 
         self.motor_sub = self.create_subscription(
-            MotorsState,
-            '/ubuntu_tank_safety/motor_input',
-            self._on_motor_input,
-            10
+            MotorsState, "/ubuntu_tank_safety/motor_input", self._on_motor_input, 10
         )
 
         self.arm_srv = self.create_service(
-            SetBool,
-            '/ubuntu_tank_safety/set_arm',
-            self._handle_set_arm
+            SetBool, "/ubuntu_tank_safety/set_arm", self._handle_set_arm
         )
 
         # High-frequency watchdog timer for monotonic deadline checks
@@ -92,11 +101,15 @@ class MotorGuardNode(Node):
         self.watchdog_timer = self.create_timer(timer_period, self._on_watchdog_tick)
 
         # Heartbeat timer for supervisor
-        self.heartbeat_timer = self.create_timer(heartbeat_interval_sec, self._emit_heartbeat)
+        self.heartbeat_timer = self.create_timer(
+            heartbeat_interval_sec, self._emit_heartbeat
+        )
 
         # Publish initial disarmed state
         self._publish_state()
-        self.get_logger().info("MotorGuard initialized. State: DISARMED (safety invariant).")
+        self.get_logger().info(
+            "MotorGuard initialized. State: DISARMED (safety invariant)."
+        )
 
     def _publish_state(self):
         msg = Bool()
@@ -136,9 +149,13 @@ class MotorGuardNode(Node):
         now_mono = time.monotonic()
         input_tuples = [(m.id, m.rps) for m in msg.data]
 
-        fwd_cmd, fault_disarmed, reason = self.guard.handle_command(input_tuples, now_mono)
+        fwd_cmd, fault_disarmed, reason = self.guard.handle_command(
+            input_tuples, now_mono
+        )
         if fault_disarmed:
-            self.get_logger().error(f"MotorGuard safety fault: {reason}. Disarming and zeroing.")
+            self.get_logger().error(
+                f"MotorGuard safety fault: {reason}. Disarming and zeroing."
+            )
             self._publish_repeated_zero(count=5)
             self._publish_state()
         elif fwd_cmd is not None:
@@ -148,13 +165,15 @@ class MotorGuardNode(Node):
         now_mono = time.monotonic()
         timed_out, zero_cmd = self.guard.check_timeout(now_mono)
         if timed_out:
-            self.get_logger().warn(f"Motor command lease expired (> {self.guard.timeout_sec}s). Disarming.")
+            self.get_logger().warn(
+                f"Motor command lease expired (> {self.guard.timeout_sec}s). Disarming."
+            )
             self._publish_repeated_zero(count=5)
             self._publish_state()
 
     def _emit_heartbeat(self):
         """Emit non-ROS monotonic heartbeat via inherited FD or dedicated UNIX socket."""
-        payload = f"{time.monotonic():.6f}\n".encode('utf-8')
+        payload = f"{time.monotonic():.6f}\n".encode("utf-8")
         if self.guard_pipe_fd is not None:
             try:
                 os.write(self.guard_pipe_fd, payload)
@@ -170,11 +189,13 @@ class MotorGuardNode(Node):
                 pass
 
     def destroy_node(self):
-        if getattr(self, '_is_destroyed', False):
+        if getattr(self, "_is_destroyed", False):
             return
         self._is_destroyed = True
         try:
-            self.get_logger().info("MotorGuard shutting down. Publishing repeated zero commands.")
+            self.get_logger().info(
+                "MotorGuard shutting down. Publishing repeated zero commands."
+            )
         except Exception:
             pass
         try:
@@ -209,5 +230,5 @@ def main(args=None):
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

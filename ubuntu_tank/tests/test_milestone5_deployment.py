@@ -24,15 +24,18 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+
 # Lightweight mock ROS 2 and Launch infrastructure for hardware-free unit tests
 class MockPackage(MagicMock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__path__ = []
 
+
 class MockParameter:
     def __init__(self, value):
         self.value = value
+
 
 class MockNode:
     def __init__(self, name="mock_node", **kwargs):
@@ -82,21 +85,37 @@ class MockNode:
     def destroy_node(self):
         pass
 
+
 for _mod_name in [
-    "std_srvs", "std_srvs.srv", "sensor_msgs", "sensor_msgs.msg",
-    "std_msgs", "std_msgs.msg", "nav_msgs", "nav_msgs.msg",
-    "geometry_msgs", "geometry_msgs.msg",
-    "ros_robot_controller_msgs", "ros_robot_controller_msgs.srv",
-    "ros_robot_controller_msgs.msg", "rclpy", "rclpy.node", "rclpy.qos",
-    "launch", "launch.actions", "launch.events", "launch.event_handlers",
-    "launch.substitutions", "launch_ros", "launch_ros.actions",
+    "std_srvs",
+    "std_srvs.srv",
+    "sensor_msgs",
+    "sensor_msgs.msg",
+    "std_msgs",
+    "std_msgs.msg",
+    "nav_msgs",
+    "nav_msgs.msg",
+    "geometry_msgs",
+    "geometry_msgs.msg",
+    "ros_robot_controller_msgs",
+    "ros_robot_controller_msgs.srv",
+    "ros_robot_controller_msgs.msg",
+    "rclpy",
+    "rclpy.node",
+    "rclpy.qos",
+    "launch",
+    "launch.actions",
+    "launch.events",
+    "launch.event_handlers",
+    "launch.substitutions",
+    "launch_ros",
+    "launch_ros.actions",
 ]:
     sys.modules.setdefault(_mod_name, MockPackage())
 
 sys.modules["rclpy.node"].Node = MockNode
 
 from ubuntu_tank.scripts.config_migration import (
-
     DEFAULTS_V1_0,
     downgrade_config,
     migrate_config,
@@ -125,12 +144,21 @@ class BaseDeploymentTestCase(unittest.TestCase):
         self.etc_dir = os.path.join(self.test_root, "etc", "opt", "ubuntu_tank")
         self.var_dir = os.path.join(self.test_root, "var", "opt", "ubuntu_tank")
         self.run_dir = os.path.join(self.test_root, "run", "ubuntu_tank")
-        self.lock_path = os.path.join(self.test_root, "run", "lock", "ubuntu_tank", "deploy.lock")
+        self.lock_path = os.path.join(
+            self.test_root, "run", "lock", "ubuntu_tank", "deploy.lock"
+        )
         self.systemd_dir = os.path.join(self.test_root, "etc", "systemd", "system")
         self.udev_dir = os.path.join(self.test_root, "etc", "udev", "rules.d")
 
-        for d in [self.opt_dir, self.etc_dir, self.var_dir, self.run_dir,
-                  os.path.dirname(self.lock_path), self.systemd_dir, self.udev_dir]:
+        for d in [
+            self.opt_dir,
+            self.etc_dir,
+            self.var_dir,
+            self.run_dir,
+            os.path.dirname(self.lock_path),
+            self.systemd_dir,
+            self.udev_dir,
+        ]:
             os.makedirs(d, exist_ok=True)
 
         self.mgr = ReleaseManager(
@@ -140,15 +168,19 @@ class BaseDeploymentTestCase(unittest.TestCase):
             run_dir=self.run_dir,
             systemd_dir=self.systemd_dir,
             udev_dir=self.udev_dir,
-            lock_path=self.lock_path
+            lock_path=self.lock_path,
         )
 
-        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self.repo_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
         self.workspace_dir = os.path.join(self.repo_root, "ubuntu_tank")
 
         # A previously verified identity is part of this isolated host fixture.
         with open(os.path.join(self.udev_dir, "99-mentorpi-rrc.rules"), "w") as stream:
-            stream.write('SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="fixture-rrc", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc"\n')
+            stream.write(
+                'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="fixture-rrc", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc"\n'
+            )
         self._prev_mock_docker_ps = os.environ.get("UBUNTU_TANK_MOCK_DOCKER_PS")
         os.environ["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
 
@@ -172,7 +204,7 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
             output_dir=out_dir,
             release_id="1.0.0-gtest001",
             arch="arm64",
-            allow_staged_install=True
+            allow_staged_install=True,
         )
 
         self.assertTrue(os.path.isfile(archive_path))
@@ -182,7 +214,9 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
         extract_dir = os.path.join(self.test_root, "inspect_pkg")
         os.makedirs(extract_dir, exist_ok=True)
         if archive_path.endswith(".zst"):
-            subprocess.check_call(["tar", "--zstd", "-xf", archive_path, "-C", extract_dir])
+            subprocess.check_call(
+                ["tar", "--zstd", "-xf", archive_path, "-C", extract_dir]
+            )
         else:
             subprocess.check_call(["tar", "-xf", archive_path, "-C", extract_dir])
 
@@ -203,7 +237,10 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
         self.assertEqual(headers.get("Target-OS"), "Ubuntu 26.04 LTS")
         self.assertEqual(headers.get("Target-Architecture"), "arm64")
         self.assertEqual(headers.get("ROS-Distribution"), "lyrical")
-        self.assertEqual(headers.get("Install-Prefix"), f"{self.opt_dir}/releases/1.0.0-gtest001/install")
+        self.assertEqual(
+            headers.get("Install-Prefix"),
+            f"{self.opt_dir}/releases/1.0.0-gtest001/install",
+        )
         self.assertEqual(headers.get("Test-Status"), "passed")
 
         self.assertIn("bin/mentorpi-tank-run", files)
@@ -214,20 +251,29 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
         # Check all file checksums match
         for rel_p, meta in files.items():
             abs_p = os.path.join(pkg_root, rel_p)
-            self.assertTrue(os.path.isfile(abs_p), f"File {rel_p} declared in manifest but missing on disk")
+            self.assertTrue(
+                os.path.isfile(abs_p),
+                f"File {rel_p} declared in manifest but missing on disk",
+            )
             self.assertEqual(compute_file_sha256(abs_p), meta["sha256"])
 
     def test_rejection_of_leaked_build_paths(self):
         """Packaging fails closed if install tree contains leaked checkout/build paths."""
         mock_ws = os.path.join(self.test_root, "mock_ws")
-        shutil.copytree(self.workspace_dir, mock_ws, ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+        shutil.copytree(
+            self.workspace_dir,
+            mock_ws,
+            ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+        )
 
         # Inject a leaked path in a mock install script
         mock_install = os.path.join(mock_ws, "install")
         os.makedirs(mock_install, exist_ok=True)
         leaked_script = os.path.join(mock_install, "setup.bash")
         with open(leaked_script, "w") as f:
-            f.write(f"#!/usr/bin/env bash\nexport AMENT_PREFIX_PATH={mock_ws}/.work/build_root\n")
+            f.write(
+                f"#!/usr/bin/env bash\nexport AMENT_PREFIX_PATH={mock_ws}/.work/build_root\n"
+            )
 
         with self.assertRaises(RuntimeError) as ctx:
             self.mgr.package_release(
@@ -235,7 +281,7 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
                 output_dir=os.path.join(self.test_root, "dist"),
                 release_id="1.0.0-gleak001",
                 install_tree=mock_install,
-                allow_staged_install=True
+                allow_staged_install=True,
             )
         self.assertIn("leaked build paths detected", str(ctx.exception))
 
@@ -250,13 +296,15 @@ class TestInstallationAndImmutability(BaseDeploymentTestCase):
             output_dir=out_dir,
             release_id=release_id,
             arch=arch,
-            allow_staged_install=True
+            allow_staged_install=True,
         )
 
     def test_install_release_extracts_immutably_and_leaves_stopped(self):
         """Install extracts to /opt/ubuntu_tank/releases/<id> and does not start or activate."""
         archive = self._create_mock_archive("1.0.0-ginst001")
-        rel_id = self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
+        rel_id = self.mgr.install_release(
+            archive, require_root=False, enforce_arm64=False
+        )
         self.assertEqual(rel_id, "1.0.0-ginst001")
 
         installed_dir = os.path.join(self.opt_dir, "releases", rel_id)
@@ -302,7 +350,9 @@ class TestInstallationAndImmutability(BaseDeploymentTestCase):
 
         with self.assertRaises(RuntimeError) as ctx:
             self.mgr.install_release(archive1, require_root=False, enforce_arm64=False)
-        self.assertIn("Refusing to overwrite existing release directory", str(ctx.exception))
+        self.assertIn(
+            "Refusing to overwrite existing release directory", str(ctx.exception)
+        )
 
 
 class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
@@ -310,8 +360,12 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
 
     def _setup_installed_releases(self):
         out_dir = os.path.join(self.test_root, "dist")
-        a1 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True)
-        a2 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True)
+        a1 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True
+        )
+        a2 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True
+        )
         self.mgr.install_release(a1, require_root=False, enforce_arm64=False)
         self.mgr.install_release(a2, require_root=False, enforce_arm64=False)
 
@@ -323,7 +377,10 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
         res1 = self.mgr.activate_release("1.0.0-gv1", require_root=False)
         self.assertEqual(res1, "1.0.0-gv1")
         self.assertTrue(os.path.islink(self.mgr.current_symlink))
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.0-gv1"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
+        )
 
         # Verify journal state
         state = self.mgr.journal.get_state()
@@ -335,7 +392,10 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
         # Activate release 2
         res2 = self.mgr.activate_release("1.0.1-gv2", require_root=False)
         self.assertEqual(res2, "1.0.1-gv2")
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.1-gv2"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
+        )
 
         # Verify previous release recorded in journal
         state2 = self.mgr.journal.get_state()
@@ -343,9 +403,17 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
         self.assertEqual(state2["previous_release_id"], "1.0.0-gv1")
 
         # Verify host assets staged
-        self.assertTrue(os.path.isfile(os.path.join(self.systemd_dir, "mentorpi-tank.service")))
-        self.assertTrue(os.path.isfile(os.path.join(self.systemd_dir, "mentorpi-tank-recover.service")))
-        self.assertTrue(os.path.isfile(os.path.join(self.udev_dir, "99-mentorpi-rrc.rules")))
+        self.assertTrue(
+            os.path.isfile(os.path.join(self.systemd_dir, "mentorpi-tank.service"))
+        )
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(self.systemd_dir, "mentorpi-tank-recover.service")
+            )
+        )
+        self.assertTrue(
+            os.path.isfile(os.path.join(self.udev_dir, "99-mentorpi-rrc.rules"))
+        )
 
     def test_offline_rollback_restores_previous_release_and_snapshot(self):
         """Rollback restores the last known working release and host configuration without network."""
@@ -361,14 +429,20 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
 
         # Activate v2 (will snapshot v1 state)
         self.mgr.activate_release("1.0.1-gv2", require_root=False)
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.1-gv2"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
+        )
 
         # Execute rollback
         rb_id = self.mgr.rollback_release(require_root=False)
         self.assertEqual(rb_id, "1.0.0-gv1")
 
         # Verify symlink restored to v1
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.0-gv1"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
+        )
 
         # Verify configuration restored from snapshot
         with open(cfg_file, "r") as f:
@@ -387,8 +461,12 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
     def test_recovery_from_crash_after_prepared_state(self):
         """If system crashes after PREPARED, recover_activation restores prior safe release and disarms."""
         out_dir = os.path.join(self.test_root, "dist")
-        a1 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True)
-        a2 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True)
+        a1 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True
+        )
+        a2 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True
+        )
         self.mgr.install_release(a1, require_root=False, enforce_arm64=False)
         self.mgr.install_release(a2, require_root=False, enforce_arm64=False)
 
@@ -402,7 +480,7 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
             current_symlink_target=os.path.realpath(self.mgr.current_symlink),
             etc_dir=self.etc_dir,
             systemd_dir=self.systemd_dir,
-            udev_dir=self.udev_dir
+            udev_dir=self.udev_dir,
         )
         self.mgr.journal.record_prepared(
             tx_id=tx_id,
@@ -410,18 +488,23 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
             candidate_release_path=os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
             previous_release_id="1.0.0-gv1",
             previous_release_path=os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
-            snapshot_dir=snap_dir
+            snapshot_dir=snap_dir,
         )
 
         # Verify journal is in uncommitted state
-        self.assertEqual(self.mgr.journal.get_state()["current_transaction"]["status"], "PREPARED")
+        self.assertEqual(
+            self.mgr.journal.get_state()["current_transaction"]["status"], "PREPARED"
+        )
 
         # Trigger boot recovery
         ok = self.mgr.recover_activation()
         self.assertTrue(ok)
 
         # Verify symlink points to v1 and journal is clean
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.0-gv1"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
+        )
         state = self.mgr.journal.get_state()
         self.assertIsNone(state["current_transaction"])
         self.assertEqual(state["history"][-1]["status"], "ROLLED_BACK")
@@ -429,8 +512,12 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
     def test_recovery_from_crash_after_activating_state(self):
         """If system crashes while ACTIVATING, recover_activation restores prior safe release and disarms."""
         out_dir = os.path.join(self.test_root, "dist")
-        a1 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True)
-        a2 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True)
+        a1 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True
+        )
+        a2 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True
+        )
         self.mgr.install_release(a1, require_root=False, enforce_arm64=False)
         self.mgr.install_release(a2, require_root=False, enforce_arm64=False)
 
@@ -444,7 +531,7 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
             current_symlink_target=os.path.realpath(self.mgr.current_symlink),
             etc_dir=self.etc_dir,
             systemd_dir=self.systemd_dir,
-            udev_dir=self.udev_dir
+            udev_dir=self.udev_dir,
         )
         self.mgr.journal.record_prepared(
             tx_id=tx_id,
@@ -452,7 +539,7 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
             candidate_release_path=os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
             previous_release_id="1.0.0-gv1",
             previous_release_path=os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
-            snapshot_dir=snap_dir
+            snapshot_dir=snap_dir,
         )
         self.mgr.journal.record_activating(tx_id)
 
@@ -465,7 +552,10 @@ class TestFaultInjectionAndBootRecovery(BaseDeploymentTestCase):
         self.assertTrue(ok)
 
         # Verify symlink safely restored to v1
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.0-gv1"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
+        )
 
 
 class TestConfigurationSchemaMigrationAndDowngrade(unittest.TestCase):
@@ -520,11 +610,21 @@ class TestSystemdUnitAndConfinementDirectives(unittest.TestCase):
     """Test systemd unit definitions and confinement directives against design requirements."""
 
     def setUp(self):
-        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        self.service_path = os.path.join(self.repo_root, "ubuntu_tank", "host", "mentorpi-tank.service")
-        self.recover_service_path = os.path.join(self.repo_root, "ubuntu_tank", "host", "mentorpi-tank-recover.service")
-        self.rules_path = os.path.join(self.repo_root, "ubuntu_tank", "host", "99-mentorpi-rrc.rules")
-        self.tmpfiles_path = os.path.join(self.repo_root, "ubuntu_tank", "host", "ubuntu-tank.conf")
+        self.repo_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+        self.service_path = os.path.join(
+            self.repo_root, "ubuntu_tank", "host", "mentorpi-tank.service"
+        )
+        self.recover_service_path = os.path.join(
+            self.repo_root, "ubuntu_tank", "host", "mentorpi-tank-recover.service"
+        )
+        self.rules_path = os.path.join(
+            self.repo_root, "ubuntu_tank", "host", "99-mentorpi-rrc.rules"
+        )
+        self.tmpfiles_path = os.path.join(
+            self.repo_root, "ubuntu_tank", "host", "ubuntu-tank.conf"
+        )
 
     def test_mentorpi_tank_service_confinement_directives(self):
         """mentorpi-tank.service declares all required confinement and supervision directives."""
@@ -600,9 +700,13 @@ class TestSystemdUnitAndConfinementDirectives(unittest.TestCase):
         self.assertIn("/run/ubuntu_tank 0750 ubuntu-tank mentorpi-rrc", content)
         self.assertIn("/run/lock/ubuntu_tank 0755 root root", content)
         self.assertIn("/run/lock/ubuntu_tank/deploy.lock 0644 root root", content)
-        self.assertIn("/var/opt/ubuntu_tank/ros-log 0750 ubuntu-tank mentorpi-rrc", content)
+        self.assertIn(
+            "/var/opt/ubuntu_tank/ros-log 0750 ubuntu-tank mentorpi-rrc", content
+        )
         self.assertIn("/var/opt/ubuntu_tank/deployment 0755 root root", content)
-        self.assertIn("/var/opt/ubuntu_tank/deployment/snapshots 0700 root root", content)
+        self.assertIn(
+            "/var/opt/ubuntu_tank/deployment/snapshots 0700 root root", content
+        )
 
 
 class TestDeploymentLockContention(BaseDeploymentTestCase):
@@ -629,12 +733,16 @@ class TestNonInteractiveRunner(BaseDeploymentTestCase):
         self.assertTrue(os.access(runner_path, os.X_OK))
 
         # Help test
-        res_help = subprocess.run([runner_path, "--help"], capture_output=True, text=True)
+        res_help = subprocess.run(
+            [runner_path, "--help"], capture_output=True, text=True
+        )
         self.assertEqual(res_help.returncode, 0)
         self.assertIn("MentorPi Tank Native Controller Service Runner", res_help.stdout)
 
         # Dry-run test
-        res_dry = subprocess.run([runner_path, "--dry-run"], capture_output=True, text=True)
+        res_dry = subprocess.run(
+            [runner_path, "--dry-run"], capture_output=True, text=True
+        )
         self.assertEqual(res_dry.returncode, 0)
         self.assertIn("[mentorpi-tank-run:dry-run]", res_dry.stdout)
 
@@ -651,7 +759,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             self.workspace_dir,
             os.path.join(self.test_root, "dist"),
             "1.0.0-grec01",
-            allow_staged_install=True
+            allow_staged_install=True,
         )
         self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
 
@@ -660,8 +768,14 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         self.assertTrue(os.access(rec_script, os.X_OK))
 
         # Check auxiliary libexec scripts are present
-        self.assertTrue(os.path.isfile(os.path.join(self.opt_dir, "libexec", "deployment_manager.py")))
-        self.assertTrue(os.path.isfile(os.path.join(self.opt_dir, "libexec", "config_migration.py")))
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(self.opt_dir, "libexec", "deployment_manager.py")
+            )
+        )
+        self.assertTrue(
+            os.path.isfile(os.path.join(self.opt_dir, "libexec", "config_migration.py"))
+        )
 
         # Run recover-activation --help from /tmp with empty PYTHONPATH
         clean_env = {
@@ -676,7 +790,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             cwd="/tmp",
             env=clean_env,
             capture_output=True,
-            text=True
+            text=True,
         )
         self.assertEqual(res.returncode, 0, f"Failed: {res.stderr}")
         self.assertIn("usage:", res.stdout.lower())
@@ -695,7 +809,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             self.workspace_dir,
             os.path.join(self.test_root, "dist"),
             "1.0.0-gown01",
-            allow_staged_install=True
+            allow_staged_install=True,
         )
         self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
 
@@ -705,11 +819,17 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             for d in dirs:
                 p = os.path.join(root, d)
                 mode = stat.S_IMODE(os.stat(p).st_mode)
-                self.assertEqual(mode & 0o022, 0, f"Directory {p} has group/other write bits: {oct(mode)}")
+                self.assertEqual(
+                    mode & 0o022,
+                    0,
+                    f"Directory {p} has group/other write bits: {oct(mode)}",
+                )
             for f in files:
                 p = os.path.join(root, f)
                 mode = stat.S_IMODE(os.stat(p).st_mode)
-                self.assertEqual(mode & 0o022, 0, f"File {p} has group/other write bits: {oct(mode)}")
+                self.assertEqual(
+                    mode & 0o022, 0, f"File {p} has group/other write bits: {oct(mode)}"
+                )
 
         # Verify tmpfiles.d definition specifies ubuntu-tank:mentorpi-rrc
         tmpfiles = os.path.join(self.workspace_dir, "host", "ubuntu-tank.conf")
@@ -741,7 +861,9 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         env = os.environ.copy()
         env["UBUNTU_TANK_CONFIG"] = custom_cfg
 
-        res_dry = subprocess.run([runner_path, "--dry-run"], env=env, capture_output=True, text=True)
+        res_dry = subprocess.run(
+            [runner_path, "--dry-run"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res_dry.returncode, 0, f"Failed dry-run: {res_dry.stderr}")
         out = res_dry.stdout
         self.assertIn("max_rps:=0.5", out)
@@ -768,7 +890,9 @@ class TestReviewRemediations(BaseDeploymentTestCase):
                 "  watchdog_ping_sec: 0.500\n"
             )
         env["UBUNTU_TANK_CONFIG"] = invalid_cfg
-        res_bad = subprocess.run([runner_path, "--dry-run"], env=env, capture_output=True, text=True)
+        res_bad = subprocess.run(
+            [runner_path, "--dry-run"], env=env, capture_output=True, text=True
+        )
         self.assertNotEqual(res_bad.returncode, 0)
         self.assertIn("failed validation", res_bad.stderr)
 
@@ -778,15 +902,21 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         Preserve pending transaction and do not mutate symlink.
         """
         out_dir = os.path.join(self.test_root, "dist")
-        a1 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True)
-        a2 = self.mgr.package_release(self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True)
+        a1 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.0-gv1", allow_staged_install=True
+        )
+        a2 = self.mgr.package_release(
+            self.workspace_dir, out_dir, "1.0.1-gv2", allow_staged_install=True
+        )
         self.mgr.install_release(a1, require_root=False, enforce_arm64=False)
         self.mgr.install_release(a2, require_root=False, enforce_arm64=False)
 
         self.mgr.activate_release("1.0.0-gv1", require_root=False)
         self.mgr.activate_release("1.0.1-gv2", require_root=False)
         current_target = os.path.realpath(self.mgr.current_symlink)
-        self.assertEqual(current_target, os.path.join(self.opt_dir, "releases", "1.0.1-gv2"))
+        self.assertEqual(
+            current_target, os.path.join(self.opt_dir, "releases", "1.0.1-gv2")
+        )
 
         # 4a. Corrupt snapshot checksums and test rollback rejection
         state = self.mgr.journal.get_state()
@@ -800,7 +930,10 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             self.mgr.rollback_release(require_root=False)
         self.assertIn("missing or corrupted", str(ctx.exception))
         # Symlink must NOT have changed
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.1-gv2"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
+        )
 
         # Restore valid snapshot checksum
         ctrl_path = os.path.join(snapshot_dir, "controller.yaml")
@@ -809,7 +942,9 @@ class TestReviewRemediations(BaseDeploymentTestCase):
                 f.write(original_checksums)
 
         # 4b. Damage previous release manifest and test rollback rejection
-        prev_release_manifest = os.path.join(self.opt_dir, "releases", "1.0.0-gv1", "release-manifest.txt")
+        prev_release_manifest = os.path.join(
+            self.opt_dir, "releases", "1.0.0-gv1", "release-manifest.txt"
+        )
         os.chmod(prev_release_manifest, 0o644)
         with open(prev_release_manifest, "w") as f:
             f.write("Corrupted manifest header without colons\n")
@@ -817,7 +952,10 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         with self.assertRaises(RuntimeError) as ctx:
             self.mgr.rollback_release(require_root=False)
         self.assertIn("failed integrity validation", str(ctx.exception))
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", "1.0.1-gv2"))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
+        )
 
         # 4c. Test boot recovery rejection on unverified baseline
         tx_id = "tx-recovery-unverified"
@@ -827,7 +965,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
             candidate_release_path=os.path.join(self.opt_dir, "releases", "1.0.1-gv2"),
             previous_release_id="1.0.0-gv1",
             previous_release_path=os.path.join(self.opt_dir, "releases", "1.0.0-gv1"),
-            snapshot_dir="/nonexistent/snapshot"
+            snapshot_dir="/nonexistent/snapshot",
         )
         ok = self.mgr.recover_activation()
         self.assertFalse(ok)
@@ -840,11 +978,14 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         """
         Finding 5: _stop_and_disarm_service verifies inactivity and fails if service remains active.
         """
+
         def mock_run_stop_fail(cmd, *args, **kwargs):
             if "is-active" in cmd:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="active\n")
             if "stop" in cmd:
-                return subprocess.CompletedProcess(cmd, returncode=1, stderr="Failed to stop service\n")
+                return subprocess.CompletedProcess(
+                    cmd, returncode=1, stderr="Failed to stop service\n"
+                )
             return subprocess.CompletedProcess(cmd, returncode=0)
 
         with patch("shutil.which", return_value="/bin/systemctl"):
@@ -872,7 +1013,9 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
         base_env = os.environ.copy()
         base_env["UBUNTU_TANK_GUARD_SOCK"] = os.path.join(self.run_dir, "guard_hb.sock")
-        base_env["UBUNTU_TANK_BRIDGE_SOCK"] = os.path.join(self.run_dir, "bridge_hb.sock")
+        base_env["UBUNTU_TANK_BRIDGE_SOCK"] = os.path.join(
+            self.run_dir, "bridge_hb.sock"
+        )
         base_env["ROS_LOG_DIR"] = os.path.join(self.var_dir, "ros-log")
 
         # 6a. Child exits with 17
@@ -899,11 +1042,17 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         # 6d. Graceful signal termination exits 0
         env_sleep = base_env.copy()
         env_sleep["_UBUNTU_TANK_TEST_CHILD_CMD"] = "sleep 10"
-        proc = subprocess.Popen([runner_path], env=env_sleep, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(
+            [runner_path], env=env_sleep, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         time.sleep(0.3)
         proc.terminate()
         stdout, stderr = proc.communicate(timeout=4.0)
-        self.assertEqual(proc.returncode, 0, f"Expected 0 on graceful SIGTERM, got {proc.returncode}. Stderr: {stderr.decode()}")
+        self.assertEqual(
+            proc.returncode,
+            0,
+            f"Expected 0 on graceful SIGTERM, got {proc.returncode}. Stderr: {stderr.decode()}",
+        )
         self.assertIn("Shutdown complete", stdout.decode())
 
 
@@ -921,8 +1070,12 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
 
     def _setup_two_releases(self, rel_a_id="1.0.0-fa", rel_b_id="1.0.1-fb"):
         out_dir = os.path.join(self.test_root, "dist")
-        a1 = self.mgr.package_release(self.workspace_dir, out_dir, rel_a_id, allow_staged_install=True)
-        a2 = self.mgr.package_release(self.workspace_dir, out_dir, rel_b_id, allow_staged_install=True)
+        a1 = self.mgr.package_release(
+            self.workspace_dir, out_dir, rel_a_id, allow_staged_install=True
+        )
+        a2 = self.mgr.package_release(
+            self.workspace_dir, out_dir, rel_b_id, allow_staged_install=True
+        )
         self.mgr.install_release(a1, require_root=False, enforce_arm64=False)
         self.mgr.install_release(a2, require_root=False, enforce_arm64=False)
         return rel_a_id, rel_b_id
@@ -957,13 +1110,16 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             target_release_path=rel_a_path,
             snapshot_dir=snapshot_dir,
             previous_release_id=rel_b,
-            previous_release_path=os.path.join(self.opt_dir, "releases", rel_b)
+            previous_release_path=os.path.join(self.opt_dir, "releases", rel_b),
         )
 
         # In-flight state: journal says ROLLING_BACK, symlink still points to B
         curr_state = self.mgr.journal.get_state()
         self.assertEqual(curr_state["current_transaction"]["status"], "ROLLING_BACK")
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", rel_b))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", rel_b),
+        )
 
         # Recovery should cleanly complete restoration to A
         ok = self.mgr.recover_activation()
@@ -982,10 +1138,12 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             target_release_path=rel_a_path,
             snapshot_dir=snapshot_dir,
             previous_release_id=rel_b,
-            previous_release_path=os.path.join(self.opt_dir, "releases", rel_b)
+            previous_release_path=os.path.join(self.opt_dir, "releases", rel_b),
         )
         # Restore snapshot files to simulate partial completion
-        self.mgr.snapshot_mgr.restore_snapshot(snapshot_dir, self.etc_dir, self.systemd_dir, self.udev_dir)
+        self.mgr.snapshot_mgr.restore_snapshot(
+            snapshot_dir, self.etc_dir, self.systemd_dir, self.udev_dir
+        )
         # Recovery must finish the symlink switch and commit cleanly
         ok = self.mgr.recover_activation()
         self.assertTrue(ok)
@@ -1008,7 +1166,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             current_symlink_target=os.path.realpath(self.mgr.current_symlink),
             etc_dir=self.etc_dir,
             systemd_dir=self.systemd_dir,
-            udev_dir=self.udev_dir
+            udev_dir=self.udev_dir,
         )
         self.mgr.journal.record_prepared(
             tx_id="tx-interrupted-act",
@@ -1016,7 +1174,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             candidate_release_path=os.path.join(self.opt_dir, "releases", rel_b),
             previous_release_id=rel_a,
             previous_release_path=os.path.join(self.opt_dir, "releases", rel_a),
-            snapshot_dir=snapshot_dir
+            snapshot_dir=snapshot_dir,
         )
 
         # 2a. Confirm record_prepared directly raises RuntimeError while transaction is pending
@@ -1027,7 +1185,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
                 candidate_release_path=os.path.join(self.opt_dir, "releases", rel_b),
                 previous_release_id=rel_a,
                 previous_release_path=os.path.join(self.opt_dir, "releases", rel_a),
-                snapshot_dir=snapshot_dir
+                snapshot_dir=snapshot_dir,
             )
         self.assertIn("uncommitted transaction", str(ctx.exception))
 
@@ -1035,7 +1193,10 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         # and cleanly activate release B
         active_id = self.mgr.activate_release(rel_b, require_root=False)
         self.assertEqual(active_id, rel_b)
-        self.assertEqual(os.path.realpath(self.mgr.current_symlink), os.path.join(self.opt_dir, "releases", rel_b))
+        self.assertEqual(
+            os.path.realpath(self.mgr.current_symlink),
+            os.path.join(self.opt_dir, "releases", rel_b),
+        )
         self.assertIsNone(self.mgr.journal.get_state().get("current_transaction"))
 
     def test_finding3_startup_blocked_by_lock_and_transaction_gate(self):
@@ -1051,7 +1212,12 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             env_locked = os.environ.copy()
             env_locked["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
             env_locked["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-            res = subprocess.run([runner_path, "--dry-run"], env=env_locked, capture_output=True, text=True)
+            res = subprocess.run(
+                [runner_path, "--dry-run"],
+                env=env_locked,
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(res.returncode, 1)
             self.assertIn("Deployment lock", res.stderr)
             self.assertIn("held by another process", res.stderr)
@@ -1064,17 +1230,21 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             candidate_release_path="/cand/path",
             previous_release_id=None,
             previous_release_path=None,
-            snapshot_dir="/snap/path"
+            snapshot_dir="/snap/path",
         )
         env_pending = os.environ.copy()
         env_pending["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
         env_pending["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-        res_pending = subprocess.run([runner_path, "--dry-run"], env=env_pending, capture_output=True, text=True)
+        res_pending = subprocess.run(
+            [runner_path, "--dry-run"], env=env_pending, capture_output=True, text=True
+        )
         self.assertEqual(res_pending.returncode, 1)
         self.assertIn("Uncommitted activation transaction", res_pending.stderr)
 
         # 3c. Verify mentorpi-tank-recover.service has RemainAfterExit=no
-        unit_file = os.path.join(self.workspace_dir, "host", "mentorpi-tank-recover.service")
+        unit_file = os.path.join(
+            self.workspace_dir, "host", "mentorpi-tank-recover.service"
+        )
         with open(unit_file, "r", encoding="utf-8") as f:
             unit_content = f.read()
         self.assertIn("RemainAfterExit=no", unit_content)
@@ -1112,13 +1282,17 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
 
         # 4c. Ambiguous status must raise RuntimeError
         def mock_ambiguous_query(cmd, *args, **kwargs):
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout="maintenance\n")
+            return subprocess.CompletedProcess(
+                cmd, returncode=0, stdout="maintenance\n"
+            )
 
         with patch("shutil.which", return_value="/bin/systemctl"):
             with patch("subprocess.run", side_effect=mock_ambiguous_query):
                 with self.assertRaises(RuntimeError) as ctx:
                     self.mgr._stop_and_disarm_service()
-                self.assertIn("Ambiguous or unexpected service status", str(ctx.exception))
+                self.assertIn(
+                    "Ambiguous or unexpected service status", str(ctx.exception)
+                )
 
     def test_finding5_supervisor_credential_and_monotonic_freshness(self):
         """
@@ -1128,8 +1302,11 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         import struct
         import importlib.util
         from importlib.machinery import SourceFileLoader
+
         runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
-        spec = importlib.util.spec_from_loader("mentorpi_tank_run", SourceFileLoader("mentorpi_tank_run", runner_path))
+        spec = importlib.util.spec_from_loader(
+            "mentorpi_tank_run", SourceFileLoader("mentorpi_tank_run", runner_path)
+        )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
@@ -1153,6 +1330,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         def make_ancdata(pid, uid, gid=1000):
             cmsg_data = struct.pack("iii", pid, uid, gid)
             import socket
+
             return [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS, cmsg_data)]
 
         # Valid heartbeat
@@ -1165,7 +1343,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertTrue(ok)
         self.assertAlmostEqual(ts, 49.8, places=5)
@@ -1179,7 +1357,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("UID 9999 does not match", reason)
@@ -1193,7 +1371,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("PID 8888 does not match", reason)
@@ -1207,7 +1385,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("missing peer UID", reason)
@@ -1222,7 +1400,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("exceeds deadline", reason)
@@ -1237,7 +1415,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("Payload rejection", reason)
@@ -1252,7 +1430,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=None,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("in the future", reason)
@@ -1267,7 +1445,7 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
             expected_uid=expected_uid,
             now_mono=now,
             last_accepted_ts=49.8,
-            deadline_sec=deadline
+            deadline_sec=deadline,
         )
         self.assertFalse(ok)
         self.assertIn("older than last accepted", reason)
@@ -1308,8 +1486,16 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         Ambiguous udev rules matching multiple hardware devices without discriminator are rejected.
         """
         # Mock 2 connected USB serial adapters with same vendor/product
-        dev1 = {"idVendor": "1a86", "idProduct": "55d4", "serial": "CH343_TANK_CONTROLLER"}
-        dev2 = {"idVendor": "1a86", "idProduct": "55d4", "serial": "CH343_OTHER_ADAPTER"}
+        dev1 = {
+            "idVendor": "1a86",
+            "idProduct": "55d4",
+            "serial": "CH343_TANK_CONTROLLER",
+        }
+        dev2 = {
+            "idVendor": "1a86",
+            "idProduct": "55d4",
+            "serial": "CH343_OTHER_ADAPTER",
+        }
 
         # Host existing udev rule has discriminator for dev1
         host_rule = (
@@ -1334,12 +1520,16 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         self.assertNotIn(dev2["serial"], merged)
 
         # Verify ambiguity rejection when multiple devices exist and rule lacks discriminator
-        ambiguous, reason = ReleaseManager.is_ambiguous_udev_rule(candidate_rule, detected_devices=[dev1, dev2])
+        ambiguous, reason = ReleaseManager.is_ambiguous_udev_rule(
+            candidate_rule, detected_devices=[dev1, dev2]
+        )
         self.assertTrue(ambiguous)
         self.assertIn("discriminator", reason)
 
         # Verify wildcard discriminator is rejected
-        wildcard_rule = candidate_rule.replace('ATTRS{idProduct}=="55d4",', 'ATTRS{idProduct}=="55d4", ATTRS{serial}=="*",')
+        wildcard_rule = candidate_rule.replace(
+            'ATTRS{idProduct}=="55d4",', 'ATTRS{idProduct}=="55d4", ATTRS{serial}=="*",'
+        )
         ambiguous_wc, reason_wc = ReleaseManager.is_ambiguous_udev_rule(wildcard_rule)
         self.assertTrue(ambiguous_wc)
         self.assertIn("wildcards", reason_wc)
@@ -1369,13 +1559,21 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
         # 1. Create a temporary checkout workspace
         tmp_ws = tempfile.mkdtemp(prefix="ubuntu_tank_checkout_")
         try:
-            shutil.copytree(self.workspace_dir, os.path.join(tmp_ws, "ubuntu_tank"), ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+            shutil.copytree(
+                self.workspace_dir,
+                os.path.join(tmp_ws, "ubuntu_tank"),
+                ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+            )
             ws_tank = os.path.join(tmp_ws, "ubuntu_tank")
 
             # 2. Synthesize a clean production install tree at the production prefix
-            disp_install = os.path.join(ws_tank, ".work", "build_root", production_prefix.lstrip("/"))
+            disp_install = os.path.join(
+                ws_tank, ".work", "build_root", production_prefix.lstrip("/")
+            )
             os.makedirs(os.path.join(disp_install, "bin"), exist_ok=True)
-            pkg_dir = os.path.join(disp_install, "lib", "python3.12", "site-packages", "tank_prod_pkg")
+            pkg_dir = os.path.join(
+                disp_install, "lib", "python3.12", "site-packages", "tank_prod_pkg"
+            )
             os.makedirs(pkg_dir, exist_ok=True)
 
             with open(os.path.join(pkg_dir, "__init__.py"), "w", encoding="utf-8") as f:
@@ -1396,13 +1594,14 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
             with open(setup_sh, "w", encoding="utf-8") as f:
                 f.write(
                     f"#!/usr/bin/env bash\n"
-                    f"export COLCON_CURRENT_PREFIX=\"{production_prefix}\"\n"
-                    f"export PYTHONPATH=\"{production_prefix}/lib/python3.12/site-packages:${{PYTHONPATH:-}}\"\n"
-                    f"export PATH=\"{production_prefix}/bin:${{PATH:-}}\"\n"
+                    f'export COLCON_CURRENT_PREFIX="{production_prefix}"\n'
+                    f'export PYTHONPATH="{production_prefix}/lib/python3.12/site-packages:${{PYTHONPATH:-}}"\n'
+                    f'export PATH="{production_prefix}/bin:${{PATH:-}}"\n'
                 )
             os.chmod(setup_sh, 0o755)
 
             from ubuntu_tank.scripts.deployment_manager import attest_build
+
             attest_build(disp_install, production_prefix, os.path.join(ws_tank, "src"))
 
             # 3. Verify packaging: package_release must succeed and stamp production prefix
@@ -1411,7 +1610,7 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
                 workspace_dir=ws_tank,
                 output_dir=out_dist,
                 release_id=rel_id,
-                allow_staged_install=True
+                allow_staged_install=True,
             )
             self.assertTrue(os.path.isfile(archive))
 
@@ -1422,16 +1621,22 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
             self.assertIn(f"Install-Prefix: {production_prefix}", manifest_content)
 
             # 4. Verify rejection of leaked checkout paths
-            leaked_install = os.path.join(ws_tank, ".work", "build_root_leaked", production_prefix.lstrip("/"))
+            leaked_install = os.path.join(
+                ws_tank, ".work", "build_root_leaked", production_prefix.lstrip("/")
+            )
             os.makedirs(leaked_install, exist_ok=True)
-            with open(os.path.join(leaked_install, "setup.bash"), "w", encoding="utf-8") as f:
-                f.write(f"#!/usr/bin/env bash\nexport CHECKOUT_PATH=\"{ws_tank}/src/leaked\"\n")
+            with open(
+                os.path.join(leaked_install, "setup.bash"), "w", encoding="utf-8"
+            ) as f:
+                f.write(
+                    f'#!/usr/bin/env bash\nexport CHECKOUT_PATH="{ws_tank}/src/leaked"\n'
+                )
             with self.assertRaises(RuntimeError) as ctx:
                 self.mgr.package_release(
                     workspace_dir=ws_tank,
                     output_dir=out_dist,
                     release_id="1.0.0-leaked",
-                    install_tree=leaked_install
+                    install_tree=leaked_install,
                 )
             self.assertIn("leaked build paths detected", str(ctx.exception))
 
@@ -1447,17 +1652,28 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
             self.assertFalse(os.path.exists(ws_tank))
 
             # 8. Verify setup, import, and executable resolution with checkout unavailable
-            installed_exec = os.path.join(self.opt_dir, "current", "install", "bin", "tank_exec")
+            installed_exec = os.path.join(
+                self.opt_dir, "current", "install", "bin", "tank_exec"
+            )
             self.assertTrue(os.path.isfile(installed_exec))
 
             run_env = os.environ.copy()
-            run_env["PYTHONPATH"] = os.path.join(self.opt_dir, "current", "install", "lib", "python3.12", "site-packages")
-            res = subprocess.run([sys.executable, installed_exec], env=run_env, capture_output=True, text=True)
+            run_env["PYTHONPATH"] = os.path.join(
+                self.opt_dir, "current", "install", "lib", "python3.12", "site-packages"
+            )
+            res = subprocess.run(
+                [sys.executable, installed_exec],
+                env=run_env,
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(res.returncode, 0)
             self.assertIn("STATUS=PRODUCTION_READY", res.stdout)
 
             # Assert zero leaked paths to tmp_ws in any installed file
-            for root, _, files in os.walk(os.path.join(self.opt_dir, "releases", rel_id)):
+            for root, _, files in os.walk(
+                os.path.join(self.opt_dir, "releases", rel_id)
+            ):
                 for f in files:
                     fp = os.path.join(root, f)
                     try:
@@ -1485,7 +1701,9 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
         # Extract archive to releases/<rel_id> directly without performing host provisioning
         target_dir = os.path.join(self.mgr.releases_dir, rel_id)
         os.makedirs(self.mgr.releases_dir, exist_ok=True)
-        subprocess.check_call(["tar", "--zstd", "-xf", archive, "-C", self.mgr.releases_dir])
+        subprocess.check_call(
+            ["tar", "--zstd", "-xf", archive, "-C", self.mgr.releases_dir]
+        )
         self.assertTrue(os.path.isdir(target_dir))
 
         # Host assets should NOT exist yet
@@ -1534,16 +1752,24 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
         runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
 
         # 3a. Verify authoritative default constants
-        from ubuntu_tank.scripts.deployment_manager import DEFAULT_LOCK_PATH, DEFAULT_JOURNAL_PATH
+        from ubuntu_tank.scripts.deployment_manager import (
+            DEFAULT_LOCK_PATH,
+            DEFAULT_JOURNAL_PATH,
+        )
+
         self.assertEqual(DEFAULT_LOCK_PATH, "/run/lock/ubuntu_tank/deploy.lock")
-        self.assertEqual(DEFAULT_JOURNAL_PATH, "/var/opt/ubuntu_tank/deployment/activation-journal")
+        self.assertEqual(
+            DEFAULT_JOURNAL_PATH, "/var/opt/ubuntu_tank/deployment/activation-journal"
+        )
 
         # 3b. Verify startup fails closed when deployment lock is held
         with DeploymentLock(self.mgr.lock_path):
             env_test = os.environ.copy()
             env_test["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
             env_test["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-            res = subprocess.run([runner_path, "--dry-run"], env=env_test, capture_output=True, text=True)
+            res = subprocess.run(
+                [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
+            )
             self.assertEqual(res.returncode, 1)
             self.assertIn("Deployment lock at", res.stderr)
             self.assertIn("held by another process", res.stderr)
@@ -1555,32 +1781,37 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
         env_test = os.environ.copy()
         env_test["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
         env_test["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-        res_corrupt = subprocess.run([runner_path, "--dry-run"], env=env_test, capture_output=True, text=True)
+        res_corrupt = subprocess.run(
+            [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
+        )
         self.assertEqual(res_corrupt.returncode, 1)
         self.assertIn("Failed to read activation journal", res_corrupt.stderr)
 
         # 3d. Verify startup fails closed on invalid schema
         with open(self.mgr.journal.journal_path, "w", encoding="utf-8") as f:
             f.write('{"missing_fields": true}')
-        res_schema = subprocess.run([runner_path, "--dry-run"], env=env_test, capture_output=True, text=True)
+        res_schema = subprocess.run(
+            [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
+        )
         self.assertEqual(res_schema.returncode, 1)
         self.assertIn("has invalid schema", res_schema.stderr)
 
         # 3e. Verify activation holding lock prevents controller launch during asset changes
         out_dist = os.path.join(self.test_root, "dist")
-        archive = self.mgr.package_release(self.workspace_dir, out_dist, "1.0.0-startrace", allow_staged_install=True)
+        archive = self.mgr.package_release(
+            self.workspace_dir, out_dist, "1.0.0-startrace", allow_staged_install=True
+        )
         self.mgr.install_release(archive, require_root=False)
 
         # Simulate activation holding deploy.lock and staging assets
         with DeploymentLock(self.mgr.lock_path):
             res_launch = subprocess.run(
-                [runner_path, "--dry-run"],
-                env=env_test,
-                capture_output=True,
-                text=True
+                [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
             )
             self.assertEqual(res_launch.returncode, 1)
-            self.assertIn("Cannot start controller during deployment", res_launch.stderr)
+            self.assertIn(
+                "Cannot start controller during deployment", res_launch.stderr
+            )
 
 
 class TestReviewFindingsRound4(BaseDeploymentTestCase):
@@ -1629,7 +1860,9 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
 
             # 1a. Traversal attack: package --release-id ../../src
             with self.assertRaises(ValueError) as ctx:
-                self.mgr.package_release(tmp_ws, out_dist, release_id="../../src", allow_staged_install=True)
+                self.mgr.package_release(
+                    tmp_ws, out_dist, release_id="../../src", allow_staged_install=True
+                )
             self.assertIn("must be a single path component", str(ctx.exception))
             # Verify sentinel file in src was NOT deleted
             self.assertTrue(os.path.isfile(sentinel_path))
@@ -1644,7 +1877,9 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
                 f.write("DO_NOT_DELETE")
 
             with self.assertRaises(ValueError) as ctx:
-                self.mgr.package_release(tmp_ws, out_dist, release_id=abs_target, allow_staged_install=True)
+                self.mgr.package_release(
+                    tmp_ws, out_dist, release_id=abs_target, allow_staged_install=True
+                )
             self.assertIn("must be a single path component", str(ctx.exception))
             self.assertTrue(os.path.isfile(abs_sentinel))
 
@@ -1655,14 +1890,34 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
             os.symlink(ws_src, symlink_escape)
 
             with self.assertRaises(ValueError) as ctx:
-                self.mgr.package_release(tmp_ws, out_dist, release_id="symlink_rel", allow_staged_install=True)
+                self.mgr.package_release(
+                    tmp_ws,
+                    out_dist,
+                    release_id="symlink_rel",
+                    allow_staged_install=True,
+                )
             self.assertIn("is a symlink; refusing mutation", str(ctx.exception))
             self.assertTrue(os.path.isfile(sentinel_path))
 
             # 1d. validate_release_id unit checks
-            self.assertEqual(ReleaseManager.validate_release_id("1.0.0-g1234567"), "1.0.0-g1234567")
-            self.assertEqual(ReleaseManager.validate_release_id("release_1.2.3-alpha"), "release_1.2.3-alpha")
-            for bad_id in [".", "..", "foo/bar", "foo\\bar", "foo\0bar", "/abs", "-bad", "with spaces", ""]:
+            self.assertEqual(
+                ReleaseManager.validate_release_id("1.0.0-g1234567"), "1.0.0-g1234567"
+            )
+            self.assertEqual(
+                ReleaseManager.validate_release_id("release_1.2.3-alpha"),
+                "release_1.2.3-alpha",
+            )
+            for bad_id in [
+                ".",
+                "..",
+                "foo/bar",
+                "foo\\bar",
+                "foo\0bar",
+                "/abs",
+                "-bad",
+                "with spaces",
+                "",
+            ]:
                 with self.assertRaises(ValueError):
                     ReleaseManager.validate_release_id(bad_id)
         finally:
@@ -1675,7 +1930,9 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
         Reject workspace roots, ancestors, system directories, and symlink escapes.
         Verify rejected inputs preserve sentinel files.
         """
-        builder_script = os.path.join(self.workspace_dir, "scripts", "build_disposable_root.sh")
+        builder_script = os.path.join(
+            self.workspace_dir, "scripts", "build_disposable_root.sh"
+        )
         self.assertTrue(os.path.isfile(builder_script))
 
         tmp_test = tempfile.mkdtemp(prefix="ubuntu_tank_test_f2_")
@@ -1690,8 +1947,16 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
 
             # 2a. Reject cleaning workspace root
             res = subprocess.run(
-                [builder_script, "--workspace", ws_mock, "--clean", "--build-root", ws_mock],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_mock,
+                    "--clean",
+                    "--build-root",
+                    ws_mock,
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("Refusing to clean workspace root", res.stderr)
@@ -1699,8 +1964,16 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
 
             # 2b. Reject cleaning workspace ancestor
             res = subprocess.run(
-                [builder_script, "--workspace", ws_mock, "--clean", "--build-root", tmp_test],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_mock,
+                    "--clean",
+                    "--build-root",
+                    tmp_test,
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("Refusing to clean workspace ancestor", res.stderr)
@@ -1709,8 +1982,16 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
             # 2c. Reject cleaning system directories
             for sys_dir in ["/", "/home", "/usr", "/var", "/tmp"]:
                 res = subprocess.run(
-                    [builder_script, "--workspace", ws_mock, "--clean", "--build-root", sys_dir],
-                    capture_output=True, text=True
+                    [
+                        builder_script,
+                        "--workspace",
+                        ws_mock,
+                        "--clean",
+                        "--build-root",
+                        sys_dir,
+                    ],
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertNotEqual(res.returncode, 0)
                 self.assertIn("Refusing to clean broad or system directory", res.stderr)
@@ -1719,8 +2000,16 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
             symlink_target = os.path.join(tmp_test, "symlink_build_root")
             os.symlink(ws_mock, symlink_target)
             res = subprocess.run(
-                [builder_script, "--workspace", ws_mock, "--clean", "--build-root", symlink_target],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_mock,
+                    "--clean",
+                    "--build-root",
+                    symlink_target,
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("Refusing to clean symlinked target", res.stderr)
@@ -1734,8 +2023,17 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
                 f.write("disposable")
 
             res = subprocess.run(
-                [builder_script, "--workspace", ws_mock, "--clean", "--build-root", valid_disp, "--allow-staged-install"],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_mock,
+                    "--clean",
+                    "--build-root",
+                    valid_disp,
+                    "--allow-staged-install",
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res.returncode, 0)
             self.assertFalse(os.path.exists(disp_sentinel))
@@ -1750,16 +2048,30 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
         Test successful builder invocation through the packaging subprocess path,
         checking both exit status 0 and archive creation.
         """
-        builder_script = os.path.join(self.workspace_dir, "scripts", "build_disposable_root.sh")
+        builder_script = os.path.join(
+            self.workspace_dir, "scripts", "build_disposable_root.sh"
+        )
         tmp_ws = tempfile.mkdtemp(prefix="ubuntu_tank_test_f3_")
         try:
-            shutil.copytree(self.workspace_dir, os.path.join(tmp_ws, "ubuntu_tank"), ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+            shutil.copytree(
+                self.workspace_dir,
+                os.path.join(tmp_ws, "ubuntu_tank"),
+                ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+            )
             ws_tank = os.path.join(tmp_ws, "ubuntu_tank")
 
             # 3a. Direct invocation of build_disposable_root.sh
             res = subprocess.run(
-                [builder_script, "--workspace", ws_tank, "--release-id", "1.0.0-f3test", "--allow-staged-install"],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_tank,
+                    "--release-id",
+                    "1.0.0-f3test",
+                    "--allow-staged-install",
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res.returncode, 0)
             self.assertNotIn("EOF: command not found", res.stderr)
@@ -1774,14 +2086,18 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
                 workspace_dir=ws_tank,
                 output_dir=out_dist,
                 release_id="1.0.0-f3pkg",
-                allow_staged_install=True
+                allow_staged_install=True,
             )
             self.assertTrue(os.path.isfile(archive))
             self.assertTrue(archive.endswith(".tar.zst") or archive.endswith(".tar.gz"))
             # Assert manifest was generated and contains release ID
-            content = subprocess.check_output(["tar", "--zstd", "-xOf", archive, "1.0.0-f3pkg/release-manifest.txt"]).decode("utf-8")
+            content = subprocess.check_output(
+                ["tar", "--zstd", "-xOf", archive, "1.0.0-f3pkg/release-manifest.txt"]
+            ).decode("utf-8")
             self.assertIn("Release-Id: 1.0.0-f3pkg", content)
-            self.assertIn(f"Install-Prefix: {self.opt_dir}/releases/1.0.0-f3pkg/install", content)
+            self.assertIn(
+                f"Install-Prefix: {self.opt_dir}/releases/1.0.0-f3pkg/install", content
+            )
         finally:
             if os.path.exists(tmp_ws):
                 shutil.rmtree(tmp_ws)
@@ -1794,23 +2110,41 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
         and verify hardware-free ROS artifact architecture and installed imports
         after removing access to checkout and build root.
         """
-        builder_script = os.path.join(self.workspace_dir, "scripts", "build_disposable_root.sh")
+        builder_script = os.path.join(
+            self.workspace_dir, "scripts", "build_disposable_root.sh"
+        )
         rel_id = "1.0.0-f4prod"
         prod_prefix = f"{self.opt_dir}/releases/{rel_id}/install"
 
         tmp_test = tempfile.mkdtemp(prefix="ubuntu_tank_test_f4_")
         try:
-            shutil.copytree(self.workspace_dir, os.path.join(tmp_test, "ubuntu_tank"), ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+            shutil.copytree(
+                self.workspace_dir,
+                os.path.join(tmp_test, "ubuntu_tank"),
+                ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+            )
             ws_tank = os.path.join(tmp_test, "ubuntu_tank")
 
             # 4a. Dry-run plan verification
             res_dry = subprocess.run(
-                [builder_script, "--workspace", ws_tank, "--release-id", rel_id, "--opt-dir", self.opt_dir, "--dry-run"],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_tank,
+                    "--release-id",
+                    rel_id,
+                    "--opt-dir",
+                    self.opt_dir,
+                    "--dry-run",
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res_dry.returncode, 0)
             self.assertIn(f"Internal production prefix: {prod_prefix}", res_dry.stdout)
-            self.assertIn("Target OS & Architecture: Ubuntu 26.04 (arm64)", res_dry.stdout)
+            self.assertIn(
+                "Target OS & Architecture: Ubuntu 26.04 (arm64)", res_dry.stdout
+            )
             self.assertIn(f"colcon build --install-base {prod_prefix}", res_dry.stdout)
             # Ensure no host-prefixed colcon install commands in dry-run
             self.assertNotIn("build_workspace.sh --install-base", res_dry.stdout)
@@ -1819,31 +2153,68 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
             bad_rootfs = os.path.join(tmp_test, "bad_rootfs")
             os.makedirs(os.path.join(bad_rootfs, "etc"), exist_ok=True)
             os.makedirs(os.path.join(bad_rootfs, "var", "lib", "dpkg"), exist_ok=True)
-            with open(os.path.join(bad_rootfs, "etc", "os-release"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(bad_rootfs, "etc", "os-release"), "w", encoding="utf-8"
+            ) as f:
                 f.write('ID=ubuntu\nVERSION_ID="24.04"\n')
-            with open(os.path.join(bad_rootfs, "var", "lib", "dpkg", "arch"), "w", encoding="utf-8") as f:
-                f.write('amd64\n')
+            with open(
+                os.path.join(bad_rootfs, "var", "lib", "dpkg", "arch"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write("amd64\n")
 
             res_bad = subprocess.run(
-                [builder_script, "--workspace", ws_tank, "--release-id", rel_id, "--rootfs", bad_rootfs],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_tank,
+                    "--release-id",
+                    rel_id,
+                    "--rootfs",
+                    bad_rootfs,
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res_bad.returncode, 0)
-            self.assertIn("Verified ARM64 Ubuntu 26.04 rootfs not available", res_bad.stderr)
+            self.assertIn(
+                "Verified ARM64 Ubuntu 26.04 rootfs not available", res_bad.stderr
+            )
 
             # 4c. Real hardware-free ROS artifact built inside verified rootfs at production prefix
             good_rootfs = os.path.join(tmp_test, "good_rootfs")
             os.makedirs(os.path.join(good_rootfs, "etc"), exist_ok=True)
             os.makedirs(os.path.join(good_rootfs, "var", "lib", "dpkg"), exist_ok=True)
-            with open(os.path.join(good_rootfs, "etc", "os-release"), "w", encoding="utf-8") as f:
-                f.write('NAME="Ubuntu"\nVERSION="26.04 LTS (Resolute Raccoon)"\nID=ubuntu\nVERSION_ID="26.04"\n')
-            with open(os.path.join(good_rootfs, "var", "lib", "dpkg", "arch"), "w", encoding="utf-8") as f:
-                f.write('arm64\n')
+            with open(
+                os.path.join(good_rootfs, "etc", "os-release"), "w", encoding="utf-8"
+            ) as f:
+                f.write(
+                    'NAME="Ubuntu"\nVERSION="26.04 LTS (Resolute Raccoon)"\nID=ubuntu\nVERSION_ID="26.04"\n'
+                )
+            with open(
+                os.path.join(good_rootfs, "var", "lib", "dpkg", "arch"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write("arm64\n")
 
             # Build in rootfs with allow-staged-install
             res_good = subprocess.run(
-                [builder_script, "--workspace", ws_tank, "--release-id", rel_id, "--rootfs", good_rootfs, "--opt-dir", self.opt_dir, "--allow-staged-install"],
-                capture_output=True, text=True
+                [
+                    builder_script,
+                    "--workspace",
+                    ws_tank,
+                    "--release-id",
+                    rel_id,
+                    "--rootfs",
+                    good_rootfs,
+                    "--opt-dir",
+                    self.opt_dir,
+                    "--allow-staged-install",
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res_good.returncode, 0)
 
@@ -1854,12 +2225,14 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
                 output_dir=out_dist,
                 release_id=rel_id,
                 build_root=good_rootfs,
-                allow_staged_install=True
+                allow_staged_install=True,
             )
             self.assertTrue(os.path.isfile(archive))
 
             # Verify manifest declarations
-            manifest = subprocess.check_output(["tar", "--zstd", "-xOf", archive, f"{rel_id}/release-manifest.txt"]).decode("utf-8")
+            manifest = subprocess.check_output(
+                ["tar", "--zstd", "-xOf", archive, f"{rel_id}/release-manifest.txt"]
+            ).decode("utf-8")
             self.assertIn("Target-Architecture: arm64", manifest)
             self.assertIn(f"Install-Prefix: {prod_prefix}", manifest)
 
@@ -1874,11 +2247,18 @@ class TestReviewFindingsRound4(BaseDeploymentTestCase):
             self.assertFalse(os.path.exists(good_rootfs))
 
             # Sourcing and running installed verification executable
-            verify_bin = os.path.join(self.opt_dir, "current", "install", "bin", "tank_verify_install")
+            verify_bin = os.path.join(
+                self.opt_dir, "current", "install", "bin", "tank_verify_install"
+            )
             self.assertTrue(os.path.isfile(verify_bin))
             run_env = os.environ.copy()
             run_env["COLCON_CURRENT_PREFIX"] = prod_prefix
-            res_exec = subprocess.run([sys.executable, verify_bin], env=run_env, capture_output=True, text=True)
+            res_exec = subprocess.run(
+                [sys.executable, verify_bin],
+                env=run_env,
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(res_exec.returncode, 0)
             self.assertIn(f"TANK_VERIFIED_PREFIX={prod_prefix}", res_exec.stdout)
         finally:
@@ -1907,7 +2287,9 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         import argparse
         import shlex
 
-        builder_script = os.path.join(self.workspace_dir, "scripts", "build_disposable_root.sh")
+        builder_script = os.path.join(
+            self.workspace_dir, "scripts", "build_disposable_root.sh"
+        )
         with open(builder_script, "r", encoding="utf-8") as f:
             script_text = f.read()
 
@@ -1915,7 +2297,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         self.assertNotIn(
             "--no-symlink-install",
             script_text,
-            "build_disposable_root.sh must not pass or reference unsupported '--no-symlink-install'"
+            "build_disposable_root.sh must not pass or reference unsupported '--no-symlink-install'",
         )
 
         # 1b. Define locked upstream colcon build argument parser
@@ -1935,13 +2317,23 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
 
         # Demonstrate that passing --no-symlink-install causes colcon argument parsing failure
         with self.assertRaises(SystemExit):
-            colcon_parser.parse_args(["--install-base", "/opt/test", "--no-symlink-install"])
+            colcon_parser.parse_args(
+                ["--install-base", "/opt/test", "--no-symlink-install"]
+            )
 
         # 1c. Extract colcon commands from script and parse them
         # Extract the command in dry-run
         res_dry = subprocess.run(
-            [builder_script, "--workspace", self.workspace_dir, "--release-id", "1.0.0-testcolcon", "--dry-run"],
-            capture_output=True, text=True
+            [
+                builder_script,
+                "--workspace",
+                self.workspace_dir,
+                "--release-id",
+                "1.0.0-testcolcon",
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(res_dry.returncode, 0)
         self.assertNotIn("--no-symlink-install", res_dry.stdout)
@@ -1954,23 +2346,39 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                 parsed_args = colcon_parser.parse_args(tokens)
                 self.assertFalse(parsed_args.symlink_install)
                 self.assertTrue(parsed_args.merge_install)
-                self.assertEqual(parsed_args.install_base, "/opt/ubuntu_tank/releases/1.0.0-testcolcon/install")
+                self.assertEqual(
+                    parsed_args.install_base,
+                    "/opt/ubuntu_tank/releases/1.0.0-testcolcon/install",
+                )
 
         # 1d. Extract commands from both systemd-nspawn and chroot blocks in script
         import re
-        colcon_blocks = re.findall(r'colcon build\s*\\\s*(.*?)\n\s*"; then', script_text, re.DOTALL)
-        self.assertGreaterEqual(len(colcon_blocks), 2, "Must find colcon build invocations in both nspawn and chroot blocks")
+
+        colcon_blocks = re.findall(
+            r'colcon build\s*\\\s*(.*?)\n\s*"; then', script_text, re.DOTALL
+        )
+        self.assertGreaterEqual(
+            len(colcon_blocks),
+            2,
+            "Must find colcon build invocations in both nspawn and chroot blocks",
+        )
 
         for block in colcon_blocks:
             cleaned_args = block.replace("\\", " ").replace("\n", " ")
             # Replace shell variables with test values
-            cleaned_args = cleaned_args.replace("'${PRODUCTION_PREFIX}'", "/opt/ubuntu_tank/releases/test/install")
-            cleaned_args = cleaned_args.replace("${COLCON_PKGS}", "--packages-select pkg_a pkg_b")
+            cleaned_args = cleaned_args.replace(
+                "'${PRODUCTION_PREFIX}'", "/opt/ubuntu_tank/releases/test/install"
+            )
+            cleaned_args = cleaned_args.replace(
+                "${COLCON_PKGS}", "--packages-select pkg_a pkg_b"
+            )
             tokens = shlex.split(cleaned_args)
             parsed = colcon_parser.parse_args(tokens)
             self.assertFalse(parsed.symlink_install)
             self.assertTrue(parsed.merge_install)
-            self.assertEqual(parsed.install_base, "/opt/ubuntu_tank/releases/test/install")
+            self.assertEqual(
+                parsed.install_base, "/opt/ubuntu_tank/releases/test/install"
+            )
             self.assertEqual(parsed.packages_select, ["pkg_a", "pkg_b"])
 
     def test_finding2_explicit_copy_rootfs_to_target_and_failed_build_rejection(self):
@@ -1984,9 +2392,15 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         tmp_test = os.path.join(self.test_root, "test_f2_dir")
         os.makedirs(tmp_test, exist_ok=True)
         try:
-            builder_script = os.path.join(self.workspace_dir, "scripts", "build_disposable_root.sh")
+            builder_script = os.path.join(
+                self.workspace_dir, "scripts", "build_disposable_root.sh"
+            )
             ws_mock = os.path.join(tmp_test, "ubuntu_tank")
-            shutil.copytree(self.workspace_dir, ws_mock, ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+            shutil.copytree(
+                self.workspace_dir,
+                ws_mock,
+                ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+            )
 
             rel_id = "1.0.0-f2rootfs"
             prod_prefix = f"{self.opt_dir}/releases/{rel_id}/install"
@@ -1996,13 +2410,25 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             mock_build_root = os.path.join(tmp_test, "build_root")
             os.makedirs(os.path.join(mock_rootfs, "etc"), exist_ok=True)
             os.makedirs(os.path.join(mock_rootfs, "var", "lib", "dpkg"), exist_ok=True)
-            os.makedirs(os.path.join(mock_rootfs, "opt", "ros", "lyrical"), exist_ok=True)
-            with open(os.path.join(mock_rootfs, "etc", "os-release"), "w", encoding="utf-8") as f:
+            os.makedirs(
+                os.path.join(mock_rootfs, "opt", "ros", "lyrical"), exist_ok=True
+            )
+            with open(
+                os.path.join(mock_rootfs, "etc", "os-release"), "w", encoding="utf-8"
+            ) as f:
                 f.write('ID=ubuntu\nVERSION_ID="26.04"\n')
-            with open(os.path.join(mock_rootfs, "var", "lib", "dpkg", "arch"), "w", encoding="utf-8") as f:
-                f.write('arm64\n')
-            with open(os.path.join(mock_rootfs, "opt", "ros", "lyrical", "setup.bash"), "w", encoding="utf-8") as f:
-                f.write('#!/usr/bin/env bash\n')
+            with open(
+                os.path.join(mock_rootfs, "var", "lib", "dpkg", "arch"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write("arm64\n")
+            with open(
+                os.path.join(mock_rootfs, "opt", "ros", "lyrical", "setup.bash"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write("#!/usr/bin/env bash\n")
 
             # Populate ONLY rootfs install tree with unique recognizable payload files
             rootfs_install = os.path.join(mock_rootfs, prod_prefix.lstrip("/"))
@@ -2010,14 +2436,26 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             os.makedirs(os.path.join(rootfs_install, "bin"), exist_ok=True)
 
             unique_payload_token = "UNIQUE_ROOTFS_COMPILED_TOKEN_987654321"
-            with open(os.path.join(rootfs_install, "setup.bash"), "w", encoding="utf-8") as f:
-                f.write(f"#!/usr/bin/env bash\nexport COLCON_CURRENT_PREFIX=\"{prod_prefix}\"\n")
+            with open(
+                os.path.join(rootfs_install, "setup.bash"), "w", encoding="utf-8"
+            ) as f:
+                f.write(
+                    f'#!/usr/bin/env bash\nexport COLCON_CURRENT_PREFIX="{prod_prefix}"\n'
+                )
             os.chmod(os.path.join(rootfs_install, "setup.bash"), 0o755)
 
-            with open(os.path.join(rootfs_install, "lib", "libtank_core.so"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(rootfs_install, "lib", "libtank_core.so"),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 f.write(f"BINARY_DATA:{unique_payload_token}\n")
 
-            with open(os.path.join(rootfs_install, "bin", "tank_test_node"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(rootfs_install, "bin", "tank_test_node"),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 f.write(f"#!/usr/bin/env python3\nprint('{unique_payload_token}')\n")
             os.chmod(os.path.join(rootfs_install, "bin", "tank_test_node"), 0o755)
 
@@ -2034,20 +2472,34 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             res_build = subprocess.run(
                 [
                     builder_script,
-                    "--workspace", ws_mock,
-                    "--release-id", rel_id,
-                    "--rootfs", mock_rootfs,
-                    "--build-root", mock_build_root,
-                    "--opt-dir", self.opt_dir
+                    "--workspace",
+                    ws_mock,
+                    "--release-id",
+                    rel_id,
+                    "--rootfs",
+                    mock_rootfs,
+                    "--build-root",
+                    mock_build_root,
+                    "--opt-dir",
+                    self.opt_dir,
                 ],
                 env=build_env,
-                capture_output=True, text=True
+                capture_output=True,
+                text=True,
             )
-            self.assertEqual(res_build.returncode, 0, f"Builder failed: {res_build.stderr}")
+            self.assertEqual(
+                res_build.returncode, 0, f"Builder failed: {res_build.stderr}"
+            )
 
             # Verify target_install now contains the recognizable files from rootfs
-            self.assertTrue(os.path.isfile(os.path.join(target_install, "lib", "libtank_core.so")))
-            with open(os.path.join(target_install, "lib", "libtank_core.so"), "r", encoding="utf-8") as f:
+            self.assertTrue(
+                os.path.isfile(os.path.join(target_install, "lib", "libtank_core.so"))
+            )
+            with open(
+                os.path.join(target_install, "lib", "libtank_core.so"),
+                "r",
+                encoding="utf-8",
+            ) as f:
                 self.assertIn(unique_payload_token, f.read())
 
             # 2c. Package release and assert recognizable files reach archive
@@ -2057,7 +2509,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                 output_dir=out_dist,
                 release_id=rel_id,
                 build_root=mock_build_root,
-                allow_staged_install=True
+                allow_staged_install=True,
             )
             self.assertTrue(os.path.isfile(archive))
 
@@ -2069,13 +2521,23 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             self.assertIn(f"{rel_id}/install/bin/tank_test_node", tar_list)
 
             tar_content = subprocess.check_output(
-                ["tar", "--zstd" if archive.endswith(".zst") else "-z", "-xOf", archive, f"{rel_id}/install/lib/libtank_core.so"]
+                [
+                    "tar",
+                    "--zstd" if archive.endswith(".zst") else "-z",
+                    "-xOf",
+                    archive,
+                    f"{rel_id}/install/lib/libtank_core.so",
+                ]
             ).decode("utf-8")
             self.assertIn(unique_payload_token, tar_content)
 
             # 2d. Repeat after failed build and require packaging to fail closed
             fail_ws = os.path.join(tmp_test, "fail_ws")
-            shutil.copytree(self.workspace_dir, fail_ws, ignore=shutil.ignore_patterns(".work", "dist", "build", "install"))
+            shutil.copytree(
+                self.workspace_dir,
+                fail_ws,
+                ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+            )
             fail_rootfs = os.path.join(tmp_test, "fail_rootfs")
             fail_build_root = os.path.join(tmp_test, "fail_build_root")
             # Incomplete rootfs (missing os-release, arch, etc.)
@@ -2085,18 +2547,31 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             res_fail = subprocess.run(
                 [
                     builder_script,
-                    "--workspace", fail_ws,
-                    "--release-id", "1.0.0-failedbuild",
-                    "--rootfs", fail_rootfs,
-                    "--build-root", fail_build_root,
-                    "--opt-dir", self.opt_dir
+                    "--workspace",
+                    fail_ws,
+                    "--release-id",
+                    "1.0.0-failedbuild",
+                    "--rootfs",
+                    fail_rootfs,
+                    "--build-root",
+                    fail_build_root,
+                    "--opt-dir",
+                    self.opt_dir,
                 ],
-                capture_output=True, text=True
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res_fail.returncode, 0)
 
             # Ensure failed-build remnants were cleaned up and no install tree exists
-            fail_target_install = os.path.join(fail_build_root, "opt", "ubuntu_tank", "releases", "1.0.0-failedbuild", "install")
+            fail_target_install = os.path.join(
+                fail_build_root,
+                "opt",
+                "ubuntu_tank",
+                "releases",
+                "1.0.0-failedbuild",
+                "install",
+            )
             self.assertFalse(os.path.exists(fail_target_install))
 
             # Packaging must fail closed when build failed
@@ -2106,7 +2581,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                     output_dir=out_dist,
                     release_id="1.0.0-failedbuild",
                     build_root=fail_build_root,
-                    allow_staged_install=False
+                    allow_staged_install=False,
                 )
             self.assertIn("Production builder failed", str(ctx.exception))
 
@@ -2119,7 +2594,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                     output_dir=out_dist,
                     release_id="1.0.0-emptytest",
                     install_tree=empty_install,
-                    allow_staged_install=False
+                    allow_staged_install=False,
                 )
             self.assertIn("incomplete or empty", str(ctx.exception))
 
@@ -2127,7 +2602,14 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             inspect_dir = os.path.join(tmp_test, "inspect_empty")
             os.makedirs(inspect_dir, exist_ok=True)
             subprocess.check_call(
-                ["tar", "--zstd" if archive.endswith(".zst") else "-z", "-xf", archive, "-C", inspect_dir]
+                [
+                    "tar",
+                    "--zstd" if archive.endswith(".zst") else "-z",
+                    "-xf",
+                    archive,
+                    "-C",
+                    inspect_dir,
+                ]
             )
             pkg_extracted = os.path.join(inspect_dir, rel_id)
             # Remove files in install/ to simulate an empty install directory
@@ -2135,7 +2617,9 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             shutil.rmtree(pkg_install)
             os.makedirs(pkg_install, exist_ok=True)
 
-            valid, errs = self.mgr.validate_release(pkg_extracted, expected_release_id=rel_id)
+            valid, errs = self.mgr.validate_release(
+                pkg_extracted, expected_release_id=rel_id
+            )
             self.assertFalse(valid)
             self.assertTrue(any("install" in e.lower() for e in errs))
         finally:
@@ -2165,12 +2649,16 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         # 1a. Docker inventory unreadable (fails closed)
         ok, errs = check_hardware_mutual_exclusion(mock_docker_fail=True)
         self.assertFalse(ok)
-        self.assertTrue(any("cannot verify mutual exclusion" in e.lower() for e in errs))
+        self.assertTrue(
+            any("cannot verify mutual exclusion" in e.lower() for e in errs)
+        )
 
         # Test mentorpi-tank-run fails closed on docker fail
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_DOCKER_FAIL"] = "1"
-        res = subprocess.run([runner_path, "--check"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [runner_path, "--check"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res.returncode, 1)
         self.assertIn("mutual exclusion", res.stderr.lower())
 
@@ -2186,7 +2674,9 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
                 os.environ.pop("UBUNTU_TANK_MOCK_DOCKER_FAIL", None)
 
         # Test deploy.sh start fails closed on docker fail
-        res_dep = subprocess.run(["bash", deploy_sh, "start"], env=env, capture_output=True, text=True)
+        res_dep = subprocess.run(
+            ["bash", deploy_sh, "start"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res_dep.returncode, 1)
         self.assertIn("cannot verify mutual exclusion", res_dep.stderr.lower())
 
@@ -2198,21 +2688,27 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
 
             env = os.environ.copy()
             env["UBUNTU_TANK_MOCK_DOCKER_PS"] = conflict_name
-            res = subprocess.run([runner_path, "--check"], env=env, capture_output=True, text=True)
+            res = subprocess.run(
+                [runner_path, "--check"], env=env, capture_output=True, text=True
+            )
             self.assertEqual(res.returncode, 1)
             self.assertIn("mutual exclusion", res.stderr.lower())
 
             old_ps = os.environ.get("UBUNTU_TANK_MOCK_DOCKER_PS")
             os.environ["UBUNTU_TANK_MOCK_DOCKER_PS"] = conflict_name
             try:
-                self.assertFalse(self.mgr.recover_activation(check_mutual_exclusion=True))
+                self.assertFalse(
+                    self.mgr.recover_activation(check_mutual_exclusion=True)
+                )
             finally:
                 if old_ps is not None:
                     os.environ["UBUNTU_TANK_MOCK_DOCKER_PS"] = old_ps
                 else:
                     os.environ.pop("UBUNTU_TANK_MOCK_DOCKER_PS", None)
 
-            res_dep = subprocess.run(["bash", deploy_sh, "start"], env=env, capture_output=True, text=True)
+            res_dep = subprocess.run(
+                ["bash", deploy_sh, "start"], env=env, capture_output=True, text=True
+            )
             self.assertEqual(res_dep.returncode, 1)
             self.assertIn("conflicting container", res_dep.stderr.lower())
 
@@ -2224,7 +2720,9 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
         env["UBUNTU_TANK_MOCK_SERIAL_HOLDER"] = "7777"
-        res = subprocess.run([runner_path, "--check"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [runner_path, "--check"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res.returncode, 1)
         self.assertIn("mutual exclusion", res.stderr.lower())
 
@@ -2238,7 +2736,9 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
             else:
                 os.environ.pop("UBUNTU_TANK_MOCK_SERIAL_HOLDER", None)
 
-        res_dep = subprocess.run(["bash", deploy_sh, "start"], env=env, capture_output=True, text=True)
+        res_dep = subprocess.run(
+            ["bash", deploy_sh, "start"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res_dep.returncode, 1)
         self.assertIn("hold", res_dep.stderr.lower())
 
@@ -2256,30 +2756,52 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         self.assertFalse(os.path.exists(keystore_dir))
 
         # Install release without preexisting credentials
-        rel_id = self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
+        rel_id = self.mgr.install_release(
+            archive, require_root=False, enforce_arm64=False
+        )
         self.assertEqual(rel_id, "1.0.0-sros2fresh")
 
         # 2a. Verify keystore structure
         self.assertTrue(os.path.isdir(keystore_dir))
-        self.assertTrue(os.path.isfile(os.path.join(keystore_dir, "identity_ca.cert.pem")))
-        self.assertTrue(os.path.isfile(os.path.join(keystore_dir, "permissions_ca.cert.pem")))
+        self.assertTrue(
+            os.path.isfile(os.path.join(keystore_dir, "identity_ca.cert.pem"))
+        )
+        self.assertTrue(
+            os.path.isfile(os.path.join(keystore_dir, "permissions_ca.cert.pem"))
+        )
         self.assertTrue(os.path.isfile(os.path.join(keystore_dir, "governance.p7s")))
 
         # Check all enclaves
         for enc in ["controller", "guard", "bridge", "operator", "status"]:
             enc_dir = os.path.join(keystore_dir, "enclaves", "ubuntu_tank", enc)
-            self.assertTrue(os.path.isdir(enc_dir), f"Missing enclave directory {enc_dir}")
-            for req in ["key.pem", "cert.pem", "permissions.p7s", "governance.p7s",
-                        "identity_ca.cert.pem", "permissions_ca.cert.pem"]:
+            self.assertTrue(
+                os.path.isdir(enc_dir), f"Missing enclave directory {enc_dir}"
+            )
+            for req in [
+                "key.pem",
+                "cert.pem",
+                "permissions.p7s",
+                "governance.p7s",
+                "identity_ca.cert.pem",
+                "permissions_ca.cert.pem",
+            ]:
                 fp = os.path.join(enc_dir, req)
-                self.assertTrue(os.path.isfile(fp), f"Missing credential {req} in enclave {enc}")
+                self.assertTrue(
+                    os.path.isfile(fp), f"Missing credential {req} in enclave {enc}"
+                )
                 # Verify file mode is 0640 (rw-r-----)
                 mode = stat.S_IMODE(os.stat(fp).st_mode)
-                self.assertEqual(mode, 0o640, f"File {fp} should have mode 0640, got {oct(mode)}")
+                self.assertEqual(
+                    mode, 0o640, f"File {fp} should have mode 0640, got {oct(mode)}"
+                )
 
             # Verify directory mode is 0750 (rwxr-x---)
             dmode = stat.S_IMODE(os.stat(enc_dir).st_mode)
-            self.assertEqual(dmode, 0o750, f"Enclave directory {enc_dir} should have mode 0750, got {oct(dmode)}")
+            self.assertEqual(
+                dmode,
+                0o750,
+                f"Enclave directory {enc_dir} should have mode 0750, got {oct(dmode)}",
+            )
 
         # 2b. Cryptographic verification with OpenSSL
         id_ca = os.path.join(keystore_dir, "identity_ca.cert.pem")
@@ -2287,30 +2809,72 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
 
         # Verify middleware-format governance against the Permissions CA
         gov_p7s = os.path.join(keystore_dir, "governance.p7s")
-        res_gov = subprocess.run([
-            "openssl", "cms", "-verify", "-in", gov_p7s,
-            "-CAfile", perm_ca, "-inform", "SMIME"
-        ], capture_output=True, text=True)
-        self.assertEqual(res_gov.returncode, 0, f"Governance CMS verification failed: {res_gov.stderr}")
+        res_gov = subprocess.run(
+            [
+                "openssl",
+                "cms",
+                "-verify",
+                "-in",
+                gov_p7s,
+                "-CAfile",
+                perm_ca,
+                "-inform",
+                "SMIME",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            res_gov.returncode,
+            0,
+            f"Governance CMS verification failed: {res_gov.stderr}",
+        )
 
         for enc in ["controller", "guard", "bridge"]:
             enc_dir = os.path.join(keystore_dir, "enclaves", "ubuntu_tank", enc)
             # Verify participant cert against Identity CA
             p_cert = os.path.join(enc_dir, "cert.pem")
-            res_cert = subprocess.run(["openssl", "verify", "-CAfile", id_ca, p_cert], capture_output=True, text=True)
-            self.assertEqual(res_cert.returncode, 0, f"Cert verification failed for {enc}: {res_cert.stderr}")
+            res_cert = subprocess.run(
+                ["openssl", "verify", "-CAfile", id_ca, p_cert],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                res_cert.returncode,
+                0,
+                f"Cert verification failed for {enc}: {res_cert.stderr}",
+            )
 
             # Verify permissions.p7s against Permissions CA
             perm_p7s = os.path.join(enc_dir, "permissions.p7s")
-            res_perm = subprocess.run([
-                "openssl", "cms", "-verify", "-in", perm_p7s,
-                "-CAfile", perm_ca, "-inform", "SMIME"
-            ], capture_output=True, text=True)
-            self.assertEqual(res_perm.returncode, 0, f"Permissions CMS verification failed for {enc}: {res_perm.stderr}")
+            res_perm = subprocess.run(
+                [
+                    "openssl",
+                    "cms",
+                    "-verify",
+                    "-in",
+                    perm_p7s,
+                    "-CAfile",
+                    perm_ca,
+                    "-inform",
+                    "SMIME",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                res_perm.returncode,
+                0,
+                f"Permissions CMS verification failed for {enc}: {res_perm.stderr}",
+            )
 
         # 2c. Verify tank.launch.py preflight passes on the provisioned keystore
-        tank_launch_file = os.path.join(self.workspace_dir, "src", "ubuntu_tank_bringup", "launch", "tank.launch.py")
-        spec = importlib.util.spec_from_file_location("tank_launch_test", tank_launch_file)
+        tank_launch_file = os.path.join(
+            self.workspace_dir, "src", "ubuntu_tank_bringup", "launch", "tank.launch.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "tank_launch_test", tank_launch_file
+        )
         tank_mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(tank_mod)
 
@@ -2336,6 +2900,7 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
 
         # Import build_launch_arguments from mentorpi-tank-run
         import importlib.util
+
         run_path = os.path.join(bin_dir, "mentorpi-tank-run")
         loader = SourceFileLoader("mentorpi_tank_run_mod", run_path)
         spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -2364,14 +2929,30 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         self.assertIn("write_timeout_sec:=0.05", args)
 
         # 3c. tank.launch.py declares freshness_timeout_sec and passes it to bridge node
-        launch_file = os.path.join(self.workspace_dir, "src", "ubuntu_tank_bringup", "launch", "tank.launch.py")
+        launch_file = os.path.join(
+            self.workspace_dir, "src", "ubuntu_tank_bringup", "launch", "tank.launch.py"
+        )
         with open(launch_file, "r") as f:
             launch_content = f.read()
-        self.assertIn("DeclareLaunchArgument('freshness_timeout_sec'", launch_content)
-        self.assertIn("'freshness_timeout_sec': freshness_timeout_sec", launch_content)
+        import re
+
+        self.assertIsNotNone(
+            re.search(
+                r"DeclareLaunchArgument\(\s*['\"]freshness_timeout_sec['\"]",
+                launch_content,
+            )
+        )
+        self.assertIsNotNone(
+            re.search(
+                r"['\"]freshness_timeout_sec['\"]\s*:\s*freshness_timeout_sec",
+                launch_content,
+            )
+        )
 
         # 3d. Verify watchdog trips at configured deadline (0.150s) when command gap occurs
-        sys.path.insert(0, os.path.join(self.workspace_dir, "src", "ros_robot_controller"))
+        sys.path.insert(
+            0, os.path.join(self.workspace_dir, "src", "ros_robot_controller")
+        )
         from ros_robot_controller import ros_robot_controller_node
 
         mock_board = MagicMock(is_mock=True)
@@ -2399,22 +2980,24 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         fake_setup = os.path.join(self.test_root, "fake_setup.bash")
         with open(fake_setup, "w") as f:
             f.write(
-                '#!/bin/bash\n'
-                '# Upstream ament pattern: unguarded reference to AMENT_TRACE_SETUP_FILES\n'
+                "#!/bin/bash\n"
+                "# Upstream ament pattern: unguarded reference to AMENT_TRACE_SETUP_FILES\n"
                 'if [ -n "$AMENT_TRACE_SETUP_FILES" ]; then\n'
                 '  echo "Tracing enabled"\n'
-                'fi\n'
-                'export FAKE_ROS_SETUP_SOURCED=1\n'
+                "fi\n"
+                "export FAKE_ROS_SETUP_SOURCED=1\n"
             )
 
         # 4a. Verify that under set -u without protection, sourcing fails with unbound variable
         bad_script = (
-            f'set -euo pipefail\n'
-            f'unset AMENT_TRACE_SETUP_FILES 2>/dev/null || true\n'
+            f"set -euo pipefail\n"
+            f"unset AMENT_TRACE_SETUP_FILES 2>/dev/null || true\n"
             f'source "{fake_setup}"\n'
-            f'echo SOURCED_SUCCESS\n'
+            f"echo SOURCED_SUCCESS\n"
         )
-        res_bad = subprocess.run(["/bin/bash", "-c", bad_script], capture_output=True, text=True)
+        res_bad = subprocess.run(
+            ["/bin/bash", "-c", bad_script], capture_output=True, text=True
+        )
         self.assertNotEqual(res_bad.returncode, 0)
         self.assertIn("AMENT_TRACE_SETUP_FILES", res_bad.stderr)
         self.assertIn("unbound variable", res_bad.stderr)
@@ -2422,17 +3005,21 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         # 4b. Verify that under the fixed pattern (set -eo pipefail; set +u; source ...; set -u),
         # sourcing succeeds and downstream colcon build commands are reached with nounset re-enabled
         fixed_script = (
-            f'set -eo pipefail\n'
-            f'unset AMENT_TRACE_SETUP_FILES 2>/dev/null || true\n'
-            f'set +u\n'
+            f"set -eo pipefail\n"
+            f"unset AMENT_TRACE_SETUP_FILES 2>/dev/null || true\n"
+            f"set +u\n"
             f'source "{fake_setup}"\n'
-            f'set -u\n'
+            f"set -u\n"
             f'if [ "$FAKE_ROS_SETUP_SOURCED" = "1" ]; then\n'
-            f'  echo REACHED_COLCON\n'
-            f'fi\n'
+            f"  echo REACHED_COLCON\n"
+            f"fi\n"
         )
-        res_fixed = subprocess.run(["/bin/bash", "-c", fixed_script], capture_output=True, text=True)
-        self.assertEqual(res_fixed.returncode, 0, f"Fixed sourcing failed: {res_fixed.stderr}")
+        res_fixed = subprocess.run(
+            ["/bin/bash", "-c", fixed_script], capture_output=True, text=True
+        )
+        self.assertEqual(
+            res_fixed.returncode, 0, f"Fixed sourcing failed: {res_fixed.stderr}"
+        )
         self.assertIn("REACHED_COLCON", res_fixed.stdout)
 
 
@@ -2440,14 +3027,20 @@ class TestReviewFindingsRound7(BaseDeploymentTestCase):
     """Exercise production signing, policy transactions, deployment gates and role access."""
 
     def _provision(self, release=None):
-        self.mgr._provision_sros2_keystore(release or self.workspace_dir, os.geteuid(), os.getegid())
-        return Path(self.etc_dir) / 'security' / 'keystore'
+        self.mgr._provision_sros2_keystore(
+            release or self.workspace_dir, os.geteuid(), os.getegid()
+        )
+        return Path(self.etc_dir) / "security" / "keystore"
 
     def test_authentic_dds_accepts_generated_credentials(self):
         """Initialize real Fast DDS participants without creating any motion endpoints."""
-        available = subprocess.run([sys.executable, '-c', 'import rclpy'], capture_output=True)
+        available = subprocess.run(
+            [sys.executable, "-c", "import rclpy"], capture_output=True
+        )
         if available.returncode:
-            self.skipTest('Native ROS 2 unavailable: run this test with Lyrical sourced on the target')
+            self.skipTest(
+                "Native ROS 2 unavailable: run this test with Lyrical sourced on the target"
+            )
         store = self._provision()
         code = """
 import rclpy
@@ -2459,79 +3052,135 @@ node = rclpy.create_node('credential_probe', enable_rosout=False,
 node.destroy_node()
 rclpy.shutdown()
 """
-        env = dict(os.environ, ROS_SECURITY_ENABLE='true', ROS_SECURITY_STRATEGY='Enforce',
-                   ROS_SECURITY_KEYSTORE=str(store), ROS_LOCALHOST_ONLY='1',
-                   ROS_DOMAIN_ID='0', RMW_IMPLEMENTATION='rmw_fastrtps_cpp')
-        for role in ('controller', 'guard', 'bridge', 'operator', 'status'):
-            env['ROS_SECURITY_ENCLAVE_OVERRIDE'] = '/ubuntu_tank/' + role
-            result = subprocess.run([sys.executable, '-c', code], env=env,
-                                    capture_output=True, text=True, timeout=20)
+        env = dict(
+            os.environ,
+            ROS_SECURITY_ENABLE="true",
+            ROS_SECURITY_STRATEGY="Enforce",
+            ROS_SECURITY_KEYSTORE=str(store),
+            ROS_LOCALHOST_ONLY="1",
+            ROS_DOMAIN_ID="0",
+            RMW_IMPLEMENTATION="rmw_fastrtps_cpp",
+        )
+        for role in ("controller", "guard", "bridge", "operator", "status"):
+            env["ROS_SECURITY_ENCLAVE_OVERRIDE"] = "/ubuntu_tank/" + role
+            result = subprocess.run(
+                [sys.executable, "-c", code],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        (store / 'enclaves/ubuntu_tank/status/permissions.p7s').write_text('tampered')
-        denied = subprocess.run([sys.executable, '-c', code], env=env,
-                                capture_output=True, text=True, timeout=20)
-        self.assertNotEqual(denied.returncode, 0, 'Middleware accepted tampered credentials')
+        (store / "enclaves/ubuntu_tank/status/permissions.p7s").write_text("tampered")
+        denied = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(
+            denied.returncode, 0, "Middleware accepted tampered credentials"
+        )
 
     def test_legacy_pem_store_repaired_without_rotating_identity(self):
         """Reject old signatures, repair them, and preserve participant/CA identities."""
         store = self._provision()
-        before = (store / 'identity_ca.cert.pem').read_bytes()
-        participant = (store / 'enclaves/ubuntu_tank/operator/key.pem').read_bytes()
-        subprocess.run(['openssl', 'cms', '-sign', '-nodetach', '-in',
-                        str(Path(self.workspace_dir) / 'config/sros2/governance.xml'),
-                        '-out', str(store / 'governance.p7s'), '-signer',
-                        str(store / 'identity_ca.cert.pem'), '-inkey',
-                        str(store / 'identity_ca.key.pem'), '-outform', 'PEM'], check=True)
+        before = (store / "identity_ca.cert.pem").read_bytes()
+        participant = (store / "enclaves/ubuntu_tank/operator/key.pem").read_bytes()
+        subprocess.run(
+            [
+                "openssl",
+                "cms",
+                "-sign",
+                "-nodetach",
+                "-in",
+                str(Path(self.workspace_dir) / "config/sros2/governance.xml"),
+                "-out",
+                str(store / "governance.p7s"),
+                "-signer",
+                str(store / "identity_ca.cert.pem"),
+                "-inkey",
+                str(store / "identity_ca.key.pem"),
+                "-outform",
+                "PEM",
+            ],
+            check=True,
+        )
         self.assertFalse(self.mgr._is_valid_sros2_keystore(str(store)))
         self._provision()
         self.assertTrue(self.mgr._is_valid_sros2_keystore(str(store)))
-        self.assertEqual(before, (store / 'identity_ca.cert.pem').read_bytes())
-        self.assertEqual(participant, (store / 'enclaves/ubuntu_tank/operator/key.pem').read_bytes())
-        (store / 'enclaves/ubuntu_tank/operator/permissions.p7s').write_text('corrupt')
+        self.assertEqual(before, (store / "identity_ca.cert.pem").read_bytes())
+        self.assertEqual(
+            participant, (store / "enclaves/ubuntu_tank/operator/key.pem").read_bytes()
+        )
+        (store / "enclaves/ubuntu_tank/operator/permissions.p7s").write_text("corrupt")
         self.assertFalse(self.mgr._is_valid_sros2_keystore(str(store)))
 
     def test_policy_activation_rollback_and_interruption(self):
         """Real signatures change on activation and restore on rollback or interrupted activation."""
         from unittest.mock import patch
-        output = os.path.join(self.test_root, 'dist')
-        for release_id in ('policy-a', 'policy-b'):
-            archive = self.mgr.package_release(self.workspace_dir, output, release_id, allow_staged_install=True)
+
+        output = os.path.join(self.test_root, "dist")
+        for release_id in ("policy-a", "policy-b"):
+            archive = self.mgr.package_release(
+                self.workspace_dir, output, release_id, allow_staged_install=True
+            )
             self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
-        with patch.object(self.mgr, '_stop_and_disarm_service'):
-            self.mgr.activate_release('policy-a', require_root=False)
-            store = Path(self.etc_dir) / 'security/keystore'
-            permissions = store / 'enclaves/ubuntu_tank/operator/permissions.p7s'
+        with patch.object(self.mgr, "_stop_and_disarm_service"):
+            self.mgr.activate_release("policy-a", require_root=False)
+            store = Path(self.etc_dir) / "security/keystore"
+            permissions = store / "enclaves/ubuntu_tank/operator/permissions.p7s"
             original = permissions.read_bytes()
-            cert = (store / 'identity_ca.cert.pem').read_bytes()
-            candidate = Path(self.mgr.releases_dir) / 'policy-b'
-            policy = candidate / 'config/sros2/permissions/operator_permissions.xml'
-            policy.write_text(policy.read_text().replace('<topic>rt/ubuntu_tank_safety/state</topic>', ''))
+            cert = (store / "identity_ca.cert.pem").read_bytes()
+            candidate = Path(self.mgr.releases_dir) / "policy-b"
+            policy = candidate / "config/sros2/permissions/operator_permissions.xml"
+            policy.write_text(
+                policy.read_text().replace(
+                    "<topic>rt/ubuntu_tank_safety/state</topic>", ""
+                )
+            )
             # Recompute the fixture release manifest as a release builder would.
-            manifest = candidate / 'release-manifest.txt'
+            manifest = candidate / "release-manifest.txt"
             manifest.chmod(0o644)
             lines = manifest.read_text().splitlines()
             relative = str(policy.relative_to(candidate))
             for i, line in enumerate(lines):
-                if line.endswith(' ' + relative):
+                if line.endswith(" " + relative):
                     parts = line.split()
-                    parts[0], parts[1] = compute_file_sha256(str(policy)), str(policy.stat().st_size)
-                    lines[i] = ' '.join(parts)
-            manifest.write_text('\n'.join(lines) + '\n')
+                    parts[0], parts[1] = (
+                        compute_file_sha256(str(policy)),
+                        str(policy.stat().st_size),
+                    )
+                    lines[i] = " ".join(parts)
+            manifest.write_text("\n".join(lines) + "\n")
             manifest.chmod(0o444)
             # Installing another candidate must not replace the active grants.
             self.mgr._provision_host_assets(str(candidate), require_root=False)
             self.assertEqual(original, permissions.read_bytes())
-            self.mgr.activate_release('policy-b', require_root=False)
-            decoded = subprocess.check_output(['openssl', 'cms', '-verify', '-in', str(permissions),
-                      '-CAfile', str(store / 'permissions_ca.cert.pem')], stderr=subprocess.DEVNULL)
-            self.assertNotIn(b'rt/ubuntu_tank_safety/state', decoded)
-            self.assertEqual(cert, (store / 'identity_ca.cert.pem').read_bytes())
+            self.mgr.activate_release("policy-b", require_root=False)
+            decoded = subprocess.check_output(
+                [
+                    "openssl",
+                    "cms",
+                    "-verify",
+                    "-in",
+                    str(permissions),
+                    "-CAfile",
+                    str(store / "permissions_ca.cert.pem"),
+                ],
+                stderr=subprocess.DEVNULL,
+            )
+            self.assertNotIn(b"rt/ubuntu_tank_safety/state", decoded)
+            self.assertEqual(cert, (store / "identity_ca.cert.pem").read_bytes())
             self.mgr.rollback_release(require_root=False)
             self.assertEqual(original, permissions.read_bytes())
             # Simulate loss of power after the new policy is published, before journal commit.
-            with patch.object(self.mgr.journal, 'record_committed', side_effect=KeyboardInterrupt):
+            with patch.object(
+                self.mgr.journal, "record_committed", side_effect=KeyboardInterrupt
+            ):
                 with self.assertRaises(KeyboardInterrupt):
-                    self.mgr.activate_release('policy-b', require_root=False)
+                    self.mgr.activate_release("policy-b", require_root=False)
             self.assertNotEqual(original, permissions.read_bytes())
             self.assertTrue(self.mgr.recover_activation())
             self.assertEqual(original, permissions.read_bytes())
@@ -2539,36 +3188,51 @@ rclpy.shutdown()
     def test_preflight_rejects_before_install_and_activation_mutations(self):
         """Busy/unsupported target errors propagate before provisioning, snapshots or assets."""
         from unittest.mock import patch
-        archive = Path(self.test_root) / 'candidate.tar'
+
+        archive = Path(self.test_root) / "candidate.tar"
         archive.touch()
-        (Path(self.mgr.releases_dir) / 'candidate').mkdir(parents=True)
-        with patch('os.geteuid', return_value=0), \
-             patch.object(self.mgr, '_deployment_preflight', side_effect=RuntimeError('unsupported or occupied')), \
-             patch.object(self.mgr, '_provision_service_identities') as identities, \
-             patch.object(self.mgr.snapshot_mgr, 'create_snapshot') as snapshot:
-            with self.assertRaisesRegex(RuntimeError, 'unsupported'):
+        (Path(self.mgr.releases_dir) / "candidate").mkdir(parents=True)
+        with (
+            patch("os.geteuid", return_value=0),
+            patch.object(
+                self.mgr,
+                "_deployment_preflight",
+                side_effect=RuntimeError("unsupported or occupied"),
+            ),
+            patch.object(self.mgr, "_provision_service_identities") as identities,
+            patch.object(self.mgr.snapshot_mgr, "create_snapshot") as snapshot,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "unsupported"):
                 self.mgr.install_release(str(archive))
-            with self.assertRaisesRegex(RuntimeError, 'unsupported'):
-                self.mgr.activate_release('candidate')
+            with self.assertRaisesRegex(RuntimeError, "unsupported"):
+                self.mgr.activate_release("candidate")
             identities.assert_not_called()
             snapshot.assert_not_called()
-        self.assertFalse(os.path.exists(os.path.join(self.opt_dir, '.install_staging')))
+        self.assertFalse(os.path.exists(os.path.join(self.opt_dir, ".install_staging")))
 
     def test_live_preflight_checks_host_and_exclusion_and_rejects_overrides(self):
         """Host validator failures and fresh exclusion failures both block the live path."""
         from unittest.mock import patch
-        with self.assertRaisesRegex(RuntimeError, 'Mock host overrides'):
+
+        with self.assertRaisesRegex(RuntimeError, "Mock host overrides"):
             self.mgr._deployment_preflight()
-        clean_env = {k: v for k, v in os.environ.items() if not k.startswith('UBUNTU_TANK_MOCK_')}
-        module = 'ubuntu_tank.scripts.deployment_manager'
-        with patch.dict(os.environ, clean_env, clear=True), \
-             patch(module + '.subprocess.run') as run, \
-             patch(module + '.check_hardware_mutual_exclusion', return_value=(False, ['foreign owner'])):
-            with self.assertRaisesRegex(RuntimeError, 'foreign owner'):
+        clean_env = {
+            k: v for k, v in os.environ.items() if not k.startswith("UBUNTU_TANK_MOCK_")
+        }
+        module = "ubuntu_tank.scripts.deployment_manager"
+        with (
+            patch.dict(os.environ, clean_env, clear=True),
+            patch(module + ".subprocess.run") as run,
+            patch(
+                module + ".check_hardware_mutual_exclusion",
+                return_value=(False, ["foreign owner"]),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "foreign owner"):
                 self.mgr._deployment_preflight()
-            self.assertTrue(run.call_args.kwargs['check'])
-            self.assertIn('--strict', run.call_args.args[0])
-            run.side_effect = subprocess.CalledProcessError(1, 'check_host')
+            self.assertTrue(run.call_args.kwargs["check"])
+            self.assertIn("--strict", run.call_args.args[0])
+            run.side_effect = subprocess.CalledProcessError(1, "check_host")
             with self.assertRaises(subprocess.CalledProcessError):
                 self.mgr._deployment_preflight()
 
@@ -2576,74 +3240,124 @@ rclpy.shutdown()
         """Operator keys use their own group; CA keys and bridge keys are inaccessible to it."""
         from unittest.mock import patch
         from types import SimpleNamespace
+
         store = self._provision()
-        groups = {'mentorpi-rrc': 201, 'ubuntu-tank-operators': 202, 'ubuntu-tank-status': 203}
+        groups = {
+            "mentorpi-rrc": 201,
+            "ubuntu-tank-operators": 202,
+            "ubuntu-tank-status": 203,
+        }
         chowns = {}
+
         def record(path, uid, gid):
             chowns[str(path)] = (uid, gid)
-        with patch('os.geteuid', return_value=0), patch('os.chown', side_effect=record), \
-             patch('grp.getgrnam', side_effect=lambda name: SimpleNamespace(gr_gid=groups[name])):
+
+        with (
+            patch("os.geteuid", return_value=0),
+            patch("os.chown", side_effect=record),
+            patch(
+                "grp.getgrnam",
+                side_effect=lambda name: SimpleNamespace(gr_gid=groups[name]),
+            ),
+        ):
             self.mgr._secure_keystore(str(store), 200, 201)
-        operator = store / 'enclaves/ubuntu_tank/operator'
-        self.assertEqual(chowns[str(operator / 'key.pem')], (0, 202))
-        self.assertEqual(chowns[str(store / 'enclaves/ubuntu_tank/bridge/key.pem')], (0, 201))
-        self.assertEqual(stat.S_IMODE((store / 'identity_ca.key.pem').stat().st_mode), 0o600)
+        operator = store / "enclaves/ubuntu_tank/operator"
+        self.assertEqual(chowns[str(operator / "key.pem")], (0, 202))
+        self.assertEqual(
+            chowns[str(store / "enclaves/ubuntu_tank/bridge/key.pem")], (0, 201)
+        )
+        self.assertEqual(
+            stat.S_IMODE((store / "identity_ca.key.pem").stat().st_mode), 0o600
+        )
         self.assertEqual(stat.S_IMODE(operator.stat().st_mode), 0o750)
-        for parent in (store, store / 'enclaves', store / 'enclaves/ubuntu_tank'):
+        for parent in (store, store / "enclaves", store / "enclaves/ubuntu_tank"):
             self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o755)
-        with patch('os.geteuid', return_value=0), patch('grp.getgrnam'), patch('pwd.getpwnam'), \
-             patch('subprocess.run') as run:
-            self.mgr._provision_service_identities(operator_user='operator-fixture')
+        with (
+            patch("os.geteuid", return_value=0),
+            patch("grp.getgrnam"),
+            patch("pwd.getpwnam"),
+            patch("subprocess.run") as run,
+        ):
+            self.mgr._provision_service_identities(operator_user="operator-fixture")
             calls = [call.args[0] for call in run.call_args_list]
-            self.assertIn(['usermod', '-aG', 'ubuntu-tank-operators,ubuntu-tank-status', 'operator-fixture'], calls)
-            self.assertNotIn(['usermod', '-aG', 'mentorpi-rrc', 'operator-fixture'], calls)
+            self.assertIn(
+                [
+                    "usermod",
+                    "-aG",
+                    "ubuntu-tank-operators,ubuntu-tank-status",
+                    "operator-fixture",
+                ],
+                calls,
+            )
+            self.assertNotIn(
+                ["usermod", "-aG", "mentorpi-rrc", "operator-fixture"], calls
+            )
 
     def test_incomplete_security_snapshot_rejected_before_restore(self):
         """Missing policy-state evidence must not partially overwrite host configuration."""
-        config = Path(self.etc_dir) / 'controller.yaml'
-        config.write_text('baseline')
-        snapshot = self.mgr.snapshot_mgr.create_snapshot('security-snapshot', None,
-                    self.etc_dir, self.systemd_dir, self.udev_dir)
-        config.write_text('current')
-        Path(snapshot, 'security.json').unlink()
-        with self.assertRaisesRegex(RuntimeError, 'integrity'):
-            self.mgr.snapshot_mgr.restore_snapshot(snapshot, self.etc_dir, self.systemd_dir, self.udev_dir)
-        self.assertEqual(config.read_text(), 'current')
+        config = Path(self.etc_dir) / "controller.yaml"
+        config.write_text("baseline")
+        snapshot = self.mgr.snapshot_mgr.create_snapshot(
+            "security-snapshot", None, self.etc_dir, self.systemd_dir, self.udev_dir
+        )
+        config.write_text("current")
+        Path(snapshot, "security.json").unlink()
+        with self.assertRaisesRegex(RuntimeError, "integrity"):
+            self.mgr.snapshot_mgr.restore_snapshot(
+                snapshot, self.etc_dir, self.systemd_dir, self.udev_dir
+            )
+        self.assertEqual(config.read_text(), "current")
 
     def test_initial_identity_selection_reads_serial_or_stable_usb_port(self):
         """Bind actual inventory attributes and reject multiple initial candidates."""
         from unittest.mock import patch
-        inventory = Path(self.test_root) / 'usb'
-        board = inventory / '1-2.3'
+
+        inventory = Path(self.test_root) / "usb"
+        board = inventory / "1-2.3"
         board.mkdir(parents=True)
-        (board / 'idVendor').write_text('1a86')
-        (board / 'idProduct').write_text('55d4')
-        (board / 'serial').write_text('selected-serial')
-        rule = (Path(self.workspace_dir) / 'host/99-mentorpi-rrc.rules').read_text()
+        (board / "idVendor").write_text("1a86")
+        (board / "idProduct").write_text("55d4")
+        (board / "serial").write_text("selected-serial")
+        rule = (Path(self.workspace_dir) / "host/99-mentorpi-rrc.rules").read_text()
         real_scandir = os.scandir
-        with patch('os.scandir', side_effect=lambda path: real_scandir(inventory if path == '/sys/bus/usb/devices' else path)):
+        with patch(
+            "os.scandir",
+            side_effect=lambda path: real_scandir(
+                inventory if path == "/sys/bus/usb/devices" else path
+            ),
+        ):
             selected = self.mgr._bind_udev_identity(rule)
             self.assertIn('ATTRS{serial}=="selected-serial"', selected)
-            (board / 'serial').unlink()
+            (board / "serial").unlink()
             selected = self.mgr._bind_udev_identity(rule)
             self.assertIn('KERNELS=="1-2.3"', selected)
-            shutil.copytree(board, inventory / '1-2.4')
-            with self.assertRaisesRegex(RuntimeError, 'exactly one'):
+            shutil.copytree(board, inventory / "1-2.4")
+            with self.assertRaisesRegex(RuntimeError, "exactly one"):
                 self.mgr._bind_udev_identity(rule)
 
     def test_persistent_identity_required_and_preserved(self):
         """Current uniqueness alone cannot authorize a broad rule; selection persists over enumeration."""
-        rule = (Path(self.workspace_dir) / 'host/99-mentorpi-rrc.rules').read_text()
-        for inventory in ([], [{'idVendor': '1a86', 'idProduct': '55d4'}]):
+        rule = (Path(self.workspace_dir) / "host/99-mentorpi-rrc.rules").read_text()
+        for inventory in ([], [{"idVendor": "1a86", "idProduct": "55d4"}]):
             self.assertTrue(ReleaseManager.is_ambiguous_udev_rule(rule, inventory)[0])
         bound = ReleaseManager.merge_udev_rule(rule, 'ATTRS{serial}=="chosen-board"')
-        for inventory in ([{'serial': 'other'}, {'serial': 'chosen-board'}],
-                          [{'serial': 'chosen-board'}, {'serial': 'other'}]):
+        for inventory in (
+            [{"serial": "other"}, {"serial": "chosen-board"}],
+            [{"serial": "chosen-board"}, {"serial": "other"}],
+        ):
             self.assertFalse(ReleaseManager.is_ambiguous_udev_rule(bound, inventory)[0])
-            self.assertIn('ATTRS{serial}=="chosen-board"', ReleaseManager.merge_udev_rule(rule, bound))
-        for invalid in ('*', 'board?', '[ab]', '<verified-serial>'):
-            self.assertTrue(ReleaseManager.is_ambiguous_udev_rule(
-                ReleaseManager.merge_udev_rule(rule, 'ATTRS{serial}=="' + invalid + '"'))[0])
+            self.assertIn(
+                'ATTRS{serial}=="chosen-board"',
+                ReleaseManager.merge_udev_rule(rule, bound),
+            )
+        for invalid in ("*", "board?", "[ab]", "<verified-serial>"):
+            self.assertTrue(
+                ReleaseManager.is_ambiguous_udev_rule(
+                    ReleaseManager.merge_udev_rule(
+                        rule, 'ATTRS{serial}=="' + invalid + '"'
+                    )
+                )[0]
+            )
 
 
 class TestReviewFindingsRound8(BaseDeploymentTestCase):
@@ -2655,118 +3369,176 @@ class TestReviewFindingsRound8(BaseDeploymentTestCase):
         import copy
         from ubuntu_tank.scripts.config_migration import DEFAULTS_V1_0, teleop_arguments
         from unittest.mock import patch
+
         config = copy.deepcopy(DEFAULTS_V1_0)
-        config['controller']['max_linear_speed'] = 0.05
-        config['controller']['max_angular_speed'] = 0.1
-        config['teleop']['lease_duration_sec'] = 0.08
-        file = Path(self.etc_dir) / 'controller.yaml'
+        config["controller"]["max_linear_speed"] = 0.05
+        config["controller"]["max_angular_speed"] = 0.1
+        config["teleop"]["lease_duration_sec"] = 0.08
+        file = Path(self.etc_dir) / "controller.yaml"
         file.write_text(yaml.safe_dump(config))
         args = teleop_arguments(str(file))
-        self.assertIn('linear_vel:=0.05', args)
-        self.assertIn('angular_vel:=0.1', args)
-        self.assertIn('lease_duration_sec:=0.08', args)
-        binary = Path(self.test_root) / 'bin'
+        self.assertIn("linear_vel:=0.05", args)
+        self.assertIn("angular_vel:=0.1", args)
+        self.assertIn("lease_duration_sec:=0.08", args)
+        binary = Path(self.test_root) / "bin"
         binary.mkdir()
-        ros2 = binary / 'ros2'
+        ros2 = binary / "ros2"
         ros2.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
         ros2.chmod(0o755)
-        env = dict(os.environ, PATH=str(binary)+os.pathsep+os.environ['PATH'], UBUNTU_TANK_CONFIG=str(file))
-        result = subprocess.run(['bash', str(Path(self.workspace_dir)/'deploy.sh'), 'teleop'], env=env, capture_output=True, text=True)
+        env = dict(
+            os.environ,
+            PATH=str(binary) + os.pathsep + os.environ["PATH"],
+            UBUNTU_TANK_CONFIG=str(file),
+        )
+        result = subprocess.run(
+            ["bash", str(Path(self.workspace_dir) / "deploy.sh"), "teleop"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('linear_vel:=0.05', result.stdout)
-        self.assertIn('lease_duration_sec:=0.08', result.stdout)
+        self.assertIn("linear_vel:=0.05", result.stdout)
+        self.assertIn("lease_duration_sec:=0.08", result.stdout)
         import importlib.util
-        spec = importlib.util.spec_from_file_location('lease_fixture', Path(self.workspace_dir)/'src/ubuntu_tank_teleop/ubuntu_tank_teleop/lease.py')
+
+        spec = importlib.util.spec_from_file_location(
+            "lease_fixture",
+            Path(self.workspace_dir)
+            / "src/ubuntu_tank_teleop/ubuntu_tank_teleop/lease.py",
+        )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        lease = module.TeleopLeaseManager(linear_vel=0.05, angular_vel=0.1, lease_duration_sec=0.08)
-        self.assertEqual(lease.process_key('w', 10.0)[0], 0.05)
+        lease = module.TeleopLeaseManager(
+            linear_vel=0.05, angular_vel=0.1, lease_duration_sec=0.08
+        )
+        self.assertEqual(lease.process_key("w", 10.0)[0], 0.05)
         self.assertEqual(lease.get_velocities(10.081), (0.0, 0.0))
 
     def test_wrong_prefix_and_changed_payload_are_rejected(self):
         """A relabelled or changed supplied build cannot masquerade as a new release."""
         from ubuntu_tank.scripts.deployment_manager import attest_build, verify_build
-        tree = Path(self.test_root)/'install'
+
+        tree = Path(self.test_root) / "install"
         tree.mkdir()
-        source = str(Path(self.workspace_dir)/'src')
-        (tree/'setup.bash').write_text('export AMENT_PREFIX_PATH=/opt/ubuntu_tank/releases/OLD/install\n')
-        (tree/'payload.py').write_text('value=1\n')
-        prefix = f'{self.opt_dir}/releases/NEW/install'
-        attest_build(str(tree), '/opt/ubuntu_tank/releases/OLD/install', source)
-        with self.assertRaisesRegex(RuntimeError, 'prefix'):
-            self.mgr.package_release(self.workspace_dir, str(Path(self.test_root)/'dist'), 'NEW', install_tree=str(tree))
+        source = str(Path(self.workspace_dir) / "src")
+        (tree / "setup.bash").write_text(
+            "export AMENT_PREFIX_PATH=/opt/ubuntu_tank/releases/OLD/install\n"
+        )
+        (tree / "payload.py").write_text("value=1\n")
+        prefix = f"{self.opt_dir}/releases/NEW/install"
+        attest_build(str(tree), "/opt/ubuntu_tank/releases/OLD/install", source)
+        with self.assertRaisesRegex(RuntimeError, "prefix"):
+            self.mgr.package_release(
+                self.workspace_dir,
+                str(Path(self.test_root) / "dist"),
+                "NEW",
+                install_tree=str(tree),
+            )
         attest_build(str(tree), prefix, source)
-        with self.assertRaisesRegex(ValueError, 'another production prefix'):
+        with self.assertRaisesRegex(ValueError, "another production prefix"):
             verify_build(str(tree), prefix, source)
-        (tree/'setup.bash').write_text(f'export AMENT_PREFIX_PATH={prefix}\n')
+        (tree / "setup.bash").write_text(f"export AMENT_PREFIX_PATH={prefix}\n")
         attest_build(str(tree), prefix, source)
-        (tree/'payload.py').write_text('value=2\n')
-        with self.assertRaisesRegex(ValueError, 'hashes'):
+        (tree / "payload.py").write_text("value=2\n")
+        with self.assertRaisesRegex(ValueError, "hashes"):
             verify_build(str(tree), prefix, source)
 
     def test_conflicting_archive_rejected_identical_retry_preserved(self):
         """Same release ID may be retried only with the same installed payload."""
         from ubuntu_tank.scripts.deployment_manager import attest_build
         from unittest.mock import patch
-        tree = Path(self.test_root)/'build'
+
+        tree = Path(self.test_root) / "build"
         tree.mkdir()
-        prefix = f'{self.opt_dir}/releases/retry/install'
-        (tree/'setup.bash').write_text(f'export AMENT_PREFIX_PATH={prefix}\n')
-        payload = tree/'payload.py'
+        prefix = f"{self.opt_dir}/releases/retry/install"
+        (tree / "setup.bash").write_text(f"export AMENT_PREFIX_PATH={prefix}\n")
+        payload = tree / "payload.py"
         payload.write_text('value="A"\n')
-        source = str(Path(self.workspace_dir)/'src')
+        source = str(Path(self.workspace_dir) / "src")
         attest_build(str(tree), prefix, source)
-        a = self.mgr.package_release(self.workspace_dir, str(Path(self.test_root)/'dist-a'), 'retry', install_tree=str(tree))
+        a = self.mgr.package_release(
+            self.workspace_dir,
+            str(Path(self.test_root) / "dist-a"),
+            "retry",
+            install_tree=str(tree),
+        )
         self.mgr.install_release(a, require_root=False)
         self.mgr.install_release(a, require_root=False)
         payload.write_text('value="B"\n')
         attest_build(str(tree), prefix, source)
-        b = self.mgr.package_release(self.workspace_dir, str(Path(self.test_root)/'dist-b'), 'retry', install_tree=str(tree))
-        with patch.object(self.mgr, '_provision_host_assets') as provision, patch.object(self.mgr, '_provision_service_identities') as identities:
-            with self.assertRaisesRegex(RuntimeError, 'Conflicting archive'):
+        b = self.mgr.package_release(
+            self.workspace_dir,
+            str(Path(self.test_root) / "dist-b"),
+            "retry",
+            install_tree=str(tree),
+        )
+        with (
+            patch.object(self.mgr, "_provision_host_assets") as provision,
+            patch.object(self.mgr, "_provision_service_identities") as identities,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Conflicting archive"):
                 self.mgr.install_release(b, require_root=False)
             provision.assert_not_called()
             identities.assert_not_called()
-        self.assertEqual((Path(self.mgr.releases_dir)/'retry/install/payload.py').read_text(), 'value="A"\n')
+        self.assertEqual(
+            (Path(self.mgr.releases_dir) / "retry/install/payload.py").read_text(),
+            'value="A"\n',
+        )
 
     def test_development_tree_does_not_bypass_production_builder(self):
         """The first production package invokes the builder despite an existing checkout install."""
         from ubuntu_tank.scripts.deployment_manager import attest_build
         from unittest.mock import patch
-        ws = Path(self.test_root)/'workspace'
-        shutil.copytree(self.workspace_dir, ws, ignore=shutil.ignore_patterns('.work','dist','build','install'))
-        (ws/'install').mkdir()
-        (ws/'install/setup.bash').write_text(f'export AMENT_PREFIX_PATH={ws}/install\n')
-        (ws/'install/dev_only.py').write_text('development=True\n')
-        prefix = f'{self.opt_dir}/releases/first/install'
+
+        ws = Path(self.test_root) / "workspace"
+        shutil.copytree(
+            self.workspace_dir,
+            ws,
+            ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+        )
+        (ws / "install").mkdir()
+        (ws / "install/setup.bash").write_text(
+            f"export AMENT_PREFIX_PATH={ws}/install\n"
+        )
+        (ws / "install/dev_only.py").write_text("development=True\n")
+        prefix = f"{self.opt_dir}/releases/first/install"
         real_run = subprocess.run
         called = []
+
         def build(command, **kwargs):
-            if str(command[0]).endswith('build_disposable_root.sh'):
+            if str(command[0]).endswith("build_disposable_root.sh"):
                 called.append(command)
-                self.assertNotIn('--allow-staged-install', command)
-                tree = ws/'.work/native-build'/prefix.lstrip('/')
+                self.assertNotIn("--allow-staged-install", command)
+                tree = ws / ".work/native-build" / prefix.lstrip("/")
                 tree.mkdir(parents=True)
-                (tree/'setup.bash').write_text(f'export AMENT_PREFIX_PATH={prefix}\n')
-                (tree/'production.py').write_text('production=True\n')
-                attest_build(str(tree), prefix, str(ws/'src'))
-                return subprocess.CompletedProcess(command, 0, '', '')
+                (tree / "setup.bash").write_text(f"export AMENT_PREFIX_PATH={prefix}\n")
+                (tree / "production.py").write_text("production=True\n")
+                attest_build(str(tree), prefix, str(ws / "src"))
+                return subprocess.CompletedProcess(command, 0, "", "")
             return real_run(command, **kwargs)
-        with patch('subprocess.run', side_effect=build):
-            archive = self.mgr.package_release(str(ws), str(Path(self.test_root)/'dist'), 'first')
+
+        with patch("subprocess.run", side_effect=build):
+            archive = self.mgr.package_release(
+                str(ws), str(Path(self.test_root) / "dist"), "first"
+            )
         self.assertEqual(len(called), 1)
-        names = subprocess.check_output(['tar', '-tf', archive], text=True)
-        self.assertIn('install/production.py', names)
-        self.assertNotIn('dev_only.py', names)
+        names = subprocess.check_output(["tar", "-tf", archive], text=True)
+        self.assertIn("install/production.py", names)
+        self.assertNotIn("dev_only.py", names)
 
     def test_empty_production_root_bootstraps_before_build(self):
         """Exercise the real builder's cold-start path without synthetic-install mode."""
         import shlex
         from ubuntu_tank.scripts.deployment_manager import verify_build
-        ws = Path(self.test_root)/'cold-workspace'
-        shutil.copytree(self.workspace_dir, ws, ignore=shutil.ignore_patterns('.work','dist','build','install'))
-        helper = ws/'scripts/prepare_build_root.py'
-        helper.write_text('''import argparse
+
+        ws = Path(self.test_root) / "cold-workspace"
+        shutil.copytree(
+            self.workspace_dir,
+            ws,
+            ignore=shutil.ignore_patterns(".work", "dist", "build", "install"),
+        )
+        helper = ws / "scripts/prepare_build_root.py"
+        helper.write_text("""import argparse
 from pathlib import Path
 p=argparse.ArgumentParser(); p.add_argument('--workspace'); p.add_argument('--rootfs'); a=p.parse_args()
 r=Path(a.rootfs)
@@ -2775,45 +3547,84 @@ for d in ['etc','var/lib/dpkg','opt/ros/lyrical']: (r/d).mkdir(parents=True,exis
 (r/'var/lib/dpkg/arch').write_text('arm64\\n')
 (r/'opt/ros/lyrical/setup.bash').write_text('# fixture ROS environment\\n')
 (r/'bootstrap-called').touch()
-''')
-        prefix = f'{self.opt_dir}/releases/cold/install'
-        install = ws/'.work/native-rootfs'/prefix.lstrip('/')
-        build = Path(self.test_root)/'compile-fixture.py'
-        build.write_text(f'''from pathlib import Path
+""")
+        prefix = f"{self.opt_dir}/releases/cold/install"
+        install = ws / ".work/native-rootfs" / prefix.lstrip("/")
+        build = Path(self.test_root) / "compile-fixture.py"
+        build.write_text(f"""from pathlib import Path
 p=Path({str(install)!r}); p.mkdir(parents=True,exist_ok=True)
 (p/'setup.bash').write_text('export AMENT_PREFIX_PATH={prefix}\\n')
 (p/'built.py').write_text('built=True\\n')
-''')
-        tools = Path(self.test_root)/'tools'
+""")
+        tools = Path(self.test_root) / "tools"
         tools.mkdir()
-        (tools/'id').write_text('#!/bin/sh\necho 0\n')
-        (tools/'id').chmod(0o755)
-        env = dict(os.environ, PATH=str(tools)+os.pathsep+os.environ['PATH'],
-                   _UBUNTU_TANK_TEST_BUILD_CMD=shlex.quote(sys.executable)+' '+shlex.quote(str(build)))
-        result = subprocess.run(['bash', str(ws/'scripts/build_disposable_root.sh'), '--workspace', str(ws),
-                                 '--release-id', 'cold', '--opt-dir', self.opt_dir], env=env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-        self.assertTrue((ws/'.work/native-rootfs/bootstrap-called').is_file())
-        verify_build(str(ws/'.work/native-build'/prefix.lstrip('/')), prefix, str(ws/'src'))
-        self.assertFalse((ws/'.work/rootfs').exists())
+        (tools / "id").write_text("#!/bin/sh\necho 0\n")
+        (tools / "id").chmod(0o755)
+        env = dict(
+            os.environ,
+            PATH=str(tools) + os.pathsep + os.environ["PATH"],
+            _UBUNTU_TANK_TEST_BUILD_CMD=shlex.quote(sys.executable)
+            + " "
+            + shlex.quote(str(build)),
+        )
+        result = subprocess.run(
+            [
+                "bash",
+                str(ws / "scripts/build_disposable_root.sh"),
+                "--workspace",
+                str(ws),
+                "--release-id",
+                "cold",
+                "--opt-dir",
+                self.opt_dir,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((ws / ".work/native-rootfs/bootstrap-called").is_file())
+        verify_build(
+            str(ws / ".work/native-build" / prefix.lstrip("/")), prefix, str(ws / "src")
+        )
+        self.assertFalse((ws / ".work/rootfs").exists())
 
     def test_bootstrap_dry_run_and_destination_guards(self):
         """Root creation is a documented command and cannot overwrite broad host paths."""
         from ubuntu_tank.scripts.prepare_build_root import bootstrap
         from unittest.mock import patch
-        workspace = Path(self.test_root)/'workspace'
+
+        workspace = Path(self.test_root) / "workspace"
         with self.assertRaises(ValueError):
-            bootstrap(workspace, Path('/usr'), dry_run=True)
-        with patch('os.geteuid', return_value=0), patch('ubuntu_tank.scripts.prepare_build_root.verify_host', side_effect=RuntimeError('wrong host')):
-            with self.assertRaisesRegex(RuntimeError, 'wrong host'):
-                bootstrap(workspace, workspace/'.work/rootfs')
-        self.assertFalse((workspace/'.work').exists())
-        result = subprocess.run(['bash', str(Path(self.workspace_dir)/'scripts/build_disposable_root.sh'), '--workspace', str(workspace), '--release-id', 'dry', '--dry-run'], capture_output=True, text=True)
+            bootstrap(workspace, Path("/usr"), dry_run=True)
+        with (
+            patch("os.geteuid", return_value=0),
+            patch(
+                "ubuntu_tank.scripts.prepare_build_root.verify_host",
+                side_effect=RuntimeError("wrong host"),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "wrong host"):
+                bootstrap(workspace, workspace / ".work/rootfs")
+        self.assertFalse((workspace / ".work").exists())
+        result = subprocess.run(
+            [
+                "bash",
+                str(Path(self.workspace_dir) / "scripts/build_disposable_root.sh"),
+                "--workspace",
+                str(workspace),
+                "--release-id",
+                "dry",
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('.work/native-rootfs', result.stdout)
-        self.assertIn('.work/native-build', result.stdout)
-        bootstrap(workspace, workspace/'.work/rootfs', dry_run=True)
-        self.assertFalse((workspace/'.work').exists())
+        self.assertIn(".work/native-rootfs", result.stdout)
+        self.assertIn(".work/native-build", result.stdout)
+        bootstrap(workspace, workspace / ".work/rootfs", dry_run=True)
+        self.assertFalse((workspace / ".work").exists())
 
 
 if __name__ == "__main__":

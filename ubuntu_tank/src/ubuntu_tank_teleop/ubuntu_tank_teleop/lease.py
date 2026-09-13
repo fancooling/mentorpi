@@ -17,14 +17,16 @@ class TeleopLeaseManager:
         self,
         linear_vel: float = 0.2,
         angular_vel: float = 0.5,
-        lease_duration_sec: float = 0.150
+        lease_duration_sec: float = 0.150,
     ):
         try:
             linear_v = float(linear_vel)
             angular_v = float(angular_vel)
             lease_sec = float(lease_duration_sec)
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Velocities and lease duration must be valid numbers: {e}")
+            raise ValueError(
+                f"Velocities and lease duration must be valid numbers: {e}"
+            )
 
         if not (math.isfinite(lease_sec) and 0.0 < lease_sec < 0.250):
             raise ValueError(
@@ -32,10 +34,14 @@ class TeleopLeaseManager:
             )
 
         if not (math.isfinite(linear_v) and linear_v > 0.0):
-            raise ValueError(f"linear_vel {linear_vel} must be a positive finite number")
+            raise ValueError(
+                f"linear_vel {linear_vel} must be a positive finite number"
+            )
 
         if not (math.isfinite(angular_v) and angular_v > 0.0):
-            raise ValueError(f"angular_vel {angular_vel} must be a positive finite number")
+            raise ValueError(
+                f"angular_vel {angular_vel} must be a positive finite number"
+            )
 
         self.linear_vel = linear_v
         self.angular_vel = angular_v
@@ -56,23 +62,23 @@ class TeleopLeaseManager:
         Returns the resulting (linear_x, angular_z).
         """
         k = key.lower()
-        if k == 'w':
+        if k == "w":
             self._target_linear = self.linear_vel
             self._target_angular = 0.0
             self._lease_deadline = now_monotonic + self.lease_duration_sec
-        elif k == 's':
+        elif k == "s":
             self._target_linear = -self.linear_vel
             self._target_angular = 0.0
             self._lease_deadline = now_monotonic + self.lease_duration_sec
-        elif k == 'a':
+        elif k == "a":
             self._target_linear = 0.0
             self._target_angular = self.angular_vel
             self._lease_deadline = now_monotonic + self.lease_duration_sec
-        elif k == 'd':
+        elif k == "d":
             self._target_linear = 0.0
             self._target_angular = -self.angular_vel
             self._lease_deadline = now_monotonic + self.lease_duration_sec
-        elif k == ' ':
+        elif k == " ":
             # Immediate stop
             self.cancel_lease()
         # Unrecognized keys do not renew lease or alter target

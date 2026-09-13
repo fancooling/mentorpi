@@ -24,7 +24,9 @@ class TestHostPreflight(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertEqual(res.returncode, 0, f"Expected 0, got {res.returncode}")
-        self.assertIn("PASS: Host preflight verification complete and accepted.", res.stdout)
+        self.assertIn(
+            "PASS: Host preflight verification complete and accepted.", res.stdout
+        )
 
     def test_reject_wrong_architecture(self):
         """Preflight must fail closed when architecture is not arm64/aarch64."""
@@ -45,7 +47,9 @@ class TestHostPreflight(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn("Checking operating system (Ubuntu 26.04 LTS)... FAIL", res.stdout)
+        self.assertIn(
+            "Checking operating system (Ubuntu 26.04 LTS)... FAIL", res.stdout
+        )
         self.assertIn("Expected Ubuntu 26.04 (Resolute)", res.stderr)
 
     def test_reject_outdated_eeprom(self):
@@ -68,7 +72,9 @@ class TestHostPreflight(unittest.TestCase):
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("FAIL", res.stdout)
-        self.assertIn("Malformed or unparseable EEPROM firmware release date", res.stderr)
+        self.assertIn(
+            "Malformed or unparseable EEPROM firmware release date", res.stderr
+        )
 
     def test_accept_authentic_eeprom_current_format(self):
         """Preflight accepts rpi-eeprom-update's timestamp plus epoch format."""
@@ -97,9 +103,14 @@ class TestHostPreflight(unittest.TestCase):
             for b_dir in ["/usr/bin", "/bin"]:
                 if os.path.exists(b_dir):
                     for fname in os.listdir(b_dir):
-                        if fname != "fuser" and not os.path.exists(os.path.join(tmp_bin, fname)):
+                        if fname != "fuser" and not os.path.exists(
+                            os.path.join(tmp_bin, fname)
+                        ):
                             try:
-                                os.symlink(os.path.join(b_dir, fname), os.path.join(tmp_bin, fname))
+                                os.symlink(
+                                    os.path.join(b_dir, fname),
+                                    os.path.join(tmp_bin, fname),
+                                )
                             except OSError:
                                 pass
 
@@ -108,30 +119,47 @@ class TestHostPreflight(unittest.TestCase):
             env["UBUNTU_TANK_MOCK_TARGET"] = "1"
             env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
             env["UBUNTU_TANK_MOCK_SERIAL_DEV"] = "/dev/null"
-            res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
+            res = subprocess.run(
+                [CHECK_HOST_BIN], env=env, capture_output=True, text=True
+            )
             self.assertNotEqual(res.returncode, 0)
-            self.assertIn("is present but 'fuser' command is not available to verify exclusivity. Failing closed.", res.stderr)
+            self.assertIn(
+                "is present but 'fuser' command is not available to verify exclusivity. Failing closed.",
+                res.stderr,
+            )
 
     def test_non_mock_process_table_scan_clean(self):
         """Non-mocked check_host execution in repo checkout must not flag itself or ancestors."""
-        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("UBUNTU_TANK_MOCK_")}
-        res = subprocess.run([CHECK_HOST_BIN, "--json"], env=clean_env, capture_output=True, text=True)
+        clean_env = {
+            k: v for k, v in os.environ.items() if not k.startswith("UBUNTU_TANK_MOCK_")
+        }
+        res = subprocess.run(
+            [CHECK_HOST_BIN, "--json"], env=clean_env, capture_output=True, text=True
+        )
         import json
+
         try:
             data = json.loads(res.stdout)
             mex = data.get("mutual_exclusion", {})
-            self.assertNotIn("Conflicting ROS/hardware owner process running", res.stderr)
+            self.assertNotIn(
+                "Conflicting ROS/hardware owner process running", res.stderr
+            )
             self.assertNotIn("mentorpi", mex.get("conflicting_processes", []))
         except json.JSONDecodeError:
-            self.fail(f"check_host --json output was not valid JSON:\n{res.stdout}\n{res.stderr}")
+            self.fail(
+                f"check_host --json output was not valid JSON:\n{res.stdout}\n{res.stderr}"
+            )
 
     def test_preflight_json_format(self):
         """Preflight --json must emit valid JSON schema with expected fields."""
         import json
+
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_TARGET"] = "1"
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
-        res = subprocess.run([CHECK_HOST_BIN, "--json"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [CHECK_HOST_BIN, "--json"], env=env, capture_output=True, text=True
+        )
         self.assertEqual(res.returncode, 0)
         data = json.loads(res.stdout)
         self.assertEqual(data["overall"], "PASS")
@@ -166,7 +194,9 @@ class TestMutualExclusion(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "MentorPi other_container"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn("Conflicting Docker container found matching 'MentorPi'", res.stderr)
+        self.assertIn(
+            "Conflicting Docker container found matching 'MentorPi'", res.stderr
+        )
 
     def test_reject_sidecar_mentorpifan_container(self):
         """Must reject presence of sidecar MentorPiFan container."""
@@ -175,7 +205,9 @@ class TestMutualExclusion(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "MentorPiFan"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn("Conflicting Docker container found matching 'MentorPiFan'", res.stderr)
+        self.assertIn(
+            "Conflicting Docker container found matching 'MentorPiFan'", res.stderr
+        )
 
     def test_reject_replacement_candidate_container(self):
         """Must reject presence of replacement container candidate."""
@@ -184,7 +216,9 @@ class TestMutualExclusion(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "runtime-core-candidate"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn("Conflicting Docker container found matching 'runtime-core'", res.stderr)
+        self.assertIn(
+            "Conflicting Docker container found matching 'runtime-core'", res.stderr
+        )
 
     def test_reject_unreadable_docker_daemon(self):
         """Must fail closed when Docker is installed but daemon cannot be inspected."""
@@ -193,7 +227,10 @@ class TestMutualExclusion(unittest.TestCase):
         env["UBUNTU_TANK_MOCK_DOCKER_FAIL"] = "1"
         res = subprocess.run([CHECK_HOST_BIN], env=env, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn("Docker is installed but daemon/containers cannot be inspected. Failing closed.", res.stderr)
+        self.assertIn(
+            "Docker is installed but daemon/containers cannot be inspected. Failing closed.",
+            res.stderr,
+        )
 
     def test_reject_device_contention(self):
         """Must fail closed when a process holds /dev/rrc open."""
@@ -221,7 +258,9 @@ class TestVerifyLock(unittest.TestCase):
 
     def test_authoritative_lock_passes(self):
         """The committed lock must pass structural verification."""
-        res = subprocess.run([INSTALL_ROS2_BIN, "verify-lock"], capture_output=True, text=True)
+        res = subprocess.run(
+            [INSTALL_ROS2_BIN, "verify-lock"], capture_output=True, text=True
+        )
         self.assertEqual(res.returncode, 0, f"verify-lock failed")
         self.assertIn("PASS: versions.lock verified successfully.", res.stdout)
         self.assertIn("Transitive closure status: complete", res.stdout)
@@ -262,7 +301,12 @@ class TestVerifyLock(unittest.TestCase):
         try:
             env = os.environ.copy()
             env["LOCK_FILE"] = tmp_path
-            res = subprocess.run([INSTALL_ROS2_BIN, "verify-lock"], env=env, capture_output=True, text=True)
+            res = subprocess.run(
+                [INSTALL_ROS2_BIN, "verify-lock"],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("Invalid format_version", res.stderr)
         finally:
@@ -278,7 +322,12 @@ class TestDryRunCommands(unittest.TestCase):
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_TARGET"] = "1"
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
-        res = subprocess.run([INSTALL_ROS2_BIN, "install-ros", "--dry-run"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [INSTALL_ROS2_BIN, "install-ros", "--dry-run"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(res.returncode, 0, f"install-ros dry-run failed")
         self.assertIn("[DRY-RUN] Verified lock parameters:", res.stdout)
         self.assertIn("PASS: Dry-run install-ros completed successfully.", res.stdout)
@@ -289,7 +338,9 @@ class TestDryRunCommands(unittest.TestCase):
             lock = yaml.safe_load(f)
         lines = []
         for p in lock["packages"]:
-            lines.append(f"{p['name']} {p['version']} {p['architecture']} {p['repository']} {p['sha256']}")
+            lines.append(
+                f"{p['name']} {p['version']} {p['architecture']} {p['repository']} {p['sha256']}"
+            )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tf:
             tf.write("\n".join(lines) + "\n")
             cand_path = tf.name
@@ -299,12 +350,22 @@ class TestDryRunCommands(unittest.TestCase):
             env["UBUNTU_TANK_MOCK_TARGET"] = "1"
             env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
             res = subprocess.run(
-                [INSTALL_ROS2_BIN, "install-ros", "--dry-run", "--candidates", cand_path],
-                env=env, capture_output=True, text=True
+                [
+                    INSTALL_ROS2_BIN,
+                    "install-ros",
+                    "--dry-run",
+                    "--candidates",
+                    cand_path,
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res.returncode, 0, f"Failed with {res.stderr}")
             self.assertIn("Exact solver closure verified", res.stdout)
-            self.assertIn("PASS: Dry-run install-ros completed successfully.", res.stdout)
+            self.assertIn(
+                "PASS: Dry-run install-ros completed successfully.", res.stdout
+            )
         finally:
             if os.path.exists(cand_path):
                 os.remove(cand_path)
@@ -315,8 +376,14 @@ class TestDryRunCommands(unittest.TestCase):
             lock = yaml.safe_load(f)
         lines = []
         for i, p in enumerate(lock["packages"]):
-            sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" if i == 0 else p["sha256"]
-            lines.append(f"{p['name']} {p['version']} {p['architecture']} {p['repository']} {sha}")
+            sha = (
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                if i == 0
+                else p["sha256"]
+            )
+            lines.append(
+                f"{p['name']} {p['version']} {p['architecture']} {p['repository']} {sha}"
+            )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tf:
             tf.write("\n".join(lines) + "\n")
             cand_path = tf.name
@@ -326,8 +393,16 @@ class TestDryRunCommands(unittest.TestCase):
             env["UBUNTU_TANK_MOCK_TARGET"] = "1"
             env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
             res = subprocess.run(
-                [INSTALL_ROS2_BIN, "install-ros", "--dry-run", "--candidates", cand_path],
-                env=env, capture_output=True, text=True
+                [
+                    INSTALL_ROS2_BIN,
+                    "install-ros",
+                    "--dry-run",
+                    "--candidates",
+                    cand_path,
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("Checksum mismatch for package", res.stderr)
@@ -340,7 +415,12 @@ class TestDryRunCommands(unittest.TestCase):
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_TARGET"] = "1"
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
-        res = subprocess.run([INSTALL_ROS2_BIN, "prepare-host", "--dry-run"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [INSTALL_ROS2_BIN, "prepare-host", "--dry-run"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(res.returncode, 0, f"prepare-host dry-run failed")
         self.assertIn("[DRY-RUN] Would record pre-upgrade host baseline", res.stdout)
         self.assertIn("PASS: Dry-run prepare-host completed successfully.", res.stdout)
@@ -350,7 +430,12 @@ class TestDryRunCommands(unittest.TestCase):
         env = os.environ.copy()
         env["UBUNTU_TANK_MOCK_TARGET"] = "1"
         env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "none"
-        res = subprocess.run([INSTALL_ROS2_BIN, "install-deps", "--dry-run"], env=env, capture_output=True, text=True)
+        res = subprocess.run(
+            [INSTALL_ROS2_BIN, "install-deps", "--dry-run"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
         self.assertEqual(res.returncode, 0, f"install-deps dry-run failed")
         self.assertIn("[DRY-RUN] Would fetch rosdep snapshot sources", res.stdout)
         self.assertIn("PASS: Dry-run install-deps completed successfully.", res.stdout)
@@ -379,26 +464,43 @@ class TestSecurityAndCliGuards(unittest.TestCase):
             for var_name, var_val in override_cases:
                 env = os.environ.copy()
                 for k in list(env.keys()):
-                    if k.startswith("UBUNTU_TANK_MOCK_") or k in ("UBUNTU_TANK_LOCK_DIR", "LOCK_FILE"):
+                    if k.startswith("UBUNTU_TANK_MOCK_") or k in (
+                        "UBUNTU_TANK_LOCK_DIR",
+                        "LOCK_FILE",
+                    ):
                         del env[k]
                 env[var_name] = var_val
-                res = subprocess.run([INSTALL_ROS2_BIN, subcmd], env=env, capture_output=True, text=True)
-                self.assertNotEqual(res.returncode, 0, f"Expected rejection for {subcmd} with {var_name}")
+                res = subprocess.run(
+                    [INSTALL_ROS2_BIN, subcmd], env=env, capture_output=True, text=True
+                )
+                self.assertNotEqual(
+                    res.returncode,
+                    0,
+                    f"Expected rejection for {subcmd} with {var_name}",
+                )
                 self.assertIn("SECURITY ERROR: Test override variables", res.stderr)
 
     def test_help_options_do_not_mutate(self):
         """-h and --help must display help text and exit 0 without mutating."""
         for subcmd in ["prepare-host", "install-ros", "install-deps"]:
             for flag in ["-h", "--help"]:
-                res = subprocess.run([INSTALL_ROS2_BIN, subcmd, flag], capture_output=True, text=True)
+                res = subprocess.run(
+                    [INSTALL_ROS2_BIN, subcmd, flag], capture_output=True, text=True
+                )
                 self.assertEqual(res.returncode, 0, f"Failed for {subcmd} {flag}")
                 self.assertIn(f"Usage: ./deploy.sh {subcmd}", res.stdout)
 
     def test_unknown_options_fail(self):
         """Unknown options must fail immediately with non-zero exit."""
         for subcmd in ["prepare-host", "install-ros", "install-deps"]:
-            res = subprocess.run([INSTALL_ROS2_BIN, subcmd, "--invalid-flag-12345"], capture_output=True, text=True)
-            self.assertNotEqual(res.returncode, 0, f"Expected failure for {subcmd} with unknown flag")
+            res = subprocess.run(
+                [INSTALL_ROS2_BIN, subcmd, "--invalid-flag-12345"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(
+                res.returncode, 0, f"Expected failure for {subcmd} with unknown flag"
+            )
 
 
 class TestDeploymentLock(unittest.TestCase):
@@ -407,6 +509,7 @@ class TestDeploymentLock(unittest.TestCase):
     def test_lock_contention_blocks_concurrent_execution(self):
         """Conflicting operations cannot execute when deployment lock is already held."""
         import fcntl
+
         with tempfile.TemporaryDirectory() as tmp_lock_dir:
             lock_path = os.path.join(tmp_lock_dir, "deploy.lock")
             lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -420,7 +523,9 @@ class TestDeploymentLock(unittest.TestCase):
 
                 res = subprocess.run(
                     [INSTALL_ROS2_BIN, "prepare-host", "--dry-run"],
-                    env=env, capture_output=True, text=True
+                    env=env,
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertNotEqual(res.returncode, 0)
                 self.assertIn("FAIL: Could not acquire deployment lock", res.stderr)
@@ -431,10 +536,14 @@ class TestDeploymentLock(unittest.TestCase):
             # Once unlocked, dry-run succeeds
             res_after = subprocess.run(
                 [INSTALL_ROS2_BIN, "prepare-host", "--dry-run"],
-                env=env, capture_output=True, text=True
+                env=env,
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res_after.returncode, 0)
-            self.assertIn("PASS: Dry-run prepare-host completed successfully.", res_after.stdout)
+            self.assertIn(
+                "PASS: Dry-run prepare-host completed successfully.", res_after.stdout
+            )
 
 
 class TestAptRecoveryWorkflow(unittest.TestCase):
@@ -472,8 +581,7 @@ class TestAptRecoveryWorkflow(unittest.TestCase):
                 env["PATH"] = f"{tmp_bin}:{env['PATH']}"
                 env["UBUNTU_TANK_MOCK_NO_SUDO"] = "1"
                 res = subprocess.run(
-                    ["bash", "-c", test_script],
-                    env=env, capture_output=True, text=True
+                    ["bash", "-c", test_script], env=env, capture_output=True, text=True
                 )
                 self.assertEqual(res.returncode, 0, f"Failed with {res.stderr}")
                 self.assertIn("RECOVERY_OK", res.stdout)
@@ -504,7 +612,9 @@ class TestRebootSequence(unittest.TestCase):
 
             res = subprocess.run(
                 [INSTALL_ROS2_BIN, "prepare-host", "--dry-run"],
-                env=env, capture_output=True, text=True
+                env=env,
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(res.returncode, 2)
             self.assertIn("Host reboot required", res.stdout)
@@ -514,7 +624,9 @@ class TestRebootSequence(unittest.TestCase):
 
     def test_install_ros_rejects_kernel_mismatch(self):
         """install-ros baseline validation rejects kernel mismatch with exit code 2."""
-        curr_arch = subprocess.check_output("dpkg --print-architecture 2>/dev/null || uname -m", shell=True, text=True).strip()
+        curr_arch = subprocess.check_output(
+            "dpkg --print-architecture 2>/dev/null || uname -m", shell=True, text=True
+        ).strip()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as bf:
             bf.write(f"""# MentorPi Host Baseline - Accepted Ubuntu Baseline Snapshot
 timestamp: 2026-09-08T00:00:00Z
@@ -538,7 +650,9 @@ ii  base-files 13.0ubuntu1 arm64
             . "{INSTALL_ROS2_BIN}"
             validate_host_baseline "{baseline_path}" "true"
             """
-            res = subprocess.run(["bash", "-c", test_script], capture_output=True, text=True)
+            res = subprocess.run(
+                ["bash", "-c", test_script], capture_output=True, text=True
+            )
             self.assertEqual(res.returncode, 2)
             self.assertIn("differs from recorded baseline kernel", res.stderr)
         finally:
@@ -547,9 +661,15 @@ ii  base-files 13.0ubuntu1 arm64
 
     def test_validate_host_baseline_live_permissions(self):
         """validate_host_baseline in live mode (dry_run=false) must enforce 0644/0600 root ownership and reject writable modes."""
-        curr_arch = subprocess.check_output("dpkg --print-architecture 2>/dev/null || uname -m", shell=True, text=True).strip()
+        curr_arch = subprocess.check_output(
+            "dpkg --print-architecture 2>/dev/null || uname -m", shell=True, text=True
+        ).strip()
         curr_kern = subprocess.check_output("uname -r", shell=True, text=True).strip()
-        curr_os = subprocess.check_output("grep -E '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '\"'", shell=True, text=True).strip()
+        curr_os = subprocess.check_output(
+            "grep -E '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '\"'",
+            shell=True,
+            text=True,
+        ).strip()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as bf:
             bf.write(f"""# MentorPi Host Baseline - Accepted Ubuntu Baseline Snapshot
@@ -570,12 +690,12 @@ ii  base-files 13.0ubuntu1 arm64
 
         try:
             cases = [
-                ('644', '0', '0', True, '0644 root:root must pass'),
-                ('600', '0', '0', True, '0600 root:root must pass'),
-                ('646', '0', '0', False, '0646 world-writable must fail'),
-                ('777', '0', '0', False, '0777 world-writable must fail'),
-                ('664', '0', '1000', False, '0664 non-root group must fail'),
-                ('644', '1000', '1000', False, 'non-root owner must fail'),
+                ("644", "0", "0", True, "0644 root:root must pass"),
+                ("600", "0", "0", True, "0600 root:root must pass"),
+                ("646", "0", "0", False, "0646 world-writable must fail"),
+                ("777", "0", "0", False, "0777 world-writable must fail"),
+                ("664", "0", "1000", False, "0664 non-root group must fail"),
+                ("644", "1000", "1000", False, "non-root owner must fail"),
             ]
             for mode, uid, gid, expect_pass, label in cases:
                 with self.subTest(label=label):
@@ -593,11 +713,17 @@ ii  base-files 13.0ubuntu1 arm64
                     }}
                     validate_host_baseline "{baseline_path}" "false"
                     """
-                    res = subprocess.run(["bash", "-c", test_script], capture_output=True, text=True)
+                    res = subprocess.run(
+                        ["bash", "-c", test_script], capture_output=True, text=True
+                    )
                     if expect_pass:
-                        self.assertEqual(res.returncode, 0, f"{label} failed: {res.stderr}")
+                        self.assertEqual(
+                            res.returncode, 0, f"{label} failed: {res.stderr}"
+                        )
                     else:
-                        self.assertNotEqual(res.returncode, 0, f"{label} unexpectedly passed")
+                        self.assertNotEqual(
+                            res.returncode, 0, f"{label} unexpectedly passed"
+                        )
         finally:
             if os.path.exists(baseline_path):
                 os.remove(baseline_path)
@@ -619,12 +745,16 @@ class TestUpstreamInputsVerification(unittest.TestCase):
         deb_url = apt_source["url"]
         expected_deb_sha = apt_source["sha256"]
 
-        req1 = urllib.request.Request(deb_url, headers={"User-Agent": "MentorPi-Test/1.0"})
+        req1 = urllib.request.Request(
+            deb_url, headers={"User-Agent": "MentorPi-Test/1.0"}
+        )
         with urllib.request.urlopen(req1, timeout=15) as resp:
             self.assertEqual(resp.status, 200)
             deb_bytes = resp.read()
             actual_deb_sha = hashlib.sha256(deb_bytes).hexdigest()
-            self.assertEqual(actual_deb_sha, expected_deb_sha, f"Hash mismatch for {deb_url}")
+            self.assertEqual(
+                actual_deb_sha, expected_deb_sha, f"Hash mismatch for {deb_url}"
+            )
 
         # 2. All 4 rosdep snapshot source files
         rosdep_sources = data["rosdep_sources"]
@@ -633,12 +763,18 @@ class TestUpstreamInputsVerification(unittest.TestCase):
             s_url = source_entry["url"]
             expected_s_sha = source_entry["sha256"]
 
-            req = urllib.request.Request(s_url, headers={"User-Agent": "MentorPi-Test/1.0"})
+            req = urllib.request.Request(
+                s_url, headers={"User-Agent": "MentorPi-Test/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 self.assertEqual(resp.status, 200)
                 s_bytes = resp.read()
                 actual_s_sha = hashlib.sha256(s_bytes).hexdigest()
-                self.assertEqual(actual_s_sha, expected_s_sha, f"Hash mismatch for rosdep source '{key}' ({s_url})")
+                self.assertEqual(
+                    actual_s_sha,
+                    expected_s_sha,
+                    f"Hash mismatch for rosdep source '{key}' ({s_url})",
+                )
 
 
 class TestExternalWorkingDirectory(unittest.TestCase):
@@ -648,8 +784,12 @@ class TestExternalWorkingDirectory(unittest.TestCase):
         """Running test_dependency_closure.sh from /tmp must pass without path errors."""
         script_path = os.path.join(TANK_DIR, "tests", "test_dependency_closure.sh")
         res = subprocess.run([script_path], cwd="/tmp", capture_output=True, text=True)
-        self.assertEqual(res.returncode, 0, f"Failed with output:\n{res.stdout}\n{res.stderr}")
-        self.assertIn("Dependency Closure and Lockfile Verification Gate PASSED!", res.stdout)
+        self.assertEqual(
+            res.returncode, 0, f"Failed with output:\n{res.stdout}\n{res.stderr}"
+        )
+        self.assertIn(
+            "Dependency Closure and Lockfile Verification Gate PASSED!", res.stdout
+        )
 
 
 if __name__ == "__main__":

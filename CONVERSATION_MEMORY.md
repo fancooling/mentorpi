@@ -502,6 +502,15 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
   operational procedure to parse `review.md`, remediate findings, execute full
   test gates and manifests, and amend into the existing commit.
 
+## Python environment and local tooling conventions
+
+- Always use the repository virtual environment at `.venv/` (`.venv/bin/python`,
+  `.venv/bin/pip`, `.venv/bin/<tool>`) for all Python dependency management, local
+  development, and local testing.
+- Never install Python packages globally or run global `pip install`.
+- Ensure scripts and test runners invoke `.venv/bin/python` when running local
+  Python tasks outside container boundaries.
+
 ## Codex continuity
 
 - Codex local memories are enabled on this workstation with

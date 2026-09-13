@@ -1,24 +1,24 @@
 from setuptools import setup
 
-package_name = 'ubuntu_tank_safety'
+package_name = "ubuntu_tank_safety"
 
 setup(
     name=package_name,
-    version='1.0.0',
+    version="1.0.0",
     packages=[package_name],
     data_files=[
-        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml"]),
     ],
-    install_requires=['setuptools'],
+    install_requires=["setuptools"],
     zip_safe=True,
-    maintainer='Ubuntu Tank Maintainers',
-    maintainer_email='dev@mentorpi.local',
-    description='Disarmed-by-default motor command guard and safety supervisor boundary',
-    license='Apache-2.0',
+    maintainer="Ubuntu Tank Maintainers",
+    maintainer_email="dev@mentorpi.local",
+    description="Disarmed-by-default motor command guard and safety supervisor boundary",
+    license="Apache-2.0",
     entry_points={
-        'console_scripts': [
-            'motor_guard = ubuntu_tank_safety.motor_guard_node:main',
+        "console_scripts": [
+            "motor_guard = ubuntu_tank_safety.motor_guard_node:main",
         ],
     },
 )

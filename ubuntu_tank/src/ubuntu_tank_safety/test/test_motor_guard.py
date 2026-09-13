@@ -16,7 +16,6 @@ from ubuntu_tank_safety.motor_guard import MotorGuard
 
 
 class TestMotorGuard(unittest.TestCase):
-
     def setUp(self):
         self.guard = MotorGuard(max_rps=2.0, timeout_sec=0.250)
 
@@ -55,7 +54,9 @@ class TestMotorGuard(unittest.TestCase):
         """Command missing motor 4 must be rejected, disarming the guard."""
         self.guard.arm()
         incomplete_cmd = [(1, 0.5), (2, 0.5), (3, 0.5)]
-        cmd, fault, reason = self.guard.handle_command(incomplete_cmd, now_monotonic=10.0)
+        cmd, fault, reason = self.guard.handle_command(
+            incomplete_cmd, now_monotonic=10.0
+        )
         self.assertTrue(fault)
         self.assertFalse(self.guard.is_armed)
         self.assertEqual(cmd, self.guard.get_zero_command())
@@ -80,13 +81,13 @@ class TestMotorGuard(unittest.TestCase):
     def test_rejects_nan_and_inf(self):
         """NaN and +/-Inf RPS values must be rejected."""
         self.guard.arm()
-        nan_cmd = [(1, float('nan')), (2, 0.0), (3, 0.0), (4, 0.0)]
+        nan_cmd = [(1, float("nan")), (2, 0.0), (3, 0.0), (4, 0.0)]
         cmd, fault, reason = self.guard.handle_command(nan_cmd, now_monotonic=10.0)
         self.assertTrue(fault)
         self.assertFalse(self.guard.is_armed)
 
         self.guard.arm()
-        inf_cmd = [(1, float('inf')), (2, 0.0), (3, 0.0), (4, 0.0)]
+        inf_cmd = [(1, float("inf")), (2, 0.0), (3, 0.0), (4, 0.0)]
         cmd, fault, reason = self.guard.handle_command(inf_cmd, now_monotonic=10.0)
         self.assertTrue(fault)
         self.assertFalse(self.guard.is_armed)
@@ -95,7 +96,9 @@ class TestMotorGuard(unittest.TestCase):
         """RPS exceeding max_rps must be rejected and cause disarm."""
         self.guard.arm()
         overspeed_cmd = [(1, 3.5), (2, 0.0), (3, 0.0), (4, 0.0)]
-        cmd, fault, reason = self.guard.handle_command(overspeed_cmd, now_monotonic=10.0)
+        cmd, fault, reason = self.guard.handle_command(
+            overspeed_cmd, now_monotonic=10.0
+        )
         self.assertTrue(fault)
         self.assertFalse(self.guard.is_armed)
 
@@ -133,5 +136,5 @@ class TestMotorGuard(unittest.TestCase):
         self.assertFalse(timed_out)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

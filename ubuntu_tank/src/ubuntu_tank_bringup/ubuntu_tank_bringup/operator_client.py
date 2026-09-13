@@ -25,18 +25,18 @@ except ImportError:
 class OperatorClientNode(Node):
     """Client node for sending arm/disarm requests with unneeded services stripped."""
 
-    def __init__(self, node_name: str = 'operator_client'):
+    def __init__(self, node_name: str = "operator_client"):
         overrides = []
         if Parameter is not None:
-            overrides.append(Parameter('start_type_description_service', Parameter.Type.BOOL, False))
+            overrides.append(
+                Parameter("start_type_description_service", Parameter.Type.BOOL, False)
+            )
 
         if rclpy is not None:
             super().__init__(
-                node_name,
-                start_parameter_services=False,
-                parameter_overrides=overrides
+                node_name, start_parameter_services=False, parameter_overrides=overrides
             )
-            self.client = self.create_client(SetBool, '/ubuntu_tank_safety/set_arm')
+            self.client = self.create_client(SetBool, "/ubuntu_tank_safety/set_arm")
         else:
             self.client = None
 
@@ -48,7 +48,10 @@ class OperatorClientNode(Node):
         start_time = time.monotonic()
         while not self.client.wait_for_service(timeout_sec=0.2):
             if time.monotonic() - start_time >= timeout_sec:
-                return False, f"Timed out waiting for service /ubuntu_tank_safety/set_arm after {timeout_sec:.1f}s"
+                return (
+                    False,
+                    f"Timed out waiting for service /ubuntu_tank_safety/set_arm after {timeout_sec:.1f}s",
+                )
             if not rclpy.ok():
                 return False, "ROS context was shut down"
 
@@ -65,7 +68,10 @@ class OperatorClientNode(Node):
                 except Exception as exc:
                     return False, f"Service call exception: {exc}"
             if time.monotonic() - start_time >= timeout_sec:
-                return False, f"Timed out waiting for /ubuntu_tank_safety/set_arm response after {timeout_sec:.1f}s"
+                return (
+                    False,
+                    f"Timed out waiting for /ubuntu_tank_safety/set_arm response after {timeout_sec:.1f}s",
+                )
 
         return False, "ROS context stopped before receiving response"
 
@@ -74,7 +80,7 @@ def main(args=None):
     """Entry point for operator_client console script."""
     target_args = sys.argv[1:] if args is None else args
     for arg in target_args:
-        if arg in ('-h', '--help'):
+        if arg in ("-h", "--help"):
             print("Usage: operator_client [--arm | --disarm]")
             return 0
 
@@ -84,9 +90,9 @@ def main(args=None):
 
     arm = None
     for arg in target_args:
-        if arg in ('--arm', '-a', 'true', 'True', '1'):
+        if arg in ("--arm", "-a", "true", "True", "1"):
             arm = True
-        elif arg in ('--disarm', '-d', 'false', 'False', '0'):
+        elif arg in ("--disarm", "-d", "false", "False", "0"):
             arm = False
 
     if arm is None:
@@ -109,5 +115,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

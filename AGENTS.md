@@ -17,3 +17,12 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
 - Every commit must include an informational body explaining what changed and
   why, including relevant operational effects and validation. Keep that body
   current when incorporating review revisions.
+
+## Python environment and local tooling
+
+- Always use the repository virtual environment at `.venv/` (`.venv/bin/python`,
+  `.venv/bin/pip`, `.venv/bin/<tool>`) for all Python dependency management, local
+  development, and local testing.
+- Never install Python packages globally or run global `pip install`.
+- Ensure scripts and test runners invoke `.venv/bin/python` when running local
+  Python tasks outside container boundaries.
