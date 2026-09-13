@@ -1,4 +1,12 @@
 <?xml version="1.0"?>
+<!--
+Declare the controller ROS package metadata and build/runtime dependencies.
+Adapted from Hiwonder MentorPi:
+mentorpi/src/driver/controller/package.xml.
+Local adaptations: Declare complete runtime ROS and Python dependencies (rclpy,
+geometry_msgs, nav_msgs, sensor_msgs, std_srvs, ros_robot_controller_msgs,
+python3-yaml), maintainer dev@mentorpi.local, version 1.0.0, and Apache-2.0 license.
+-->
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>controller</name>

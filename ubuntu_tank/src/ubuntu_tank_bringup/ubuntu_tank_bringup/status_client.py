@@ -179,11 +179,11 @@ class StatusClientNode(Node):
         start_time = time.monotonic()
         while self._is_ok():
             self._spin_once(timeout_sec=0.1)
-            if self.guard_state is not None and self.guard_armed is not None:
-                if self.battery_mv is None and (
-                    time.monotonic() - start_time < min(timeout_sec, 0.5)
-                ):
-                    continue
+            if (
+                self.guard_state is not None
+                and self.guard_armed is not None
+                and self.battery_mv is not None
+            ):
                 break
             if time.monotonic() - start_time >= timeout_sec:
                 break

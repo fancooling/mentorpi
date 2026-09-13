@@ -1318,7 +1318,7 @@ class ReleaseManager:
             ) from error
 
         # Copy root files
-        for fn in ["deploy.sh", "README.md", "source-manifest.txt"]:
+        for fn in ["deploy.sh", "README.md"]:
             src_f = os.path.join(workspace_dir, fn)
             if os.path.isfile(src_f):
                 shutil.copy2(src_f, os.path.join(staging_dir, fn))
@@ -1682,6 +1682,7 @@ class ReleaseManager:
                     permissions_key,
                     "-outform",
                     "SMIME",
+                    "-text",
                 )
 
             governance = os.path.join(generation, "governance.p7s")

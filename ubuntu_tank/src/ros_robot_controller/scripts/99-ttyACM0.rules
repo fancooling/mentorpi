@@ -1,3 +1,7 @@
+# Retain the vendor device setup as reference only. Native installation uses deploy.sh
+# and host/99-mentorpi-rrc.rules instead.
+# Copied directly from Hiwonder MentorPi:
+# mentorpi/src/driver/ros_robot_controller/scripts/99-ttyACM0.rules.
 # Ignore ModemManager for ttyACM0 device
 KERNEL=="ttyACM0", SUBSYSTEM=="tty", GROUP="ubuntu", MODE="0777"
 ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ENV{ID_MM_PORT_IGNORE}="1"

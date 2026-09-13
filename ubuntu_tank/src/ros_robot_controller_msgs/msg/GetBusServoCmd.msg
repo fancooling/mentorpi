@@ -1,3 +1,7 @@
+# Define the vendor GetBusServoCmd ROS message; retain its field layout for board
+# interface compatibility.
+# Copied directly from Hiwonder MentorPi:
+# mentorpi/src/driver/ros_robot_controller_msgs/msg/GetBusServoCmd.msg.
 uint8 id
 uint8 get_id
 uint8 get_position

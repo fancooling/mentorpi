@@ -1,8 +1,18 @@
 #!/usr/bin/python3
 # coding=utf8
+"""
+Retain vendor steering kinematics for compatibility with the controller module imports;
+the native tank launch does not select steering mode.
+
+Copied directly from Hiwonder MentorPi:
+
+mentorpi/src/driver/controller/controller/ackermann.py.
+"""
+
 # 阿克曼底盘运动学(Ackermann wheel chassis kinematic)
 import math
 from ros_robot_controller_msgs.msg import MotorState, MotorsState
+
 
 class AckermannChassis:
     # wheelbase = 0.213  # 前后轴距(distance between front and real axles)
@@ -27,7 +37,7 @@ class AckermannChassis:
         data = []
         if abs(linear_speed) >= 1e-8:
             if abs(angular_speed) >= 1e-8:
-                theta = math.atan(self.wheelbase*angular_speed/linear_speed)
+                theta = math.atan(self.wheelbase * angular_speed / linear_speed)
                 steering_angle = theta
                 # print(math.degrees(steering_angle))
                 if steering_angle > math.radians(40):
@@ -35,24 +45,23 @@ class AckermannChassis:
                 if steering_angle < math.radians(-40):
                     steering_angle = math.radians(-40)
                     # for i in range(4):
-                        # msg = MotorState()
-                        # msg.id = i + 1
-                        # msg.rps = 0.0
-                        # data.append(msg)
+                    # msg = MotorState()
+                    # msg.id = i + 1
+                    # msg.rps = 0.0
+                    # data.append(msg)
                     # msg = MotorsState()
                     # msg.data = data
                     # return None, msg
-                servo_angle = 1500 + 2000*math.degrees(steering_angle)/180
-   
+                servo_angle = 1500 + 2000 * math.degrees(steering_angle) / 180
 
-            vr = linear_speed - angular_speed*self.track_width/2
-            vl = linear_speed + angular_speed*self.track_width/2
+            vr = linear_speed - angular_speed * self.track_width / 2
+            vl = linear_speed + angular_speed * self.track_width / 2
             v_s = [self.speed_covert(v) for v in [0, vl, 0, -vr]]
             for i in range(len(v_s)):
                 msg = MotorState()
                 msg.id = i + 1
                 msg.rps = float(v_s[i])
-                data.append(msg) 
+                data.append(msg)
             msg = MotorsState()
             msg.data = data
             return servo_angle, msg
@@ -65,4 +74,3 @@ class AckermannChassis:
             msg = MotorsState()
             msg.data = data
             return None, msg
-

@@ -1,3 +1,5 @@
+# Pinned complete dependency closure specification for Ubuntu 26.04 and ROS 2 Lyrical
+# (424 packages), captured on clean ARM64 target.
 meta:
   format_version: 1.0.0
   status: locked

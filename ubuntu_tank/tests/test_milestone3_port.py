@@ -1219,6 +1219,21 @@ class TestBuildWorkspaceScript(unittest.TestCase):
 class TestPackageMetadataSynchronization(unittest.TestCase):
     """Verify package.xml and setup.py metadata synchronization."""
 
+    def _assert_setup_metadata(self, content, **expected):
+        """Compare literal setup metadata independently of Python quote style."""
+        calls = [
+            node
+            for node in ast.walk(ast.parse(content))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "setup"
+        ]
+        self.assertEqual(len(calls), 1)
+        keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+        for name, value in expected.items():
+            self.assertIn(name, keywords)
+            self.assertEqual(ast.literal_eval(keywords[name]), value)
+
     def test_controller_metadata_sync(self):
         """controller package.xml and setup.py metadata must match."""
         import xml.etree.ElementTree as ET
@@ -1234,9 +1249,9 @@ class TestPackageMetadataSynchronization(unittest.TestCase):
         with open(setup_py, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn(f"version='{xml_ver}'", content)
-        self.assertIn(f"license='{xml_lic}'", content)
-        self.assertIn(f"maintainer='{xml_maint}'", content)
+        self._assert_setup_metadata(
+            content, version=xml_ver, license=xml_lic, maintainer=xml_maint
+        )
 
     def test_ros_robot_controller_metadata_sync(self):
         """ros_robot_controller package.xml and setup.py metadata must match."""
@@ -1253,9 +1268,9 @@ class TestPackageMetadataSynchronization(unittest.TestCase):
         with open(setup_py, "r", encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn(f"version='{xml_ver}'", content)
-        self.assertIn(f"license='{xml_lic}'", content)
-        self.assertIn(f"maintainer='{xml_maint}'", content)
+        self._assert_setup_metadata(
+            content, version=xml_ver, license=xml_lic, maintainer=xml_maint
+        )
 
 
 class TestInstallRos2ClosureManifest(unittest.TestCase):

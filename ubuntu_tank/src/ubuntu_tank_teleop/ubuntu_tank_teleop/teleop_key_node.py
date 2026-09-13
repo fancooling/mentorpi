@@ -5,6 +5,14 @@ Maps W/A/S/D to bounded Twist velocity commands published on /controller/cmd_vel
 Enforces renewable short motion leases (< 250 ms) to guarantee automatic stop
 after key repeat ceases or input is lost, within the configured lease (or on
 pause, terminal focus loss, signal, or exception).
+
+Adapted/refactored from Hiwonder MentorPi:
+
+mentorpi/src/peripherals/peripherals/teleop_key_control.py.
+
+Local adaptations: Replaced latched linear commands with 150 ms renewable leases;
+periodic 20 Hz publishing; auto-zero on lease expiry/SIGINT/SIGTERM; removed unused
+servo and camera code.
 """
 
 import os

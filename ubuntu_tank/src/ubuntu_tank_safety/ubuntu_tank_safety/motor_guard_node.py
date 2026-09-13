@@ -135,7 +135,7 @@ class MotorGuardNode(Node):
             response.success = success
             response.message = message
             self._publish_state()
-            self.get_logger().warn("MotorGuard explicitly ARMED by operator.")
+            self.get_logger().warning("MotorGuard explicitly ARMED by operator.")
         else:
             success, message, zero_cmd = self.guard.disarm()
             self._publish_repeated_zero(count=5)
@@ -165,7 +165,7 @@ class MotorGuardNode(Node):
         now_mono = time.monotonic()
         timed_out, zero_cmd = self.guard.check_timeout(now_mono)
         if timed_out:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 f"Motor command lease expired (> {self.guard.timeout_sec}s). Disarming."
             )
             self._publish_repeated_zero(count=5)

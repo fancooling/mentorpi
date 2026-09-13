@@ -1,9 +1,39 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Source documentation simplification (2026-09-13)
+
+- User rejected per-file source-manifest bookkeeping: Git owns source history;
+  top-of-file documentation owns purpose/rationale and vendor origin/adaptations.
+- Design §5.1.1–5.1.2 deprecates `ubuntu_tank/source-manifest.txt`, source hash
+  maintenance, coverage/parity gates, and packaging/contributor dependencies.
+  Implemented: deleted the manifest, added/expanded file documentation in 75
+  files, removed manifest stages and negative-fixture hash rewriting, stopped
+  packaging it, and updated contributor/ack-review instructions. Layout, AST
+  imports, dependency allowlists, and perception-exclusion checks remain.
+- Dependency-download and generated release/build integrity checks are separate
+  from the retired source registry. Preserve original copyright/license notices.
+- Validation: `PATH="$PWD/.venv/bin:$PATH" ./ubuntu_tank/deploy.sh test`
+  passed 294 tests with one native-DDS skip on the workstation. Boundary and
+  negative dependency gates passed; five focused packaging/install tests passed.
+  Python executable ASTs and ROS interface fields were unchanged by header edits;
+  XML parsing, shell lint/format checks, and `git diff --check` passed. No Pi
+  deployment or physical validation was performed for this change.
+
+## Commit preparation (2026-09-13)
+
+- Group native runtime integration changes and source-manifest retirement into
+  one milestone commit, with current file documentation and contributor rules.
+- Applied required Ruff/shfmt formatting. Metadata regression tests now compare
+  parsed setup values rather than quote style; the reference udev helper prefixes
+  its rules glob so filenames cannot be interpreted as command options.
+- Workstation validation: 294 tests passed, one native-DDS test skipped; shell
+  lint, formatting, and whitespace checks passed. No target-Pi deployment or
+  physical validation was performed during commit preparation.
 
 ## User intent
 
@@ -491,6 +521,36 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
 - Full suite passed: 294 tests passed, one native-DDS skip. All 41 bench tests
   passed; source provenance, negative boundary, and whitespace checks passed.
 
+## Task 1 physical preflight verification on tankubuntu (2026-09-12)
+
+- Target: native ARM64 Raspberry Pi 5.
+- Host platform verified: Raspberry Pi 5 Model B Rev 1.1, Linux kernel `7.0.0-1017-raspi`, Ubuntu 26.04.1 LTS ARM64. Host preflight script (`scripts/check_host.sh`) reported 0 errors and 0 warnings.
+- USB identity verified: `1a86:55d4` QinHeng Electronics USB Single Serial on Bus 002 Device 002.
+- Serial symlink and permissions verified: `/dev/rrc -> /dev/ttyACM0`, permissions `0660`, owner group `mentorpi-rrc`.
+- Power path & battery telemetry verified live: read from STM32 chassis controller over `/dev/rrc` at 1,000,000 baud with `set_battery_level(0x2af8)`. Observed live battery voltage: **12.17 V** (12,169 mV), well above the 9.60 V cutoff.
+- Emergency disconnect: Verified physical rocker power switch on chassis within operator reach.
+- Motion safety invariant strictly preserved: zero motor commands issued, tracks remained completely stationary. Task 1 accepted.
+
+## Milestone 6 physical bench acceptance and real-hardware fixes (2026-09-12)
+
+- Target execution: Physical Raspberry Pi 5 (`tankubuntu`) with chassis tracks mechanically elevated in the air on bench stand.
+- Resolved 7 real-hardware integration and runtime compatibility issues:
+  1. *Premature `READY=1` & Watchdog Timeout*: `bin/mentorpi-tank-run` defers `READY=1` until first valid socket heartbeats arrive from both guard and bridge, avoiding 2s watchdog SIGABRT during node startup.
+  2. *Fast-DDS SROS2 PKCS7 Verification*: Fast-DDS calls `PKCS7_verify(..., PKCS7_TEXT | ...)`; added `"-text"` to `cms -sign` in `scripts/deployment_manager.py` to ensure S/MIME plain-text headers are included for all enclaves.
+  3. *PySerial DTR/RTS Hardware Reset Trap*: QinHeng USB serial (`1a86:55d4`) wires DTR/RTS to STM32 NRST/BOOT pins; initialized `serial.Serial` with `dtr=True, rts=True` and wrapped in exception handler to tolerate non-modem PTY devices.
+  4. *Systemd Sandboxing AF_NETLINK & UMask*: Added `AF_NETLINK` to `RestrictAddressFamilies` (required for `getifaddrs` UDP loopback discovery) and `UMask=0002` to `host/mentorpi-tank.service` (allowing group `mentorpi-rrc` access to shared-memory POSIX semaphores).
+  5. *`RcutilsLogger` API Compatibility*: Upstream rclpy `RcutilsLogger` provides `.warning()`, not `.warn()`. Replaced `.warn()` calls across `motor_guard_node.py`, `ros_robot_controller_node.py`, `odom_publisher_node.py`, and `cp.py`.
+  6. *Telemetry Polling Synchronization*: Updated `collect_status` in `status_client.py` and `bench_acceptance.py` to wait up to `timeout_sec` (3.0s) when `battery_mv is None` to reliably synchronize with the 1 Hz battery polling timer.
+  7. *Virtual PTY IOCTL Tolerance*: Wrapped DTR/RTS control line configuration in `ros_robot_controller_sdk.py` to gracefully ignore `ENOTTY` / `[Errno 25] Inappropriate ioctl for device` on virtual pseudo-terminals during hardware-free regression testing.
+- Physical Bench Acceptance Suite Results (`./deploy.sh bench --ack-tracks-raised --duration 0.5`):
+  - **Hardware Preflight**: PASSED (Deployment lock available, container mutual exclusion passed, USB identity `1a86:55d4`, battery voltage 12.19 V >= 9.60 V cutoff).
+  - **Geometry & Conservative Limits**: PASSED (Wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0, max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS).
+  - **Kinematic Motor Polarity & Bounded Motion Sequences**: PASSED. Four 0.5s bursts executed on live hardware: forward (M1/M2=-0.849, M3/M4=+0.849 RPS), reverse (M1/M2=+0.849, M3/M4=-0.849 RPS), spin left (all +0.478 RPS), spin right (all -0.478 RPS), terminating strictly in 4-motor zero. Guard armed before each burst and explicitly disarmed after each burst.
+  - **Stop Latency Validation**: Software timing mechanisms verified in simulation against accepted bounds (lease <= 200 ms, guard <= 300 ms, teleop crash <= 300 ms, supervisor <= 250 ms, sigterm <= 100 ms, serial loss <= 600 ms). Physical target-Pi instrumentation remains pending and fails closed in live mode.
+  - **STM32 Command-Loss Characterization**: Characterized (host zero <= 275 ms, firmware watchdog <= 1000 ms, emergency rocker switch within 0s reach). On-ground motion remains forbidden.
+  - **Post-Run State**: `mentorpi-tank.service` returned cleanly to disarmed state, then safely stopped on target host. Acceptance reports saved to `ubuntu_tank/dist/acceptance-report-milestone6.*`.
+- Full 52-test hardware-free unit and 41-test acceptance regression suite passes 100%. Zero provenance or formatting errors.
+
 ## Commit and review conventions
 
 - Create a new Git version (commit) only for a new feature or milestone.
@@ -502,9 +562,8 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
   authored Python code using `.venv/bin/ruff format <files>`, format modified
   authored shell scripts using `.venv/bin/shfmt -i 2 -ci -w <files>` and verify
   with `.venv/bin/shellcheck <files>`, ensure `git diff --check` reports zero
-  whitespace or formatting errors, and update `source-manifest.txt` hashes if
-  tracked files were modified. Never reformat vendor baseline files marked
-  `identical`.
+  whitespace or formatting errors. Keep file-level purpose/rationale and vendor
+  origin/adaptation documentation current; Git records source revisions. Preserve vendor notices and avoid unrelated vendor-code reformatting.
 - Workspace skill `.agents/skills/ack-review/SKILL.md` documents the step-by-step
   operational procedure to parse `review.md`, remediate findings, execute full
   test gates and manifests, and amend into the existing commit.

@@ -2,7 +2,7 @@
 name: ack-review
 description: >-
   Read code review comments from review.md, systematically implement the required
-  fixes and regression tests, verify the test suite and source provenance, and fold
+  fixes and regression tests, verify the test suite and source boundaries, and fold
   the revisions into the existing feature commit via git commit --amend.
 ---
 
@@ -52,9 +52,9 @@ Before modifying any code, verify proposed changes against repository architectu
 - **Always add regression tests**:
   - Add test cases in the relevant test suite (e.g., `ubuntu_tank/tests/test_milestone4_bringup.py` or `ubuntu_tank/tests/test_rmw_integration.py`).
   - Test cases must specifically assert the failure condition and verify the fix.
-- **Update Source Manifest**:
-  - If any file under `ubuntu_tank/` is created, modified, or deleted, update `ubuntu_tank/source-manifest.txt` with new SHA-256 hashes and accurate file counts.
-  - Run `ubuntu_tank/tests/test_source_boundary.sh` to ensure 100% manifest and provenance compliance.
+- **Update File Documentation**:
+  - Keep purpose/rationale in top-of-file documentation. For vendor-derived files, identify the original source and meaningful adaptations; preserve copyright/license notices. Git records revisions; no source inventory or per-file hashes are required.
+  - Run `ubuntu_tank/tests/test_source_boundary.sh` to verify layout, imports, dependency declarations, and controller-only scope.
 
 ### 4. Execute Full Verification Suite
 Run the full regression test suite:
@@ -62,8 +62,8 @@ Run the full regression test suite:
 ./ubuntu_tank/deploy.sh test
 ```
 Verify:
-- 100% test pass rate across all unit, integration, and provenance tests.
-- Run code formatting with `.venv/bin/ruff format <files>` across modified authored Python files (never reformat files marked `identical`).
+- 100% test pass rate across all unit, integration, and source-boundary tests.
+- Run code formatting with `.venv/bin/ruff format <files>` across modified authored Python files (avoid unrelated vendor-code reformatting).
 - Run code formatting with `.venv/bin/shfmt -i 2 -ci -w <files>` and linting with `.venv/bin/shellcheck <files>` across modified authored shell scripts.
 - Zero whitespace errors:
   ```bash

@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 # encoding: utf-8
-"""ROS 2 hardware bridge with guarded motor input and fatal serial handling."""
+"""
+ROS 2 hardware bridge with guarded motor input and fatal serial handling.
+
+Adapted/refactored from Hiwonder MentorPi:
+
+mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_node.py.
+
+Local adaptations: Removed legacy machine-selection and hardcoded paths; added 250ms
+command freshness watchdog; made serial read/write/silence failures fatal and suppress
+supervisor heartbeats; added dedicated 1Hz battery polling in controller_only mode;
+restricted topics.
+"""
 
 import os
 import sys
@@ -18,12 +29,21 @@ from std_msgs.msg import UInt16, Bool
 from ros_robot_controller.ros_robot_controller_sdk import Board, PacketReportKeyEvents
 from ros_robot_controller_msgs.srv import GetBusServoState, GetPWMServoState
 from ros_robot_controller_msgs.msg import (
-    ButtonState, BuzzerState, MotorsState, BusServoState, LedState,
-    SetBusServoState, ServosPosition, SetPWMServoState, Sbus, OLEDState,
-    RGBStates, PWMServoState
+    ButtonState,
+    BuzzerState,
+    MotorsState,
+    BusServoState,
+    LedState,
+    SetBusServoState,
+    ServosPosition,
+    SetPWMServoState,
+    Sbus,
+    OLEDState,
+    RGBStates,
+    PWMServoState,
 )
 
-GUARDED_MOTOR_TOPIC = '/ros_robot_controller/set_motor_guarded'
+GUARDED_MOTOR_TOPIC = "/ros_robot_controller/set_motor_guarded"
 
 
 class RosRobotController(Node):
@@ -36,57 +56,80 @@ class RosRobotController(Node):
 
     gravity = 9.80665
 
-    def __init__(self, name='ros_robot_controller'):
+    def __init__(self, name="ros_robot_controller"):
         super().__init__(name)
 
         # Declare ROS parameters
-        self.declare_parameter('machine_type', 'MentorPi_Tank')
-        self.declare_parameter('serial_device', '/dev/rrc')
-        self.declare_parameter('baud_rate', 1000000)
-        self.declare_parameter('controller_only', True)
-        self.declare_parameter('freshness_timeout_sec', 0.250)
-        self.declare_parameter('heartbeat_interval_sec', 0.200)
-        self.declare_parameter('serial_read_timeout_sec', 0.050)
-        self.declare_parameter('write_timeout_sec', 0.100)
-        self.declare_parameter('serial_silence_timeout_sec', 0.500)
-        self.declare_parameter('servo_config_file', '/etc/opt/ubuntu_tank/servo_config.yaml')
-        self.declare_parameter('load_servo_offsets', False)
-        self.declare_parameter('imu_frame', 'imu_link')
-        self.declare_parameter('init_finish', False)
-        self.declare_parameter('motor_topic', GUARDED_MOTOR_TOPIC)
+        self.declare_parameter("machine_type", "MentorPi_Tank")
+        self.declare_parameter("serial_device", "/dev/rrc")
+        self.declare_parameter("baud_rate", 1000000)
+        self.declare_parameter("controller_only", True)
+        self.declare_parameter("freshness_timeout_sec", 0.250)
+        self.declare_parameter("heartbeat_interval_sec", 0.200)
+        self.declare_parameter("serial_read_timeout_sec", 0.050)
+        self.declare_parameter("write_timeout_sec", 0.100)
+        self.declare_parameter("serial_silence_timeout_sec", 0.500)
+        self.declare_parameter(
+            "servo_config_file", "/etc/opt/ubuntu_tank/servo_config.yaml"
+        )
+        self.declare_parameter("load_servo_offsets", False)
+        self.declare_parameter("imu_frame", "imu_link")
+        self.declare_parameter("init_finish", False)
+        self.declare_parameter("motor_topic", GUARDED_MOTOR_TOPIC)
 
         # Retrieve parameter values
-        self.machine_type = str(self.get_parameter('machine_type').value)
-        self.serial_device = str(self.get_parameter('serial_device').value)
-        self.baud_rate = int(self.get_parameter('baud_rate').value)
-        self.controller_only = bool(self.get_parameter('controller_only').value)
-        self.freshness_timeout_sec = float(self.get_parameter('freshness_timeout_sec').value)
-        self.heartbeat_interval_sec = float(self.get_parameter('heartbeat_interval_sec').value)
-        self.serial_read_timeout_sec = float(self.get_parameter('serial_read_timeout_sec').value)
-        self.write_timeout_sec = float(self.get_parameter('write_timeout_sec').value)
-        self.serial_silence_timeout_sec = float(self.get_parameter('serial_silence_timeout_sec').value)
-        self.servo_config_file = str(self.get_parameter('servo_config_file').value)
-        self.load_servo_offsets_flag = bool(self.get_parameter('load_servo_offsets').value)
-        self.IMU_FRAME = str(self.get_parameter('imu_frame').value)
-        self.motor_topic = str(self.get_parameter('motor_topic').value)
+        self.machine_type = str(self.get_parameter("machine_type").value)
+        self.serial_device = str(self.get_parameter("serial_device").value)
+        self.baud_rate = int(self.get_parameter("baud_rate").value)
+        self.controller_only = bool(self.get_parameter("controller_only").value)
+        self.freshness_timeout_sec = float(
+            self.get_parameter("freshness_timeout_sec").value
+        )
+        self.heartbeat_interval_sec = float(
+            self.get_parameter("heartbeat_interval_sec").value
+        )
+        self.serial_read_timeout_sec = float(
+            self.get_parameter("serial_read_timeout_sec").value
+        )
+        self.write_timeout_sec = float(self.get_parameter("write_timeout_sec").value)
+        self.serial_silence_timeout_sec = float(
+            self.get_parameter("serial_silence_timeout_sec").value
+        )
+        self.servo_config_file = str(self.get_parameter("servo_config_file").value)
+        self.load_servo_offsets_flag = bool(
+            self.get_parameter("load_servo_offsets").value
+        )
+        self.IMU_FRAME = str(self.get_parameter("imu_frame").value)
+        self.motor_topic = str(self.get_parameter("motor_topic").value)
 
-        if not math.isfinite(self.freshness_timeout_sec) or self.freshness_timeout_sec <= 0:
-            raise ValueError('freshness_timeout_sec must be finite and greater than zero')
+        if (
+            not math.isfinite(self.freshness_timeout_sec)
+            or self.freshness_timeout_sec <= 0
+        ):
+            raise ValueError(
+                "freshness_timeout_sec must be finite and greater than zero"
+            )
         if (
             not math.isfinite(self.write_timeout_sec)
             or self.write_timeout_sec <= 0
             or self.write_timeout_sec >= self.freshness_timeout_sec
         ):
-            raise ValueError('write_timeout_sec must be finite, positive, and shorter than freshness_timeout_sec')
+            raise ValueError(
+                "write_timeout_sec must be finite, positive, and shorter than freshness_timeout_sec"
+            )
         if (
             not math.isfinite(self.serial_read_timeout_sec)
             or self.serial_read_timeout_sec <= 0
             or not math.isfinite(self.serial_silence_timeout_sec)
             or self.serial_silence_timeout_sec <= self.serial_read_timeout_sec
         ):
-            raise ValueError('serial timeouts must be finite, positive, and silence must exceed read timeout')
+            raise ValueError(
+                "serial timeouts must be finite, positive, and silence must exceed read timeout"
+            )
         if self.controller_only and self.motor_topic != GUARDED_MOTOR_TOPIC:
-            raise ValueError(f'controller_only requires motor_topic={GUARDED_MOTOR_TOPIC}')
+            raise ValueError(
+                f"controller_only requires motor_topic={GUARDED_MOTOR_TOPIC}"
+            )
 
         # Initialize hardware board interface
         self.board = Board(
@@ -104,26 +147,36 @@ class RosRobotController(Node):
         self._last_motor_cmd_time = None
 
         # Heartbeat communication channels (inherited pipe FD or UNIX domain socket)
-        bridge_fd_str = os.environ.get('UBUNTU_TANK_BRIDGE_HEARTBEAT_FD') or os.environ.get('UBUNTU_TANK_BRIDGE_PIPE_FD')
-        self.bridge_pipe_fd = int(bridge_fd_str) if bridge_fd_str and bridge_fd_str.isdigit() else None
-        self.bridge_sock_path = os.environ.get('UBUNTU_TANK_BRIDGE_SOCK', '/run/ubuntu_tank/bridge_heartbeat.sock')
+        bridge_fd_str = os.environ.get(
+            "UBUNTU_TANK_BRIDGE_HEARTBEAT_FD"
+        ) or os.environ.get("UBUNTU_TANK_BRIDGE_PIPE_FD")
+        self.bridge_pipe_fd = (
+            int(bridge_fd_str) if bridge_fd_str and bridge_fd_str.isdigit() else None
+        )
+        self.bridge_sock_path = os.environ.get(
+            "UBUNTU_TANK_BRIDGE_SOCK", "/run/ubuntu_tank/bridge_heartbeat.sock"
+        )
 
-        bridge_pid_file = os.environ.get('UBUNTU_TANK_BRIDGE_PID_FILE', '/run/ubuntu_tank/bridge.pid')
+        bridge_pid_file = os.environ.get(
+            "UBUNTU_TANK_BRIDGE_PID_FILE", "/run/ubuntu_tank/bridge.pid"
+        )
         if os.path.exists(os.path.dirname(bridge_pid_file)):
             try:
-                with open(bridge_pid_file, 'w', encoding='utf-8') as pf:
+                with open(bridge_pid_file, "w", encoding="utf-8") as pf:
                     pf.write(str(os.getpid()))
             except Exception:
                 pass
 
         # Telemetry battery publisher (always available)
-        self.battery_pub = self.create_publisher(UInt16, '~/battery', 1)
+        self.battery_pub = self.create_publisher(UInt16, "~/battery", 1)
 
         # Motor command subscription (remapped to guarded output by default)
-        self.create_subscription(MotorsState, self.motor_topic, self.set_motor_state, 10)
+        self.create_subscription(
+            MotorsState, self.motor_topic, self.set_motor_state, 10
+        )
 
         # Read-only readiness service remains available in controller-only mode.
-        self.create_service(Trigger, '~/init_finish', self.get_node_state)
+        self.create_service(Trigger, "~/init_finish", self.get_node_state)
 
         if self.controller_only:
             # Dedicated battery telemetry polling in controller-only mode (1 Hz)
@@ -131,21 +184,38 @@ class RosRobotController(Node):
             self.battery_timer = self.create_timer(1.0, self._battery_timer_callback)
         else:
             # Legacy peripherals publishers and subscriptions
-            self.imu_pub = self.create_publisher(Imu, '~/imu_raw', 1)
-            self.joy_pub = self.create_publisher(Joy, '~/joy', 1)
-            self.sbus_pub = self.create_publisher(Sbus, '~/sbus', 1)
-            self.button_pub = self.create_publisher(ButtonState, '~/button', 1)
-            self.create_subscription(LedState, '~/set_led', self.set_led_state, 5)
-            self.create_subscription(BuzzerState, '~/set_buzzer', self.set_buzzer_state, 5)
-            self.create_subscription(OLEDState, '~/set_oled', self.set_oled_state, 5)
-            self.create_subscription(Bool, '~/enable_reception', self.enable_reception, 1)
-            self.create_subscription(SetBusServoState, '~/bus_servo/set_state', self.set_bus_servo_state, 10)
-            self.create_subscription(ServosPosition, '~/bus_servo/set_position', self.set_bus_servo_position, 10)
-            self.create_subscription(SetPWMServoState, '~/pwm_servo/set_state', self.set_pwm_servo_state, 10)
-            self.create_service(GetBusServoState, '~/bus_servo/get_state', self.get_bus_servo_state)
-            self.create_service(GetPWMServoState, '~/pwm_servo/get_state', self.get_pwm_servo_state)
-            self.create_service(Trigger, '~/set_machine_type', self.set_machine_type)
-            self.create_subscription(RGBStates, '~/set_rgb', self.set_rgb_states, 10)
+            self.imu_pub = self.create_publisher(Imu, "~/imu_raw", 1)
+            self.joy_pub = self.create_publisher(Joy, "~/joy", 1)
+            self.sbus_pub = self.create_publisher(Sbus, "~/sbus", 1)
+            self.button_pub = self.create_publisher(ButtonState, "~/button", 1)
+            self.create_subscription(LedState, "~/set_led", self.set_led_state, 5)
+            self.create_subscription(
+                BuzzerState, "~/set_buzzer", self.set_buzzer_state, 5
+            )
+            self.create_subscription(OLEDState, "~/set_oled", self.set_oled_state, 5)
+            self.create_subscription(
+                Bool, "~/enable_reception", self.enable_reception, 1
+            )
+            self.create_subscription(
+                SetBusServoState, "~/bus_servo/set_state", self.set_bus_servo_state, 10
+            )
+            self.create_subscription(
+                ServosPosition,
+                "~/bus_servo/set_position",
+                self.set_bus_servo_position,
+                10,
+            )
+            self.create_subscription(
+                SetPWMServoState, "~/pwm_servo/set_state", self.set_pwm_servo_state, 10
+            )
+            self.create_service(
+                GetBusServoState, "~/bus_servo/get_state", self.get_bus_servo_state
+            )
+            self.create_service(
+                GetPWMServoState, "~/pwm_servo/get_state", self.get_pwm_servo_state
+            )
+            self.create_service(Trigger, "~/set_machine_type", self.set_machine_type)
+            self.create_subscription(RGBStates, "~/set_rgb", self.set_rgb_states, 10)
 
             if self.load_servo_offsets_flag:
                 self.load_servo_offsets()
@@ -162,9 +232,14 @@ class RosRobotController(Node):
 
         # Supervisor heartbeat emission timer
         self.clock = self.get_clock()
-        self.heartbeat_timer = self.create_timer(self.heartbeat_interval_sec, self._emit_heartbeat)
+        self.heartbeat_timer = self.create_timer(
+            self.heartbeat_interval_sec, self._emit_heartbeat
+        )
 
-        self.get_logger().info('ros_robot_controller initialized (controller_only=%s)' % self.controller_only)
+        self.get_logger().info(
+            "ros_robot_controller initialized (controller_only=%s)"
+            % self.controller_only
+        )
 
     def _battery_timer_callback(self):
         """Poll and publish battery telemetry in controller-only mode."""
@@ -182,7 +257,7 @@ class RosRobotController(Node):
                 self.get_logger().fatal(f"FATAL: {reason}; stopping graph")
             except Exception:
                 pass
-            if hasattr(self, 'heartbeat_timer') and self.heartbeat_timer is not None:
+            if hasattr(self, "heartbeat_timer") and self.heartbeat_timer is not None:
                 try:
                     self.heartbeat_timer.cancel()
                 except Exception:
@@ -196,7 +271,7 @@ class RosRobotController(Node):
     def _motor_watchdog_step(self):
         """Check monotonic freshness and board errors; enter fatal shutdown on expiry."""
         with self._motor_lock:
-            board_error = getattr(self.board, 'fatal_error', None)
+            board_error = getattr(self.board, "fatal_error", None)
             if board_error is not None:
                 self._enter_fatal_fault(str(board_error))
                 return
@@ -216,12 +291,12 @@ class RosRobotController(Node):
     def _emit_heartbeat(self):
         """Emit monotonic timestamp heartbeat to supervisor."""
         with self._motor_lock:
-            board_error = getattr(self.board, 'fatal_error', None)
+            board_error = getattr(self.board, "fatal_error", None)
             if board_error is not None:
                 self._enter_fatal_fault(str(board_error))
             if self._fatal_fault or self._shutting_down:
                 return
-        payload = f"{time.monotonic()}\n".encode('ascii')
+        payload = f"{time.monotonic()}\n".encode("ascii")
         if self.bridge_pipe_fd is not None:
             try:
                 os.write(self.bridge_pipe_fd, payload)
@@ -243,14 +318,18 @@ class RosRobotController(Node):
             self._shutting_down = True
             self.running = False
             try:
-                self.get_logger().info("Initiating signal-safe bridge shutdown and motor zeroing...")
+                self.get_logger().info(
+                    "Initiating signal-safe bridge shutdown and motor zeroing..."
+                )
             except Exception:
                 pass
             try:
                 self.board.zero_motors(count=4)
             except Exception as e:
                 try:
-                    self.get_logger().error(f"Error zeroing motors during bridge shutdown: {e}")
+                    self.get_logger().error(
+                        f"Error zeroing motors during bridge shutdown: {e}"
+                    )
                 except Exception:
                     pass
             finally:
@@ -265,14 +344,16 @@ class RosRobotController(Node):
         """
         config_path = self.servo_config_file
         if not os.path.exists(config_path):
-            self.get_logger().warn(f"Servo config file not found: {config_path}")
+            self.get_logger().warning(f"Servo config file not found: {config_path}")
             return
         try:
-            with open(config_path, 'r', encoding='utf-8') as file:
+            with open(config_path, "r", encoding="utf-8") as file:
                 config = yaml.safe_load(file)
 
             if not isinstance(config, dict):
-                self.get_logger().error(f"YAML config format error: {config_path}, expected dict.")
+                self.get_logger().error(
+                    f"YAML config format error: {config_path}, expected dict."
+                )
                 return
 
             for servo_id in range(1, 5):
@@ -280,7 +361,9 @@ class RosRobotController(Node):
                 try:
                     self.board.pwm_servo_set_offset(servo_id, offset)
                 except Exception as e:
-                    self.get_logger().error(f"Error setting servo {servo_id} offset: {e}")
+                    self.get_logger().error(
+                        f"Error setting servo {servo_id} offset: {e}"
+                    )
 
         except Exception as e:
             self.get_logger().error(f"Error loading servo config {config_path}: {e}")
@@ -292,12 +375,12 @@ class RosRobotController(Node):
     def set_machine_type(self, request, response):
         self.send_machine_type()
         response.success = True
-        response.message = 'FINISH!!!'
+        response.message = "FINISH!!!"
         return response
-        
+
     def pub_callback(self):
         while self.running:
-            if getattr(self, 'enable_reception', False):
+            if getattr(self, "enable_reception", False):
                 self.pub_button_data(self.button_pub)
                 self.pub_joy_data(self.joy_pub)
                 self.pub_imu_data(self.imu_pub)
@@ -309,7 +392,9 @@ class RosRobotController(Node):
         rclpy.shutdown()
 
     def enable_reception(self, msg):
-        self.get_logger().info('\033[1;32m%s\033[0m' % ('enable_reception ' + str(msg.data)))
+        self.get_logger().info(
+            "\033[1;32m%s\033[0m" % ("enable_reception " + str(msg.data))
+        )
         self.enable_reception = msg.data
         self.board.enable_reception(msg.data)
 
@@ -318,7 +403,7 @@ class RosRobotController(Node):
 
     def set_buzzer_state(self, msg):
         self.board.set_buzzer(msg.freq, msg.on_time, msg.off_time, msg.repeat)
-    
+
     def set_rgb_states(self, msg):
         pixels = []
         for state in msg.states:
@@ -328,12 +413,14 @@ class RosRobotController(Node):
     def set_motor_state(self, msg):
         with self._motor_lock:
             if self._fatal_fault or self._shutting_down:
-                self.get_logger().error("Bridge in fatal fault state; dropping motor command")
+                self.get_logger().error(
+                    "Bridge in fatal fault state; dropping motor command"
+                )
                 return
             data = []
             for i in msg.data:
                 data.extend([[i.id, i.rps]])
-            is_moving = any(abs(float(getattr(i, 'rps', 0.0))) > 1e-4 for i in msg.data)
+            is_moving = any(abs(float(getattr(i, "rps", 0.0))) > 1e-4 for i in msg.data)
             try:
                 self.board.set_motor_speed(data)
                 # Advance freshness timestamp ONLY for active motion after successful write
@@ -341,7 +428,9 @@ class RosRobotController(Node):
                     if is_moving:
                         self._last_motor_cmd_time = time.monotonic()
                     else:
-                        self._last_motor_cmd_time = None  # Stationary; no active motion lease to expire
+                        self._last_motor_cmd_time = (
+                            None  # Stationary; no active motion lease to expire
+                        )
             except Exception as e:
                 self._enter_fatal_fault(f"Serial write error in bridge: {e}")
 
@@ -360,22 +449,23 @@ class RosRobotController(Node):
             self.board.pwm_servo_set_position(msg.duration, data)
 
     def send_machine_type(self):
-        if 'Tank' in self.machine_type:
+        if "Tank" in self.machine_type:
             self.motor_type = 0x01
-            self.battery_level = 0x1af4
+            self.battery_level = 0x1AF4
         else:
             self.motor_type = 0x01
-            self.battery_level = 0x1af4
+            self.battery_level = 0x1AF4
         if self.motor_type is not None:
             for _ in range(2):
                 try:
                     self.board.set_motor_type(self.motor_type)
                     self.board.set_battery_level(self.battery_level)
                 except Exception as e:
-                    self.get_logger().warn(f"Failed to send machine type to board: {e}")
+                    self.get_logger().warning(
+                        f"Failed to send machine type to board: {e}"
+                    )
         else:
-            self.get_logger().info('Please Set the machine_type')
-
+            self.get_logger().info("Please Set the machine_type")
 
     def get_pwm_servo_state(self, msg):
         states = []
@@ -413,19 +503,29 @@ class RosRobotController(Node):
                             data.extend([[i.present_id[1], i.position[1]]])
                     if i.offset:
                         if i.offset[0]:
-                            self.board.bus_servo_set_offset(i.present_id[1], i.offset[1])
+                            self.board.bus_servo_set_offset(
+                                i.present_id[1], i.offset[1]
+                            )
                     if i.position_limit:
                         if i.position_limit[0]:
-                            self.board.bus_servo_set_angle_limit(i.present_id[1], i.position_limit[1:])
+                            self.board.bus_servo_set_angle_limit(
+                                i.present_id[1], i.position_limit[1:]
+                            )
                     if i.voltage_limit:
                         if i.voltage_limit[0]:
-                            self.board.bus_servo_set_vin_limit(i.present_id[1], i.voltage_limit[1:])
+                            self.board.bus_servo_set_vin_limit(
+                                i.present_id[1], i.voltage_limit[1:]
+                            )
                     if i.max_temperature_limit:
                         if i.max_temperature_limit[0]:
-                            self.board.bus_servo_set_temp_limit(i.present_id[1], i.max_temperature_limit[1])
+                            self.board.bus_servo_set_temp_limit(
+                                i.present_id[1], i.max_temperature_limit[1]
+                            )
                     if i.enable_torque:
                         if i.enable_torque[0]:
-                            self.board.bus_servo_enable_torque(i.present_id[1], i.enable_torque[1])
+                            self.board.bus_servo_enable_torque(
+                                i.present_id[1], i.enable_torque[1]
+                            )
                     if i.save_offset:
                         if i.save_offset[0]:
                             self.board.bus_servo_save_offset(i.present_id[1])
@@ -434,7 +534,7 @@ class RosRobotController(Node):
                             servo_id.append(i.present_id[1])
         if data != []:
             self.board.bus_servo_set_position(msg.duration, data)
-        if servo_id != []:    
+        if servo_id != []:
             self.board.bus_servo_stop(servo_id)
 
     def get_bus_servo_state(self, request, response):
@@ -552,23 +652,48 @@ class RosRobotController(Node):
             msg.angular_velocity.y = math.radians(gy)
             msg.angular_velocity.z = math.radians(gz)
 
-            msg.orientation_covariance = [0.01, 0.0, 0.0,
-                                          0.0, 0.01, 0.0,
-                                          0.0, 0.0, 0.01]
-            msg.angular_velocity_covariance = [0.01, 0.0, 0.0,
-                                              0.0, 0.01, 0.0,
-                                              0.0, 0.0, 0.01]
-            msg.linear_acceleration_covariance = [0.0004, 0.0, 0.0,
-                                                 0.0, 0.0004, 0.0,
-                                                 0.0, 0.0, 0.004]
+            msg.orientation_covariance = [
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
+            ]
+            msg.angular_velocity_covariance = [
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
+            ]
+            msg.linear_acceleration_covariance = [
+                0.0004,
+                0.0,
+                0.0,
+                0.0,
+                0.0004,
+                0.0,
+                0.0,
+                0.0,
+                0.004,
+            ]
             pub.publish(msg)
+
 
 def main(args=None):
     if not rclpy.ok():
         rclpy.init(args=args)
     node = None
     try:
-        node = RosRobotController('ros_robot_controller')
+        node = RosRobotController("ros_robot_controller")
         rclpy.spin(node)
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
@@ -578,7 +703,8 @@ def main(args=None):
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-        print('shutdown finish')
+        print("shutdown finish")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -581,7 +581,7 @@ class BenchAcceptanceOrchestrator:
                 node = StatusClientNode(
                     node_name="status_client_battery_check", context=status_context
                 )
-                stat = node.collect_status(timeout_sec=2.0)
+                stat = node.collect_status(timeout_sec=3.0)
                 voltage_mv = stat.get("battery_mv")
                 if voltage_mv is None:
                     return (

@@ -1,3 +1,8 @@
+"""
+Unit test suite for host preflight, mutual exclusion, lock verification, and dry-run
+flows.
+"""
+
 # test_install_workflow.py - Unit tests for Milestone 2 host preflight, mutual exclusion, and lock verification
 import os
 import sys

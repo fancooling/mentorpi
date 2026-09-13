@@ -1,3 +1,7 @@
+"""
+Install the ubuntu_tank_supervisor Python package and its supported ROS entry points.
+"""
+
 from setuptools import setup
 
 package_name = "ubuntu_tank_supervisor"

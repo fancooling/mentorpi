@@ -18,9 +18,9 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
   authored Python code using `.venv/bin/ruff format <files>`, format modified
   authored shell scripts using `.venv/bin/shfmt -i 2 -ci -w <files>` and verify
   with `.venv/bin/shellcheck <files>`, ensure `git diff --check` reports zero
-  whitespace or formatting errors, and update `source-manifest.txt` hashes if
-  tracked files were modified.
-- Never reformat vendor files marked `identical` to preserve provenance parity.
+  whitespace or formatting errors. Keep file-level purpose/rationale and vendor
+  origin/adaptation documentation current; Git records source revisions.
+- Preserve vendor copyright/license notices and avoid unrelated vendor-code reformatting.
 - Every commit must include an informational body explaining what changed and
   why, including relevant operational effects and validation. Keep that body
   current when incorporating review revisions.

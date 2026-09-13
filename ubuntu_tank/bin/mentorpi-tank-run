@@ -28,7 +28,10 @@ import yaml
 
 # Import configuration validation helper
 bin_dir = os.path.dirname(os.path.abspath(__file__))
-for cand in [os.path.join(bin_dir, "..", "scripts"), os.path.join(bin_dir, "..", "libexec")]:
+for cand in [
+    os.path.join(bin_dir, "..", "scripts"),
+    os.path.join(bin_dir, "..", "libexec"),
+]:
     if os.path.isdir(cand) and cand not in sys.path:
         sys.path.insert(0, cand)
 
@@ -44,7 +47,9 @@ try:
     from deployment_manager import check_hardware_mutual_exclusion
 except ImportError:
     try:
-        from ubuntu_tank.scripts.deployment_manager import check_hardware_mutual_exclusion
+        from ubuntu_tank.scripts.deployment_manager import (
+            check_hardware_mutual_exclusion,
+        )
     except ImportError:
         check_hardware_mutual_exclusion = None
 
@@ -55,18 +60,20 @@ def parse_env_file(filepath: str) -> Dict[str, str]:
     if not os.path.isfile(filepath):
         return env
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#'):
+                if not line or line.startswith("#"):
                     continue
-                if '=' in line:
-                    k, v = line.split('=', 1)
+                if "=" in line:
+                    k, v = line.split("=", 1)
                     k = k.strip()
                     v = v.strip().strip("'\"")
                     env[k] = v
     except Exception as e:
-        sys.stderr.write(f"[mentorpi-tank-run] Warning: failed to read {filepath}: {e}\n")
+        sys.stderr.write(
+            f"[mentorpi-tank-run] Warning: failed to read {filepath}: {e}\n"
+        )
     return env
 
 
@@ -78,13 +85,17 @@ def source_bash_environment(script_paths: List[str]) -> Dict[str, str]:
     cmd_parts = []
     for s in existing_scripts:
         cmd_parts.append(f'. "{s}" >/dev/null 2>&1')
-    cmd_parts.append("python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'")
+    cmd_parts.append(
+        "python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'"
+    )
     full_cmd = " && ".join(cmd_parts)
     try:
-        out = subprocess.check_output(['bash', '-c', full_cmd], text=True, timeout=10.0)
+        out = subprocess.check_output(["bash", "-c", full_cmd], text=True, timeout=10.0)
         return json.loads(out)
     except Exception as e:
-        sys.stderr.write(f"[mentorpi-tank-run] Warning: failed to source bash environments: {e}\n")
+        sys.stderr.write(
+            f"[mentorpi-tank-run] Warning: failed to source bash environments: {e}\n"
+        )
         return {}
 
 
@@ -103,12 +114,12 @@ def parse_timestamp(data: bytes) -> Optional[float]:
     ts = None
     if len(data) == 8:
         try:
-            ts = struct.unpack('d', data)[0]
+            ts = struct.unpack("d", data)[0]
         except Exception:
             ts = None
     if ts is None:
         try:
-            s = data.decode('utf-8').strip()
+            s = data.decode("utf-8").strip()
             ts = float(s)
         except Exception:
             return None
@@ -125,7 +136,7 @@ def validate_heartbeat(
     expected_uid: int,
     now_mono: float,
     last_accepted_ts: Optional[float],
-    deadline_sec: float
+    deadline_sec: float,
 ) -> Tuple[bool, Optional[float], str]:
     """
     Strict credential and monotonic freshness validation for supervisor heartbeats.
@@ -135,70 +146,98 @@ def validate_heartbeat(
     if uid is None:
         return False, None, f"Credential rejection: missing peer UID for {sender_name}"
     if uid != expected_uid:
-        return False, None, f"Credential rejection: UID {uid} does not match expected {expected_uid}"
+        return (
+            False,
+            None,
+            f"Credential rejection: UID {uid} does not match expected {expected_uid}",
+        )
 
     if expected_pid is not None:
         if pid is None or pid != expected_pid:
-            return False, None, f"Credential rejection: PID {pid} does not match expected {expected_pid}"
+            return (
+                False,
+                None,
+                f"Credential rejection: PID {pid} does not match expected {expected_pid}",
+            )
     elif pid is None:
         return False, None, f"Credential rejection: missing peer PID for {sender_name}"
 
     ts = parse_timestamp(msg)
     if ts is None:
-        return False, None, f"Payload rejection: non-finite, negative, or malformed timestamp for {sender_name}"
+        return (
+            False,
+            None,
+            f"Payload rejection: non-finite, negative, or malformed timestamp for {sender_name}",
+        )
 
     # Future timestamp check (small tolerance for process scheduling)
     if ts > now_mono + 1.0:
-        return False, None, f"Freshness rejection: timestamp {ts:.3f} is in the future relative to {now_mono:.3f}"
+        return (
+            False,
+            None,
+            f"Freshness rejection: timestamp {ts:.3f} is in the future relative to {now_mono:.3f}",
+        )
 
     # Stale timestamp check
     age = now_mono - ts
     if age > deadline_sec:
-        return False, None, f"Freshness rejection: heartbeat age {age:.3f}s exceeds deadline {deadline_sec:.3f}s"
+        return (
+            False,
+            None,
+            f"Freshness rejection: heartbeat age {age:.3f}s exceeds deadline {deadline_sec:.3f}s",
+        )
 
     # Monotonic order check
     if last_accepted_ts is not None and ts < last_accepted_ts:
-        return False, None, f"Freshness rejection: timestamp {ts:.3f} is older than last accepted {last_accepted_ts:.3f}"
+        return (
+            False,
+            None,
+            f"Freshness rejection: timestamp {ts:.3f} is older than last accepted {last_accepted_ts:.3f}",
+        )
 
     return True, ts, f"Accepted heartbeat for {sender_name}"
 
 
 def send_systemd_notify(message: str, notify_sock_path: Optional[str] = None):
     """Send sd_notify datagram to systemd."""
-    sock_path = notify_sock_path or os.environ.get('NOTIFY_SOCKET')
+    sock_path = notify_sock_path or os.environ.get("NOTIFY_SOCKET")
     if not sock_path:
         return
     try:
-        if sock_path.startswith('@'):
-            sock_path = '\0' + sock_path[1:]
+        if sock_path.startswith("@"):
+            sock_path = "\0" + sock_path[1:]
         s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         s.connect(sock_path)
-        s.sendall(message.encode('utf-8'))
+        s.sendall(message.encode("utf-8"))
         s.close()
     except Exception as e:
-        sys.stderr.write(f"[mentorpi-tank-run] Failed to send systemd notification '{message}': {e}\n")
+        sys.stderr.write(
+            f"[mentorpi-tank-run] Failed to send systemd notification '{message}': {e}\n"
+        )
 
 
 def verify_runtime_paths(current_dir: str) -> bool:
     """Verify that current release and configuration files exist."""
-    install_dir = os.path.join(current_dir, 'install')
+    install_dir = os.path.join(current_dir, "install")
     if not os.path.isdir(install_dir):
         sys.stderr.write(f"ERROR: Install directory missing: {install_dir}\n")
         return False
-    setup_file = os.path.join(install_dir, 'setup.bash')
+    setup_file = os.path.join(install_dir, "setup.bash")
     if not os.path.isfile(setup_file):
         sys.stderr.write(f"ERROR: setup.bash missing in install tree: {setup_file}\n")
         return False
     return True
 
 
-def load_and_validate_host_config(config_path: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+def load_and_validate_host_config(
+    config_path: str,
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
     """Load and validate host controller configuration."""
     if not os.path.isfile(config_path):
         return None, [f"Configuration file does not exist: '{config_path}'"]
 
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
     except Exception as e:
         return None, [f"Failed to parse YAML configuration: {e}"]
@@ -213,10 +252,7 @@ def load_and_validate_host_config(config_path: str) -> Tuple[Optional[Dict[str, 
 
 def build_launch_arguments(cfg: Optional[Dict[str, Any]]) -> List[str]:
     """Convert controller.yaml configuration into ros2 launch arguments."""
-    args = [
-        'controller_only:=true',
-        'localhost_only:=1'
-    ]
+    args = ["controller_only:=true", "localhost_only:=1"]
     if not cfg:
         return args
 
@@ -285,22 +321,29 @@ def main():
         description="MentorPi Tank Native Controller Service Runner"
     )
     parser.add_argument(
-        '--check', '--verify', action='store_true',
-        help="Verify installed tree and environment without running"
+        "--check",
+        "--verify",
+        action="store_true",
+        help="Verify installed tree and environment without running",
     )
     parser.add_argument(
-        '--dry-run', action='store_true',
-        help="Simulate launch and supervisor without mutating system"
+        "--dry-run",
+        action="store_true",
+        help="Simulate launch and supervisor without mutating system",
     )
     args = parser.parse_args()
 
     # Determine release root directory
     bin_dir = os.path.abspath(os.path.dirname(__file__))
-    current_dir = os.path.abspath(os.path.join(bin_dir, '..'))
+    current_dir = os.path.abspath(os.path.join(bin_dir, ".."))
 
     # 0. Preflight check: coordinate startup with deployment lock and require clean journal
-    lock_path = os.environ.get('UBUNTU_TANK_LOCK_FILE', '/run/lock/ubuntu_tank/deploy.lock')
-    journal_path = os.environ.get('UBUNTU_TANK_JOURNAL_FILE', '/var/opt/ubuntu_tank/deployment/activation-journal')
+    lock_path = os.environ.get(
+        "UBUNTU_TANK_LOCK_FILE", "/run/lock/ubuntu_tank/deploy.lock"
+    )
+    journal_path = os.environ.get(
+        "UBUNTU_TANK_JOURNAL_FILE", "/var/opt/ubuntu_tank/deployment/activation-journal"
+    )
 
     # Acquire shared deployment coordination lock for startup transition
     startup_lock_fd = None
@@ -346,7 +389,7 @@ def main():
     dep_dir = os.path.dirname(journal_path)
     if os.path.exists(journal_path):
         try:
-            with open(journal_path, 'r', encoding='utf-8') as f:
+            with open(journal_path, "r", encoding="utf-8") as f:
                 jdata = json.load(f)
             if not isinstance(jdata, dict) or "format_version" not in jdata:
                 sys.stderr.write(
@@ -373,7 +416,9 @@ def main():
             sys.stderr.flush()
             release_startup_lock()
             sys.exit(1)
-    elif os.path.exists(dep_dir) or os.path.islink(os.path.join(os.path.dirname(current_dir), "current")):
+    elif os.path.exists(dep_dir) or os.path.islink(
+        os.path.join(os.path.dirname(current_dir), "current")
+    ):
         sys.stderr.write(
             f"[mentorpi-tank-run] FATAL: Activation journal missing at '{journal_path}'. "
             "Cannot start controller without verified activation state. Failing closed.\n"
@@ -383,33 +428,35 @@ def main():
         sys.exit(1)
 
     # 1. Load host environment file
-    env_file = os.environ.get('UBUNTU_TANK_ENV_FILE', '/etc/opt/ubuntu_tank/mentorpi-tank.env')
+    env_file = os.environ.get(
+        "UBUNTU_TANK_ENV_FILE", "/etc/opt/ubuntu_tank/mentorpi-tank.env"
+    )
     host_env = parse_env_file(env_file)
     for k, v in host_env.items():
         if k not in os.environ:
             os.environ[k] = v
 
     # 2. Source ROS 2 Lyrical and release install environments
-    lyrical_setup = os.environ.get('ROS_SETUP', '/opt/ros/lyrical/setup.bash')
-    release_setup = os.path.join(current_dir, 'install', 'setup.bash')
+    lyrical_setup = os.environ.get("ROS_SETUP", "/opt/ros/lyrical/setup.bash")
+    release_setup = os.path.join(current_dir, "install", "setup.bash")
     sourced_env = source_bash_environment([lyrical_setup, release_setup])
     for k, v in sourced_env.items():
         os.environ[k] = v
 
     # 3. Enforce security and isolation invariants
-    os.environ['ROS_LOCALHOST_ONLY'] = '1'
-    log_dir = os.environ.get('ROS_LOG_DIR', '/var/opt/ubuntu_tank/ros-log')
-    os.environ['ROS_LOG_DIR'] = log_dir
+    os.environ["ROS_LOCALHOST_ONLY"] = "1"
+    log_dir = os.environ.get("ROS_LOG_DIR", "/var/opt/ubuntu_tank/ros-log")
+    os.environ["ROS_LOG_DIR"] = log_dir
     try:
         os.makedirs(log_dir, exist_ok=True)
     except Exception:
         pass
 
     # 4. Load, validate, and apply host controller safety configuration
-    default_config = '/etc/opt/ubuntu_tank/controller.yaml'
-    fallback_config = os.path.join(current_dir, 'config', 'controller.yaml')
-    if 'UBUNTU_TANK_CONFIG' in os.environ:
-        config_path = os.environ['UBUNTU_TANK_CONFIG']
+    default_config = "/etc/opt/ubuntu_tank/controller.yaml"
+    fallback_config = os.path.join(current_dir, "config", "controller.yaml")
+    if "UBUNTU_TANK_CONFIG" in os.environ:
+        config_path = os.environ["UBUNTU_TANK_CONFIG"]
     elif os.path.isfile(default_config):
         config_path = default_config
     elif os.path.isfile(fallback_config):
@@ -421,7 +468,8 @@ def main():
     if cfg_errors:
         sys.stderr.write(
             f"[mentorpi-tank-run] FATAL: Host configuration at '{config_path}' failed validation:\n"
-            + "\n".join(f"  - {e}" for e in cfg_errors) + "\n"
+            + "\n".join(f"  - {e}" for e in cfg_errors)
+            + "\n"
         )
         sys.stderr.flush()
         release_startup_lock()
@@ -434,7 +482,8 @@ def main():
         if not ok:
             sys.stderr.write(
                 "[mentorpi-tank-run] FATAL: Hardware mutual exclusion check failed:\n"
-                + "\n".join(f"  - {e}" for e in exc_errors) + "\n"
+                + "\n".join(f"  - {e}" for e in exc_errors)
+                + "\n"
             )
             sys.stderr.flush()
             release_startup_lock()
@@ -444,38 +493,70 @@ def main():
 
     # Supervisor configuration from controller.yaml
     sv_cfg = (cfg or {}).get("supervisor", {})
-    guard_deadline = float(sv_cfg.get("guard_deadline_sec", os.environ.get('UBUNTU_TANK_GUARD_DEADLINE', '1.0')))
-    bridge_deadline = float(sv_cfg.get("bridge_deadline_sec", os.environ.get('UBUNTU_TANK_BRIDGE_DEADLINE', '1.0')))
-    check_interval = float(sv_cfg.get("check_interval_sec", '0.200'))
+    guard_deadline = float(
+        sv_cfg.get(
+            "guard_deadline_sec", os.environ.get("UBUNTU_TANK_GUARD_DEADLINE", "1.0")
+        )
+    )
+    bridge_deadline = float(
+        sv_cfg.get(
+            "bridge_deadline_sec", os.environ.get("UBUNTU_TANK_BRIDGE_DEADLINE", "1.0")
+        )
+    )
+    check_interval = float(sv_cfg.get("check_interval_sec", "0.200"))
 
     expected_uid = os.geteuid()
-    expected_guard_pid_str = os.environ.get('UBUNTU_TANK_GUARD_PID')
-    expected_bridge_pid_str = os.environ.get('UBUNTU_TANK_BRIDGE_PID')
-    guard_pid_file = os.environ.get('UBUNTU_TANK_GUARD_PID_FILE', '/run/ubuntu_tank/guard.pid')
-    bridge_pid_file = os.environ.get('UBUNTU_TANK_BRIDGE_PID_FILE', '/run/ubuntu_tank/bridge.pid')
+    expected_guard_pid_str = os.environ.get("UBUNTU_TANK_GUARD_PID")
+    expected_bridge_pid_str = os.environ.get("UBUNTU_TANK_BRIDGE_PID")
+    guard_pid_file = os.environ.get(
+        "UBUNTU_TANK_GUARD_PID_FILE", "/run/ubuntu_tank/guard.pid"
+    )
+    bridge_pid_file = os.environ.get(
+        "UBUNTU_TANK_BRIDGE_PID_FILE", "/run/ubuntu_tank/bridge.pid"
+    )
 
-    expected_guard_pid = int(expected_guard_pid_str) if expected_guard_pid_str and expected_guard_pid_str.isdigit() else None
-    expected_bridge_pid = int(expected_bridge_pid_str) if expected_bridge_pid_str and expected_bridge_pid_str.isdigit() else None
+    expected_guard_pid = (
+        int(expected_guard_pid_str)
+        if expected_guard_pid_str and expected_guard_pid_str.isdigit()
+        else None
+    )
+    expected_bridge_pid = (
+        int(expected_bridge_pid_str)
+        if expected_bridge_pid_str and expected_bridge_pid_str.isdigit()
+        else None
+    )
 
     if args.check:
         release_startup_lock()
         if verify_runtime_paths(current_dir):
-            print(f"[mentorpi-tank-run] Release runtime paths and configuration verified at {current_dir}")
+            print(
+                f"[mentorpi-tank-run] Release runtime paths and configuration verified at {current_dir}"
+            )
             sys.exit(0)
         else:
             sys.exit(1)
 
-    guard_sock_path = os.environ.get('UBUNTU_TANK_GUARD_SOCK', '/run/ubuntu_tank/guard_heartbeat.sock')
-    bridge_sock_path = os.environ.get('UBUNTU_TANK_BRIDGE_SOCK', '/run/ubuntu_tank/bridge_heartbeat.sock')
+    guard_sock_path = os.environ.get(
+        "UBUNTU_TANK_GUARD_SOCK", "/run/ubuntu_tank/guard_heartbeat.sock"
+    )
+    bridge_sock_path = os.environ.get(
+        "UBUNTU_TANK_BRIDGE_SOCK", "/run/ubuntu_tank/bridge_heartbeat.sock"
+    )
 
     if args.dry_run:
         release_startup_lock()
-        print("[mentorpi-tank-run:dry-run] Host environment and launch parameters verified.")
+        print(
+            "[mentorpi-tank-run:dry-run] Host environment and launch parameters verified."
+        )
         print(f"[mentorpi-tank-run:dry-run] Release directory: {current_dir}")
         print(f"[mentorpi-tank-run:dry-run] Configuration file: {config_path}")
         print(f"[mentorpi-tank-run:dry-run] Launch arguments: {' '.join(launch_args)}")
-        print(f"[mentorpi-tank-run:dry-run] Guard socket: {guard_sock_path} (deadline={guard_deadline}s)")
-        print(f"[mentorpi-tank-run:dry-run] Bridge socket: {bridge_sock_path} (deadline={bridge_deadline}s)")
+        print(
+            f"[mentorpi-tank-run:dry-run] Guard socket: {guard_sock_path} (deadline={guard_deadline}s)"
+        )
+        print(
+            f"[mentorpi-tank-run:dry-run] Bridge socket: {bridge_sock_path} (deadline={bridge_deadline}s)"
+        )
         sys.exit(0)
 
     # Clean up stale sockets
@@ -505,20 +586,25 @@ def main():
     os.chmod(bridge_sock_path, 0o660)
 
     # Launch ROS bringup graph as a supervised child process
-    override_child = os.environ.get('_UBUNTU_TANK_TEST_CHILD_CMD')
+    override_child = os.environ.get("_UBUNTU_TANK_TEST_CHILD_CMD")
     if override_child:
         import shlex
+
         launch_cmd = shlex.split(override_child)
     else:
-        launch_cmd = ['ros2', 'launch', 'ubuntu_tank_bringup', 'tank.launch.py'] + launch_args
-    sys.stdout.write(f"[mentorpi-tank-run] Launching ROS graph: {' '.join(launch_cmd)}\n")
+        launch_cmd = [
+            "ros2",
+            "launch",
+            "ubuntu_tank_bringup",
+            "tank.launch.py",
+        ] + launch_args
+    sys.stdout.write(
+        f"[mentorpi-tank-run] Launching ROS graph: {' '.join(launch_cmd)}\n"
+    )
     sys.stdout.flush()
 
     child = subprocess.Popen(
-        launch_cmd,
-        env=os.environ.copy(),
-        stdout=sys.stdout,
-        stderr=sys.stderr
+        launch_cmd, env=os.environ.copy(), stdout=sys.stdout, stderr=sys.stderr
     )
 
     # Startup transition complete: release deployment coordination lock
@@ -530,7 +616,9 @@ def main():
 
     def handle_signal(sig, frame):
         nonlocal running, shutdown_requested
-        sys.stdout.write(f"[mentorpi-tank-run] Received shutdown signal {sig}, terminating gracefully...\n")
+        sys.stdout.write(
+            f"[mentorpi-tank-run] Received shutdown signal {sig}, terminating gracefully...\n"
+        )
         sys.stdout.flush()
         shutdown_requested = True
         running = False
@@ -538,15 +626,13 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    # Send READY=1 to systemd
-    send_systemd_notify("READY=1")
-
     # Supervisor state
     guard_last: Optional[float] = None
     guard_last_ts: Optional[float] = None
     bridge_last: Optional[float] = None
     bridge_last_ts: Optional[float] = None
     last_watchdog_ping = time.monotonic()
+    ready_notified = False
 
     poll_descriptors = [guard_sock, bridge_sock]
 
@@ -556,7 +642,9 @@ def main():
             ret = child.poll()
             if ret is not None:
                 child_exit_code = ret
-                sys.stderr.write(f"[mentorpi-tank-run] ROS bringup child process exited with code {ret}.\n")
+                sys.stderr.write(
+                    f"[mentorpi-tank-run] ROS bringup child process exited with code {ret}.\n"
+                )
                 break
 
             rlist, _, _ = select.select(poll_descriptors, [], [], check_interval)
@@ -566,9 +654,11 @@ def main():
                 if desc is guard_sock:
                     try:
                         msg, ancdata, _, _ = guard_sock.recvmsg(256, 256)
-                        if expected_guard_pid is None and os.path.isfile(guard_pid_file):
+                        if expected_guard_pid is None and os.path.isfile(
+                            guard_pid_file
+                        ):
                             try:
-                                with open(guard_pid_file, 'r', encoding='utf-8') as pf:
+                                with open(guard_pid_file, "r", encoding="utf-8") as pf:
                                     c = pf.read().strip()
                                     if c.isdigit():
                                         expected_guard_pid = int(c)
@@ -582,22 +672,28 @@ def main():
                             expected_uid=expected_uid,
                             now_mono=now,
                             last_accepted_ts=guard_last_ts,
-                            deadline_sec=guard_deadline
+                            deadline_sec=guard_deadline,
                         )
                         if ok and ts is not None:
                             guard_last = now
                             guard_last_ts = ts
                         else:
-                            sys.stderr.write(f"[mentorpi-tank-run] Warning: guard datagram rejected: {reason}\n")
+                            sys.stderr.write(
+                                f"[mentorpi-tank-run] Warning: guard datagram rejected: {reason}\n"
+                            )
                             sys.stderr.flush()
                     except Exception as e:
-                        sys.stderr.write(f"[mentorpi-tank-run] Error receiving guard heartbeat: {e}\n")
+                        sys.stderr.write(
+                            f"[mentorpi-tank-run] Error receiving guard heartbeat: {e}\n"
+                        )
                 elif desc is bridge_sock:
                     try:
                         msg, ancdata, _, _ = bridge_sock.recvmsg(256, 256)
-                        if expected_bridge_pid is None and os.path.isfile(bridge_pid_file):
+                        if expected_bridge_pid is None and os.path.isfile(
+                            bridge_pid_file
+                        ):
                             try:
-                                with open(bridge_pid_file, 'r', encoding='utf-8') as pf:
+                                with open(bridge_pid_file, "r", encoding="utf-8") as pf:
                                     c = pf.read().strip()
                                     if c.isdigit():
                                         expected_bridge_pid = int(c)
@@ -611,48 +707,72 @@ def main():
                             expected_uid=expected_uid,
                             now_mono=now,
                             last_accepted_ts=bridge_last_ts,
-                            deadline_sec=bridge_deadline
+                            deadline_sec=bridge_deadline,
                         )
                         if ok and ts is not None:
                             bridge_last = now
                             bridge_last_ts = ts
                         else:
-                            sys.stderr.write(f"[mentorpi-tank-run] Warning: bridge datagram rejected: {reason}\n")
+                            sys.stderr.write(
+                                f"[mentorpi-tank-run] Warning: bridge datagram rejected: {reason}\n"
+                            )
                             sys.stderr.flush()
                     except Exception as e:
-                        sys.stderr.write(f"[mentorpi-tank-run] Error receiving bridge heartbeat: {e}\n")
+                        sys.stderr.write(
+                            f"[mentorpi-tank-run] Error receiving bridge heartbeat: {e}\n"
+                        )
 
             # Evaluate AND-gated health periodically
             if now - last_watchdog_ping >= check_interval:
                 last_watchdog_ping = now
-                guard_ok = (guard_last is not None) and ((now - guard_last) <= guard_deadline)
-                bridge_ok = (bridge_last is not None) and ((now - bridge_last) <= bridge_deadline)
+                guard_ok = (guard_last is not None) and (
+                    (now - guard_last) <= guard_deadline
+                )
+                bridge_ok = (bridge_last is not None) and (
+                    (now - bridge_last) <= bridge_deadline
+                )
                 if guard_ok and bridge_ok:
+                    if not ready_notified:
+                        ready_notified = True
+                        send_systemd_notify("READY=1")
+                        sys.stdout.write(
+                            "[mentorpi-tank-run] Guard and bridge healthy. Systemd notified READY=1.\n"
+                        )
+                        sys.stdout.flush()
                     send_systemd_notify("WATCHDOG=1")
-                else:
+                elif ready_notified:
                     reasons = []
                     if not guard_ok:
                         reasons.append(f"guard timeout (last={guard_last})")
                     if not bridge_ok:
                         reasons.append(f"bridge timeout (last={bridge_last})")
-                    sys.stderr.write(f"[mentorpi-tank-run] Watchdog ping withheld: {', '.join(reasons)}\n")
+                    sys.stderr.write(
+                        f"[mentorpi-tank-run] Watchdog ping withheld: {', '.join(reasons)}\n"
+                    )
                     sys.stderr.flush()
 
     finally:
         # Graceful shutdown: send SIGINT to child so motor_guard sends 5 zero commands
         if child.poll() is None:
-            sys.stdout.write("[mentorpi-tank-run] Sending SIGINT to ROS child process for safe zeroing...\n")
+            sys.stdout.write(
+                "[mentorpi-tank-run] Sending SIGINT to ROS child process for safe zeroing...\n"
+            )
             sys.stdout.flush()
             child.send_signal(signal.SIGINT)
             try:
                 child.wait(timeout=3.5)
             except subprocess.TimeoutExpired:
-                sys.stderr.write("[mentorpi-tank-run] Warning: Child did not exit after SIGINT, sending SIGKILL.\n")
+                sys.stderr.write(
+                    "[mentorpi-tank-run] Warning: Child did not exit after SIGINT, sending SIGKILL.\n"
+                )
                 child.kill()
                 child.wait()
 
         # Clean up sockets
-        for sock, path in [(guard_sock, guard_sock_path), (bridge_sock, bridge_sock_path)]:
+        for sock, path in [
+            (guard_sock, guard_sock_path),
+            (bridge_sock, bridge_sock_path),
+        ]:
             try:
                 sock.close()
                 if os.path.exists(path):
@@ -680,5 +800,5 @@ def main():
     sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

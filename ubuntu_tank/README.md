@@ -116,7 +116,6 @@ ubuntu_tank/
 ├── deploy.sh                         # Unified deployment and operations entrypoint
 ├── VERSION                           # Release version (1.0.0)
 ├── versions.lock                     # Authoritative locked dependency closure with SHA256 hashes
-├── source-manifest.txt               # Complete source provenance and boundary audit
 ├── docs/
 │   ├── RELEASE_MANIFEST_SPEC.md     # Version-plus-revision release ID and manifest schema
 │   └── DEPENDENCY_CLOSURE.md        # Direct dependency verification, AST import audit, and locked closure specification
@@ -157,6 +156,22 @@ ubuntu_tank/
 
 ---
 
+### Source documentation
+
+Each maintained code/configuration file explains its purpose and rationale in
+top-of-file documentation. Files copied or refactored from Hiwonder MentorPi also
+identify the original source path and meaningful local adaptations. Preserve
+vendor copyright/license notices. Git records contents and revision history;
+there is no source manifest or per-file source-hash maintenance step.
+
+`VERSION` is plain release-version data, and each empty `src/*/resource/*` file
+registers its package with the ament index; comments must not change these data
+formats. The `controller` and `ros_robot_controller` resource markers were copied
+from their corresponding `mentorpi/src/driver/<package>/resource/<package>` paths.
+Markdown files document their purpose in their opening section. Generated build
+output is not manually annotated. Dependency-download and generated release/build
+checksums verify artifacts separately from source documentation.
+
 ## 4. Verification and Testing
 
 Run the automated test suite without hardware:
@@ -165,11 +180,9 @@ Run the automated test suite without hardware:
 ```
 
 This verifies:
-1. **Source Boundary & Provenance Gate** (`tests/test_source_boundary.sh`):
-   - 111 payload files validated with provenance out of 112 Git-tracked files (`source-manifest.txt` intentionally self-excluding).
-   - SHA-256 integrity match between manifest and disk.
-   - Authoritative Git object-store validation for all reused code from `mentorpi/src`.
-   - Zero fallbacks to `/mnt/rpi-rootfs`.
+1. **Source Boundary Gate** (`tests/test_source_boundary.sh`):
+   - Checks directory layout, declared imports/dependencies, and controller-only scope.
+   - Runs without a source inventory or per-file source hashes; Git tracks revisions.
 2. **Directory Layout Assertion**:
    - Confirms all required top-level directories (`config`, `host`, `scripts`, `docs`, `src`, `tests`) and tracked scaffold files exist and are tracked in Git.
 3. **AST-Based Python Import & Dependency Audit**:

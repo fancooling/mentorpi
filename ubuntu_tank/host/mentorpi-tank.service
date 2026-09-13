@@ -1,3 +1,4 @@
+# Hardened native systemd service unit template with Type=notify and sandboxing
 [Unit]
 Description=MentorPi Tank Native Motion Controller
 After=network.target mentorpi-tank-recover.service
@@ -30,7 +31,8 @@ RestrictSUIDSGID=yes
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0002
 IPAddressDeny=any
 IPAddressAllow=localhost
 DeviceAllow=/dev/rrc rw

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+SROS2 enclave policy specifications for controller, guard, bridge, operator, and
+status enclaves
+-->
 <policy version="0.2.0">
   <enclaves>
     <!-- Controller enclave: translates safe Twist into motor commands for guard -->

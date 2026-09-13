@@ -57,7 +57,7 @@ cmd_test() {
 
   # 1. Source boundary gate
   echo ""
-  echo "--> Running Source Boundary & Provenance Gate..."
+  echo "--> Running Source Boundary Gate..."
   bash "${SCRIPT_DIR}/tests/test_source_boundary.sh"
 
   # 2. Negative boundary regression test
@@ -117,7 +117,30 @@ cmd_test() {
   echo "============================================================"
 }
 
+# Load ROS and the active release overlay for operator commands, falling back to
+# the local install tree. Disable nounset while sourcing upstream setup scripts.
+ensure_ros_env() {
+  if [ -f /opt/ros/lyrical/setup.bash ]; then
+    set +u
+    # shellcheck source=/dev/null
+    source /opt/ros/lyrical/setup.bash
+    set -u
+  fi
+  if [ -f /opt/ubuntu_tank/current/install/setup.bash ]; then
+    set +u
+    # shellcheck source=/dev/null
+    source /opt/ubuntu_tank/current/install/setup.bash
+    set -u
+  elif [ -f "${WORKSPACE_ROOT}/install/setup.bash" ]; then
+    set +u
+    # shellcheck source=/dev/null
+    source "${WORKSPACE_ROOT}/install/setup.bash"
+    set -u
+  fi
+}
+
 cmd_arm() {
+  ensure_ros_env
   local ack=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -177,6 +200,7 @@ cmd_arm() {
 }
 
 cmd_disarm() {
+  ensure_ros_env
   if ! command -v ros2 >/dev/null 2>&1; then
     echo "ERROR: ros2 CLI is not found in PATH. Ensure ROS 2 environment is sourced." >&2
     exit 1
@@ -192,6 +216,7 @@ cmd_disarm() {
 }
 
 cmd_teleop() {
+  ensure_ros_env
   if ! command -v ros2 >/dev/null 2>&1; then
     echo "ERROR: ros2 CLI is not found in PATH. Ensure ROS 2 environment is sourced." >&2
     exit 1
@@ -213,6 +238,7 @@ cmd_teleop() {
 }
 
 cmd_status() {
+  ensure_ros_env
   echo "============================================================"
   echo "MentorPi Tank Controller Status"
   echo "============================================================"
@@ -315,12 +341,7 @@ cmd_bench() {
     fi
   fi
 
-  if [ -f /opt/ros/lyrical/setup.bash ]; then
-    set +u
-    # shellcheck source=/dev/null
-    source /opt/ros/lyrical/setup.bash
-    set -u
-  fi
+  ensure_ros_env
   local sec_keystore="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}"
   echo "--> Running Milestone 6 raised-track bench acceptance..."
   ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \

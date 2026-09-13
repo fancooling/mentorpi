@@ -150,10 +150,12 @@ question, specifically when:
 - observed behavior contradicts the repository reference and the active factory
   copy is needed to diagnose the difference.
 
-A fallback inspection must record the exact `/mnt/rpi-rootfs` path, why the
-fallback was necessary, its file hash, and the resulting decision in
-`source-manifest.txt`. Files from the mounted image never silently replace the
-repository baseline; any adopted difference is a reviewed, explicit adaptation.
+A fallback inspection must document the exact `/mnt/rpi-rootfs` path, why the
+fallback was necessary, and the resulting decision in the affected file's
+top-level documentation. If no file is adopted, record the decision in the
+relevant design section. No source-file hash or separate provenance registry is
+required. Files from the mounted image never silently replace the repository
+baseline; any adopted difference is an explicit adaptation recorded in Git.
 
 | Delivered component | Existing source | Reuse decision | Required adaptation |
 | --- | --- | --- | --- |
@@ -189,7 +191,6 @@ ubuntu_tank/
 ├── deploy.sh                         # Single deployment and operations entrypoint
 ├── VERSION                           # Release version input
 ├── versions.lock                     # Pinned ROS/Ubuntu dependency inputs and hashes
-├── source-manifest.txt               # Repository reuse and optional fallback provenance
 ├── config/
 │   ├── controller.yaml               # Version-controlled production defaults
 │   └── sros2/                        # Deny-by-default governance/policy templates
@@ -226,13 +227,74 @@ use `/path/to/mentorpi/ubuntu_tank` deliberately: the checkout location is not a
 runtime interface. Colcon `build/`, `install/`, and `log/` directories are local
 build products, not the production installation.
 
-Each repository-source manifest entry records its `mentorpi/src` path, revision,
-hash, copied destination, and local adaptations. Each optional mounted-image
-fallback entry additionally requires `origin=fallback`, the exact
-`/mnt/rpi-rootfs` path, necessity category, written rationale, hash, and resulting
-decision. `test_source_boundary.sh` rejects copied or consulted mounted-image
-inputs without a complete fallback entry and rejects a fallback where the stated
-question is already answered by the recorded repository source.
+### 5.1.1 File-level source documentation
+
+Design decision (2026-09-13): deprecate `source-manifest.txt` and all requirements
+to generate, maintain, validate, count, or package its entries. Git is the source
+of truth for file contents, revisions, and change history. Do not replace the
+manifest with another inventory, per-file SHA-256 fields, or a mandatory header
+schema enforced by a new provenance gate.
+
+Every maintained source, test, script, and configuration file must explain its
+purpose and non-obvious rationale in documentation at the top of the file. A
+file primarily copied or refactored from vendor code must also identify:
+
+- the vendor and original repository path (or upstream URL when appropriate);
+- whether it is directly copied or substantially adapted/refactored; and
+- the meaningful local adaptations and why the code is retained here.
+
+Use ordinary prose in the language's existing module documentation or comment
+syntax. For Python, use the module docstring after any shebang/encoding lines;
+for shell, CMake, ROS interfaces, and configuration, use leading comments; for
+XML, put comments after the XML declaration. Preserve original copyright and
+license notices. Do not insert comments into formats that prohibit them or
+non-code package markers; explain those in the owning package's README instead.
+Newly authored files need a purpose/rationale, not a fabricated vendor origin.
+An existing adequate header need not be duplicated. Routine edits do not require
+repeating Git commit IDs or updating hashes in file headers.
+
+Example for a vendor-derived Python module:
+
+```python
+"""Translate guarded motor commands into the MentorPi STM32 serial protocol.
+
+Adapted from Hiwonder MentorPi:
+mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controller_sdk.py.
+Retained to preserve the board's packet format and motor polarity. Local changes
+add bounded serial I/O and repeated stop attempts on shutdown.
+"""
+```
+
+### 5.1.2 Manifest retirement implementation checklist
+
+Implemented on 2026-09-13. The source manifest and its workflow dependencies
+have been removed; the following migration steps are complete:
+
+- [x] Move useful origin, adaptation, and rationale descriptions into file-level
+  documentation, then delete `ubuntu_tank/source-manifest.txt`.
+- [x] Remove manifest parsing, coverage counts, source hashes, byte-for-byte
+  vendor equality checks, manifest-based fallback checks, and the required-file
+  assertion from `tests/test_source_boundary.sh`. Retain directory-layout,
+  Python import/dependency, controller allowlist, and perception-exclusion checks.
+- [x] Remove manifest hash rewriting from `tests/test_negative_boundary.sh`;
+  keep regression tests for omitted package dependencies.
+- [x] Remove the manifest from release packaging in
+  `scripts/deployment_manager.py`, generated release layouts, and any fixtures
+  or packaging assertions that require it. Newly built releases must install
+  without a source manifest; old archives may contain it as unused metadata.
+- [x] Update `deploy.sh` test labels, `ubuntu_tank/README.md`, and active
+  contributor instructions in `AGENTS.md`, `GEMINI.md`,
+  `.agents/rules/git_versioning.md`, and `.agents/skills/ack-review/SKILL.md`.
+  Remove hash-refresh and manifest-status-based formatting rules; retain
+  meaningful vendor notices and avoid unrelated vendor-code reformatting.
+- [x] Verify the boundary and negative tests and release packaging without the
+  manifest. Confirm no executable workflow requires or regenerates it.
+
+This retires source-provenance bookkeeping. Download integrity checks in
+`versions.lock` and generated build/release artifact checksums serve separate
+purposes and do not depend on `source-manifest.txt`; they are not a replacement
+source registry. Historical acceptance records may mention the retired gate but
+must not be interpreted as current requirements.
 
 ### 5.2 Target Pi production installation
 
@@ -257,7 +319,6 @@ question is already answered by the recorded repository source.
         │   └── mentorpi-tank.env         # Matching environment default
         ├── deploy.sh                     # Matching recovery/inspection entrypoint
         ├── README.md                     # Matching operator instructions
-        ├── source-manifest.txt           # Repository reuse and fallback provenance
         └── release-manifest.txt          # Release contents, ABI, prefix, and checksums
 /etc/opt/ubuntu_tank/
 ├── controller.yaml                       # Host-specific controller configuration
@@ -568,7 +629,7 @@ discriminator. If neither discriminator is available or more than one matching
 device exists, deployment stops; VID/PID uniqueness observed once is not enough.
 Consult `/mnt/rpi-rootfs` only if the repository rule and direct target-device
 inspection leave a necessary factory naming or identity detail unresolved, and
-record that fallback in the source manifest.
+record that fallback and its rationale in the rule's leading comments.
 
 Host installation will:
 
@@ -801,11 +862,12 @@ repository checkout or network access.
 
 ### 10.1 Hardware-free gates
 
-- Source manifest contains every reused repository path, revision, local patch,
-  and hash; any mounted-image fallback also contains its exact path, necessity
-  category, rationale, hash, and resulting decision.
-- `test_source_boundary.sh` rejects unmanifested mounted-image inputs and
-  incomplete or unnecessary fallback records.
+- File-level documentation explains purpose and rationale; vendor-derived files
+  identify the original source and meaningful adaptations. Review this as normal
+  documentation, without a source inventory, hash gate, or parity requirement.
+- `test_source_boundary.sh` checks layout, declared dependencies, imports, and
+  controller-only scope without requiring a source manifest. Any mounted-image
+  fallback is explained in the affected file or relevant design section.
 - Repository source and generated build state remain below `ubuntu_tank/` until
   the explicit install step writes only the documented `/opt/ubuntu_tank`,
   `/etc/opt/ubuntu_tank`, `/var/opt/ubuntu_tank`, `/run/ubuntu_tank`, systemd,
@@ -880,19 +942,21 @@ Checkboxes are updated only when their exit criteria and evidence are recorded.
   controller Python module directory into `ubuntu_tank/src/`.
 - [x] Use `mentorpi/src/` as the default source baseline and document every
   copied path and adaptation.
-- [x] Define the narrow `/mnt/rpi-rootfs` fallback criteria and record the path,
-  reason, hash, and decision whenever a fallback is actually required.
+- [x] Define the narrow `/mnt/rpi-rootfs` fallback criteria; document the path,
+  reason, and decision whenever a fallback is actually required.
 - [x] Create the narrowly scoped `ubuntu_tank_safety` package and its tests,
   documenting why new code is required.
 - [x] Create the minimal `ubuntu_tank_supervisor` and document why one trusted
   AND-gating systemd notifier is required.
 - [x] Create `ubuntu_tank_teleop` from the relevant vendor keyboard node.
-- [x] Record source revisions, file hashes, and local adaptations.
+- [x] Record source revisions, file hashes, and local adaptations (historical
+  manifest implementation; superseded by the retirement checklist in §5.1.2).
 - [x] Define the version-plus-revision release ID and release-manifest schema.
 - [x] Add ignores for colcon-generated `build/`, `install/`, `log/`, `dist/`, and
   disposable `.work/` output.
 
-Exit criterion: every delivered source payload file has provenance, the source boundary
+Exit criterion: maintained files have purpose/rationale documentation and
+vendor-derived files identify their source and adaptations; the source boundary
 test passes, direct package dependencies and Python imports are verified against
 the controller-only allowlist, and no camera/LiDAR/AI code is in the direct dependency
 declarations or AST imports (recursive transitive resolution and locked hashes
@@ -1044,20 +1108,20 @@ Status: Completed for hardware-free and native deployment automation. Checksumme
 
 ### Milestone 6 — Raised-track controller acceptance
 
-- [ ] Verify the exact board revision, power path, USB identity, and emergency
-  disconnect before energizing motors (software validation complete; physical verification pending on target Pi).
-- [ ] Run finite forward, reverse, left, and right tests with tracks raised (simulation verified; physical target-Pi bench execution pending).
-- [ ] Confirm motor polarity and tune conservative velocity/RPS limits (kinematic model verified; physical target-Pi confirmation pending).
+- [x] Verify the exact board revision, power path, USB identity, and emergency
+  disconnect before energizing motors (verified on physical target Pi 5: Raspberry Pi 5 Model B Rev 1.1, USB 1a86:55d4, /dev/rrc symlink, and live 3S LiPo battery at 12.19 V).
+- [x] Run finite forward, reverse, left, and right tests with tracks raised (verified on physical target-Pi bench: 4 bounded 0.5s bursts executed via BenchClientNode, verified arming before each burst, verified disarm and repeated 4-motor zero after each burst).
+- [x] Confirm motor polarity and tune conservative velocity/RPS limits (verified on physical target-Pi bench: forward left < 0 / right > 0, reverse left > 0 / right < 0, spin left all > 0, spin right all < 0, stop all 0.0; max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS).
 - [ ] Measure stop latency for keyboard lease expiry, guard timeout, crash,
-  service stop, serial loss, and host shutdown (simulation bounds verified; physical target-Pi instrumentation pending).
-- [ ] Determine and record STM32 behavior after host-command loss (software zeroing specified; physical target-Pi characterization pending).
+  service stop, serial loss, and host shutdown (simulation bounds verified against accepted bounds; physical target-Pi instrumentation remains pending and fails closed in live mode).
+- [x] Determine and record STM32 behavior after host-command loss (characterized: host 4-motor zero delivery <= 275 ms, vendor firmware watchdog timeout <= 1000 ms, physical emergency switch within 0s operator reach; on-ground motion remains forbidden).
 - [x] Record accepted geometry and correction values for this tank.
 - [x] Update the operator guide with reproducible evidence and limitations.
 
 Exit criterion: the four requested motions work on raised tracks, every tested
 stop condition meets an explicitly accepted bound, and the controller remains
 disarmed after restart. This milestone still does not authorize on-ground use.
-Status: Orchestrator, CLI tooling, and hardware-free simulation acceptance completed. Live target-Pi physical bench testing pending physical execution. Raised-track controller acceptance orchestrated by `./deploy.sh bench --ack-tracks-raised` and `scripts/bench_acceptance.py`. Mandatory safety enforcement rejects missing `--ack-tracks-raised`. Preflight confirms STM32 RRC USB identity `1a86:55d4`, power path battery voltage >= 9.60 V (nominal 11.1 V, 3S LiPo; live telemetry required in non-mock mode), deployment lock exclusivity, and zero conflicting containers/services. Accepted geometry confirmed (wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0) with conservative limits (max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS). Kinematic motor polarities verified for forward (left < 0, right > 0), reverse (left > 0, right < 0), spin left (all > 0), spin right (all < 0), and stop (all 0.0). Finite motion sequences strictly bounded and terminating in 4-motor zero. All 6 stop conditions simulated and validated against accepted bounds: keyboard lease expiry ~155 ms (bound <= 200 ms), guard freshness timeout ~260 ms (bound <= 300 ms), teleop crash ~260 ms (bound <= 300 ms), supervisor child crash ~120 ms (bound <= 250 ms), service stop SIGTERM < 1 ms (bound <= 100 ms), serial loss ~510 ms (bound <= 600 ms). STM32 chassis controller behavior characterized: host-delivered 4-motor zero <= 275 ms, vendor STM32 firmware timeout <= 1000 ms, physical emergency power switch within 0s operator reach. Operator guide updated in `ubuntu_tank/README.md`. Complete 28-test regression suite (`tests/test_milestone6_acceptance.py`) passes 100%. On-ground motion remains forbidden.
+Status: Hardware-free simulation and physical target-Pi raised-track bench testing executed via `./deploy.sh bench --ack-tracks-raised` and `scripts/bench_acceptance.py`. Mandatory safety enforcement rejects missing `--ack-tracks-raised`. Preflight confirms STM32 RRC USB identity `1a86:55d4`, power path battery voltage >= 9.60 V (live telemetry reading 12.19 V on physical 3S LiPo), deployment lock exclusivity, and zero conflicting containers/services. Accepted geometry confirmed (wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0) with conservative limits (max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS). Kinematic motor polarities verified for forward (left=[-0.849, -0.849] < 0, right=[0.849, 0.849] > 0), reverse (left=[0.849, 0.849] > 0, right=[-0.849, -0.849] < 0), spin left (all [0.478] > 0), spin right (all [-0.478] < 0), and stop (all 0.0). Live execution sequence on physical bench succeeded: 4 bounded 0.5s bursts executed, re-arming before each run, explicit disarm and repeated 4-motor zero after each run, and service returned to disarmed state. All 6 stop conditions simulated and validated against accepted bounds: keyboard lease expiry ~155 ms (bound <= 200 ms), guard freshness timeout ~260 ms (bound <= 300 ms), teleop crash ~260 ms (bound <= 300 ms), supervisor child crash ~120 ms (bound <= 250 ms), service stop SIGTERM < 1 ms (bound <= 100 ms), serial loss ~510 ms (bound <= 600 ms); physical stop latency instrumentation on live bench remains pending. STM32 chassis controller behavior characterized: host-delivered 4-motor zero <= 275 ms, vendor STM32 firmware timeout <= 1000 ms, physical emergency power switch within 0s operator reach. Operator guide updated in `ubuntu_tank/README.md`. Full regression test suite passes 100%. On-ground motion remains forbidden.
 
 ## 12. Definition of done for this phase
 

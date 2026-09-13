@@ -1,3 +1,7 @@
+"""
+Install the ubuntu_tank_bringup Python package and its supported ROS entry points.
+"""
+
 import os
 from glob import glob
 from setuptools import setup

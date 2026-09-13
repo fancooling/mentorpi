@@ -1,3 +1,5 @@
+# Oneshot boot activation recovery systemd service unit executing recover-activation
+# before controller.
 [Unit]
 Description=MentorPi Tank Boot Activation Recovery
 DefaultDependencies=no

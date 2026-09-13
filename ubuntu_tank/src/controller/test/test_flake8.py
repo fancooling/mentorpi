@@ -1,3 +1,12 @@
+"""
+Retain the vendor ROS lint check for flake8 so package conventions can be checked with
+ament.
+
+Copied directly from Hiwonder MentorPi:
+
+mentorpi/src/driver/controller/test/test_flake8.py.
+"""
+
 # Copyright 2017 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +29,6 @@ import pytest
 @pytest.mark.linter
 def test_flake8():
     rc, errors = main_with_errors(argv=[])
-    assert rc == 0, \
-        'Found %d code style errors / warnings:\n' % len(errors) + \
-        '\n'.join(errors)
+    assert rc == 0, "Found %d code style errors / warnings:\n" % len(
+        errors
+    ) + "\n".join(errors)

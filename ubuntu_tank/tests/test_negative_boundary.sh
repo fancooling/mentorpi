@@ -32,7 +32,6 @@ create_test_clone "${CLONE_DIR1}"
 # Case 1: Remove cross-workspace dependency <depend>ros_robot_controller_msgs</depend> from ubuntu_tank_safety
 python3 - <<PYCASE1
 import os
-import hashlib
 
 repo_dir = "${CLONE_DIR1}"
 pkg_xml = os.path.join(repo_dir, "ubuntu_tank/src/ubuntu_tank_safety/package.xml")
@@ -46,25 +45,9 @@ new_content = content.replace(target, "")
 with open(pkg_xml, "w", encoding="utf-8") as f:
     f.write(new_content)
 
-# Update the hash in source-manifest.txt so Stage 1 passes and Stage 4 AST check is reached
-new_hash = hashlib.sha256(new_content.encode("utf-8")).hexdigest()
-manifest_path = os.path.join(repo_dir, "ubuntu_tank/source-manifest.txt")
-with open(manifest_path, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
-for i, line in enumerate(lines):
-    if "destination: ubuntu_tank/src/ubuntu_tank_safety/package.xml" in line:
-        for j in range(i, min(i + 10, len(lines))):
-            if lines[j].startswith("destination_sha256:"):
-                lines[j] = f"destination_sha256: {new_hash}\n"
-                break
-        break
-
-with open(manifest_path, "w", encoding="utf-8") as f:
-    f.writelines(lines)
 PYCASE1
 
-# Execute test_source_boundary.sh and assert it fails at Stage 4 with the expected error message
+# Execute test_source_boundary.sh and assert it fails at the AST audit with the expected error message
 set +e
 OUT1=$(bash "${CLONE_DIR1}/ubuntu_tank/tests/test_source_boundary.sh" 2>&1)
 EXIT_CODE1=$?
@@ -92,7 +75,6 @@ create_test_clone "${CLONE_DIR2}"
 
 python3 - <<PYCASE2
 import os
-import hashlib
 
 repo_dir = "${CLONE_DIR2}"
 pkg_xml = os.path.join(repo_dir, "ubuntu_tank/src/ubuntu_tank_teleop/package.xml")
@@ -106,21 +88,6 @@ new_content = content.replace(target, "")
 with open(pkg_xml, "w", encoding="utf-8") as f:
     f.write(new_content)
 
-new_hash = hashlib.sha256(new_content.encode("utf-8")).hexdigest()
-manifest_path = os.path.join(repo_dir, "ubuntu_tank/source-manifest.txt")
-with open(manifest_path, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
-for i, line in enumerate(lines):
-    if "destination: ubuntu_tank/src/ubuntu_tank_teleop/package.xml" in line:
-        for j in range(i, min(i + 10, len(lines))):
-            if lines[j].startswith("destination_sha256:"):
-                lines[j] = f"destination_sha256: {new_hash}\n"
-                break
-        break
-
-with open(manifest_path, "w", encoding="utf-8") as f:
-    f.writelines(lines)
 PYCASE2
 
 set +e

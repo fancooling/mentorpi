@@ -1,4 +1,13 @@
 <?xml version="1.0"?>
+<!--
+Declare the ros_robot_controller ROS package metadata and build/runtime dependencies.
+Adapted from Hiwonder MentorPi:
+mentorpi/src/driver/ros_robot_controller/package.xml.
+Local adaptations: Declare complete runtime ROS and Python dependencies (rclpy,
+std_msgs, std_srvs, sensor_msgs, ros_robot_controller_msgs, launch, launch_ros,
+python3-serial, python3-yaml), maintainer dev@mentorpi.local, version 1.0.0, and
+Apache-2.0 license.
+-->
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>ros_robot_controller</name>

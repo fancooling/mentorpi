@@ -1,173 +1,17 @@
 #!/usr/bin/env bash
-# test_source_boundary.sh - Verify source provenance, fallback constraints, AST imports, and dependency closure
+# Verify workspace layout and declared imports/dependencies for the controller-only scope.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 UBUNTU_TANK_DIR="${WORKSPACE_ROOT}/ubuntu_tank"
 SRC_DIR="${UBUNTU_TANK_DIR}/src"
-MANIFEST="${UBUNTU_TANK_DIR}/source-manifest.txt"
 
 echo "============================================================"
-echo "Running Ubuntu Tank Source Boundary & Provenance Gate"
+echo "Running Ubuntu Tank Source Boundary Gate"
 echo "============================================================"
 
-if [ ! -f "${MANIFEST}" ]; then
-  echo "FAIL: Source manifest missing: ${MANIFEST}" >&2
-  exit 1
-fi
-
-echo "[1/5] Checking manifest coverage, provenance semantics, and file hashes against Git repository..."
-python3 - <<PYCHECK
-import os
-import sys
-import hashlib
-import subprocess
-
-root = "${WORKSPACE_ROOT}"
-manifest_path = "${MANIFEST}"
-tank_dir = "${UBUNTU_TANK_DIR}"
-
-entries = {}
-dest_seen = set()
-current_entry = {}
-errors = []
-
-# Parse manifest
-with open(manifest_path, 'r', encoding='utf-8') as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            if current_entry and 'destination' in current_entry:
-                dest = current_entry['destination']
-                if dest in dest_seen:
-                    errors.append(f"Duplicate destination entry in manifest: {dest}")
-                dest_seen.add(dest)
-                entries[dest] = current_entry
-                current_entry = {}
-            continue
-        if ':' in line:
-            k, v = line.split(':', 1)
-            current_entry[k.strip()] = v.strip()
-
-if current_entry and 'destination' in current_entry:
-    dest = current_entry['destination']
-    if dest in dest_seen:
-        errors.append(f"Duplicate destination entry in manifest: {dest}")
-    dest_seen.add(dest)
-    entries[dest] = current_entry
-
-# Query authoritative Git tracking store
-try:
-    git_tracked_out = subprocess.check_output(['git', 'ls-files', 'ubuntu_tank'], cwd=root, text=True)
-    git_tracked_files = [line.strip() for line in git_tracked_out.splitlines() if line.strip()]
-except Exception as e:
-    errors.append(f"Failed to query git ls-files: {e}")
-    git_tracked_files = []
-
-manifest_rel = os.path.relpath(manifest_path, root)
-payload_tracked_files = [f for f in git_tracked_files if f != manifest_rel]
-
-# Check 1: Every Git-tracked payload file must have a manifest entry
-for rel in payload_tracked_files:
-    if rel not in entries:
-        errors.append(f"Tracked file missing from source manifest: {rel}")
-
-# Check 1b: Every manifested file must be tracked in Git
-for dest in entries.keys():
-    if dest not in payload_tracked_files:
-        errors.append(f"Manifested file is not tracked by git: {dest}")
-
-# Check 1c: Check physical files on disk
-ignored_subdirs = {'build', 'install', 'log', 'dist', '.work', '__pycache__'}
-physical_files = []
-for dirpath, dirnames, filenames in os.walk(tank_dir):
-    dirnames[:] = [d for d in dirnames if d not in ignored_subdirs]
-    for fn in filenames:
-        if fn.endswith(('.pyc', '.pyo', '.tar.zst', '.sock')):
-            continue
-        if fn == 'source-manifest.txt':
-            continue
-        p = os.path.join(dirpath, fn)
-        rel = os.path.relpath(p, root)
-        physical_files.append(rel)
-
-for rel in physical_files:
-    if rel not in entries:
-        errors.append(f"Unmanifested physical file found in workspace: {rel}")
-
-# Check 2: Every manifested entry must exist, match hashes, and satisfy provenance rules
-for dest, meta in entries.items():
-    abs_dest = os.path.join(root, dest)
-    if not os.path.exists(abs_dest):
-        errors.append(f"Manifested destination does not exist on disk: {dest}")
-        continue
-
-    with open(abs_dest, 'rb') as f:
-        actual_dest_sha = hashlib.sha256(f.read()).hexdigest()
-    if actual_dest_sha != meta.get('destination_sha256'):
-        errors.append(f"Destination hash mismatch for {dest}: expected {meta.get('destination_sha256')}, got {actual_dest_sha}")
-
-    origin = meta.get('origin')
-    if origin == 'mentorpi/src':
-        src_rel = meta.get('source_path')
-        commit = meta.get('source_commit')
-        if not src_rel:
-            errors.append(f"Missing source_path for copied entry {dest}")
-            continue
-        if not commit:
-            errors.append(f"Missing source_commit for copied entry {dest}")
-            continue
-
-        try:
-            cmd = ['git', 'cat-file', '-p', f"{commit}:{src_rel}"]
-            git_blob = subprocess.check_output(cmd, cwd=root, stderr=subprocess.PIPE)
-            actual_src_sha = hashlib.sha256(git_blob).hexdigest()
-        except subprocess.CalledProcessError as e:
-            errors.append(f"Failed to retrieve upstream file from git at {commit}:{src_rel}: {e}")
-            continue
-
-        if actual_src_sha != meta.get('source_sha256'):
-            errors.append(f"Upstream git object hash mismatch for {src_rel} at {commit}: expected {meta.get('source_sha256')}, got {actual_src_sha}")
-
-        status = meta.get('status')
-        if status == 'identical':
-            if actual_dest_sha != actual_src_sha:
-                errors.append(f"Entry {dest} marked identical but content differs from git baseline {src_rel}")
-        elif status == 'adapted':
-            if not meta.get('adaptations'):
-                errors.append(f"Entry {dest} marked adapted but has empty adaptations description")
-        else:
-            errors.append(f"Entry {dest} has invalid status for mentorpi/src origin: '{status}'")
-
-    elif origin == 'authored':
-        if 'source_commit' in meta:
-            errors.append(f"Authored entry {dest} must not declare source_commit")
-        if 'source_path' in meta:
-            errors.append(f"Authored entry {dest} must not declare source_path")
-        if not meta.get('rationale'):
-            errors.append(f"Authored entry {dest} is missing rationale")
-        if meta.get('status') != 'new':
-            errors.append(f"Authored entry {dest} status must be 'new', got '{meta.get('status')}'")
-
-    elif origin == 'fallback':
-        required_fields = ['fallback_path', 'fallback_category', 'rationale', 'hash', 'decision']
-        for rf in required_fields:
-            if not meta.get(rf):
-                errors.append(f"Fallback entry {dest} is missing required field: {rf}")
-    else:
-        errors.append(f"Unknown origin '{origin}' for entry {dest}")
-
-if errors:
-    print(f"FAILED with {len(errors)} provenance errors:", file=sys.stderr)
-    for err in errors:
-        print(f"  - {err}", file=sys.stderr)
-    sys.exit(1)
-
-print(f"PASS: Verified {len(entries)} payload files with provenance out of {len(git_tracked_files)} Git-tracked files (source-manifest.txt self-excluded).")
-PYCHECK
-
-echo "[2/5] Checking required directory layout assertion against Git repository..."
+echo "[1/3] Checking required directory layout assertion against Git repository..."
 python3 - <<LAYOUTCHECK
 import os
 import sys
@@ -204,7 +48,6 @@ required_files = [
     'tests/test_install_workflow.py',
     'tests/test_milestone3_port.py',
     'tests/test_milestone5_deployment.py',
-    'source-manifest.txt'
 ]
 
 
@@ -238,16 +81,7 @@ if missing:
 print(f"PASS: Verified complete required directory layout and tracked scaffold files in Git repository.")
 LAYOUTCHECK
 
-echo "[3/5] Checking fallback constraints..."
-if grep -q -E "^origin:[[:space:]]*fallback" "${MANIFEST}"; then
-  echo "Fallback entries detected in manifest. Validating justifications..."
-  echo "FAIL: Fallbacks to /mnt/rpi-rootfs are not authorized for Milestone 1" >&2
-  exit 1
-else
-  echo "PASS: Zero fallbacks required; mentorpi/src is complete for Milestone 1."
-fi
-
-echo "[4/5] AST-based Python import audit against declared package manifests..."
+echo "[2/3] AST-based Python import audit against declared package manifests..."
 python3 - <<ASTCHECK
 import os
 import ast
@@ -348,7 +182,7 @@ print("PASS: 100% of direct runtime Python imports (including cross-workspace pa
 print("PASS: In-line AST audit self-test confirmed detection and rejection of omitted cross-workspace dependency.")
 ASTCHECK
 
-echo "[5/5] Direct package dependency audit, controller allowlist, and perception exclusion gate..."
+echo "[3/3] Direct package dependency audit, controller allowlist, and perception exclusion gate..."
 python3 - <<DEPCHECK
 import os
 import ast

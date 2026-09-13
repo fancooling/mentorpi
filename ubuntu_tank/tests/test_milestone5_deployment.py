@@ -222,6 +222,7 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
 
         pkg_root = os.path.join(extract_dir, "1.0.0-gtest001")
         self.assertTrue(os.path.isdir(pkg_root))
+        self.assertFalse(os.path.exists(os.path.join(pkg_root, "source-manifest.txt")))
 
         manifest_path = os.path.join(pkg_root, "release-manifest.txt")
         self.assertTrue(os.path.isfile(manifest_path))

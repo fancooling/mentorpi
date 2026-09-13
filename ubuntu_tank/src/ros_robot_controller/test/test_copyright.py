@@ -1,3 +1,12 @@
+"""
+Retain the vendor ROS lint check for copyright so package conventions can be checked
+with ament.
+
+Copied directly from Hiwonder MentorPi:
+
+mentorpi/src/driver/ros_robot_controller/test/test_copyright.py.
+"""
+
 # Copyright 2015 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,5 +28,5 @@ import pytest
 @pytest.mark.copyright
 @pytest.mark.linter
 def test_copyright():
-    rc = main(argv=['.', 'test'])
-    assert rc == 0, 'Found errors'
+    rc = main(argv=[".", "test"])
+    assert rc == 0, "Found errors"
