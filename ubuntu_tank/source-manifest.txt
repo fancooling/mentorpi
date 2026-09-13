@@ -84,7 +84,7 @@ rationale: Official OMG DDS-Security permissions XSD schema specification for SR
 
 destination: ubuntu_tank/deploy.sh
 origin: authored
-destination_sha256: 44571fdff3bc489b09d6be2e3926e86ac6487a39d95920bcfe43d6c201ce3ed6
+destination_sha256: 55ffc715a068579612f0742346abb7b50036f95c67fc2eb10f96051b4049f67e
 status: new
 rationale: Unified deployment and operations entrypoint for the native controller workspace.
 
@@ -138,19 +138,19 @@ rationale: Orchestrator CLI for Milestone 6 raised-track controller acceptance a
 
 destination: ubuntu_tank/scripts/build_disposable_root.sh
 origin: authored
-destination_sha256: 8dbce4e29913e06b947f62e3fb8b5dbc76598a75e6fcb3cf2105276e648bcb81
+destination_sha256: 56e251134902aabfec88cf61799bbdd2b70fbff78ee945986b157356552f6fd4
 status: new
 rationale: Isolated disposable build root script producing production install tree targeting release prefix without leaked paths.
 
 destination: ubuntu_tank/scripts/build_workspace.sh
 origin: authored
-destination_sha256: 840ee2de445c59b9135052164eec32c18ac94c17756eff4d9f4fd2553cf0f946
+destination_sha256: 43304d8bdacfa6fcfbede91026cf1b18b9ca67f68824d79586cc6f9b03e451fd
 status: new
 rationale: Host colcon build and rosdep resolution script scaffold with constrained cleanup path validation
 
 destination: ubuntu_tank/scripts/check_host.sh
 origin: authored
-destination_sha256: 8886bd34ba6195f406d766474cd1ad3bb27285f638d7c53da0d1be063a52fb31
+destination_sha256: 34d33fdd817843dc911f8a479e08e51b27a5b5fbbf5ffe73a519cd072bcbbfe7
 status: new
 rationale: Read-only host OS, architecture, EEPROM, and device preflight script scaffold
 
@@ -168,7 +168,7 @@ rationale: Packaging, immutable installation, atomic 6-step activation, offline 
 
 destination: ubuntu_tank/scripts/install_ros2.sh
 origin: authored
-destination_sha256: 9f48d4a15c5699744a4f68993a90b5c6219fcb48933d46d34ee60468c75bff5b
+destination_sha256: 8cfbcf75aebd476f93b6933ca4705eaf01ef30216583dd49064c5b7fa1475dbd
 status: new
 rationale: Ubuntu and ROS 2 Lyrical package repository, solver closure verification, and installation script scaffold
 
@@ -186,7 +186,7 @@ rationale: SROS2 security governance and enclave access control verification uti
 
 destination: ubuntu_tank/scripts/verify_runtime.sh
 origin: authored
-destination_sha256: 0e5a106169db6d5be98a24eb584956b2df23883c73f39881774766f872bc83ea
+destination_sha256: fcaf4ac2d8ef0ab123a6e252951735fd9ca758ea97e1d39317880467e7f040b4
 status: new
 rationale: ROS graph, topic ownership, and guard state runtime verification script scaffold
 
@@ -837,13 +837,13 @@ origin: mentorpi/src
 source_path: mentorpi/src/peripherals/peripherals/teleop_key_control.py
 source_commit: ca32e0c
 source_sha256: 33cf2a768b7851c245f8b3918c61dc69a363c8db7341827bf95a31502aa7ddd2
-destination_sha256: ea36fcf4ce68bbfb0ba9c5fa9fd2a160e4253ccb61d091de5e21d5d248223da6
+destination_sha256: 2ea67be5a595157a1f9a9859244fce44db68e2dda2682e9221cb2148841a742f
 status: adapted
 adaptations: Replaced latched linear commands with 150 ms renewable leases; periodic 20 Hz publishing; auto-zero on lease expiry/SIGINT/SIGTERM; removed unused servo and camera code.
 
 destination: ubuntu_tank/tests/test_dependency_closure.sh
 origin: authored
-destination_sha256: 49c7251375dcb5ea2a17076b908dc7a9a4dba77afc108b7d362262c7ec40822a
+destination_sha256: ea37366c3629d088c91715fac865ef9df1420c5f7cd27661b8a5f218cc939b6c
 status: new
 rationale: Automated dependency closure, lockfile verification, and tamper detection gate.
 

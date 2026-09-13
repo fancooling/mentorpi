@@ -117,7 +117,6 @@ cmd_test() {
   echo "============================================================"
 }
 
-
 cmd_arm() {
   local ack=""
   while [[ $# -gt 0 ]]; do
@@ -170,10 +169,10 @@ cmd_arm() {
 
   echo "--> Calling /ubuntu_tank_safety/set_arm with data=True..."
   env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
-      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
-      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
-      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
-      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+    ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+    ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+    ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
     ros2 run ubuntu_tank_bringup operator_client --arm
 }
 
@@ -185,10 +184,10 @@ cmd_disarm() {
 
   echo "--> Calling /ubuntu_tank_safety/set_arm with data=False..."
   env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
-      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
-      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
-      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
-      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+    ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+    ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+    ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
     ros2 run ubuntu_tank_bringup operator_client --disarm
 }
 
@@ -203,13 +202,13 @@ cmd_teleop() {
     return 1
   fi
   local -a host_teleop_args
-  mapfile -t host_teleop_args <<< "${teleop_config_args}"
+  mapfile -t host_teleop_args <<<"${teleop_config_args}"
   echo "--> Launching interactive keyboard teleoperation..."
   exec env ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
-      ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
-      ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
-      ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
-      ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
+    ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+    ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+    ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}" \
+    ROS_SECURITY_ENCLAVE_OVERRIDE="${ROS_SECURITY_ENCLAVE_OVERRIDE:-/ubuntu_tank/operator}" \
     ros2 run ubuntu_tank_teleop teleop_key "$@" --ros-args "${host_teleop_args[@]}"
 }
 
@@ -318,16 +317,17 @@ cmd_bench() {
 
   if [ -f /opt/ros/lyrical/setup.bash ]; then
     set +u
+    # shellcheck source=/dev/null
     source /opt/ros/lyrical/setup.bash
     set -u
   fi
   local sec_keystore="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}"
   echo "--> Running Milestone 6 raised-track bench acceptance..."
   ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" \
-  ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
-  ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
-  ROS_SECURITY_KEYSTORE="${sec_keystore}" \
-  PYTHONPATH="${WORKSPACE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${SCRIPT_DIR}/scripts/bench_acceptance.py" "$@"
+    ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
+    ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
+    ROS_SECURITY_KEYSTORE="${sec_keystore}" \
+    PYTHONPATH="${WORKSPACE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${SCRIPT_DIR}/scripts/bench_acceptance.py" "$@"
 }
 
 cmd_package() {
@@ -502,7 +502,7 @@ COMMAND="${1:-help}"
 shift || true
 
 case "${COMMAND}" in
-  help|-h|--help)
+  help | -h | --help)
     usage
     ;;
   test)

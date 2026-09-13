@@ -3,8 +3,6 @@
 # Implements Milestone 2 preflight and mutual exclusion gates.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 usage() {
   cat <<'HELP'
 Usage: ./scripts/check_host.sh [options]
@@ -137,7 +135,7 @@ check_mutual_exclusion() {
         continue
       fi
       local cmdline
-      cmdline="$(tr '\000' ' ' < "/proc/${cpid}/cmdline" 2>/dev/null || ps -o args= -p "${cpid}" 2>/dev/null || echo "")"
+      cmdline="$(tr '\000' ' ' <"/proc/${cpid}/cmdline" 2>/dev/null || ps -o args= -p "${cpid}" 2>/dev/null || echo "")"
       if echo "${cmdline}" | grep -qE "(check_host|deploy\.sh|install_ros2|test_install_workflow|pytest|unittest)"; then
         continue
       fi
@@ -192,7 +190,6 @@ check_host() {
   local errors=0
   local warnings=0
 
-  local log_output=""
   log_msg() {
     if [ "${quiet}" = "false" ] && [ "${json_out}" = "false" ]; then
       echo "$@"
@@ -213,9 +210,9 @@ check_host() {
   elif [ -n "${UBUNTU_TANK_MOCK_TARGET:-}" ]; then
     model="Raspberry Pi 5 Model B Rev 1.0"
   elif [ -f /proc/device-tree/model ]; then
-    model="$(tr -d '\000' < /proc/device-tree/model)"
+    model="$(tr -d '\000' </proc/device-tree/model)"
   elif [ -f /sys/firmware/devicetree/base/model ]; then
-    model="$(tr -d '\000' < /sys/firmware/devicetree/base/model)"
+    model="$(tr -d '\000' </sys/firmware/devicetree/base/model)"
   fi
 
   if echo "${model}" | grep -qi "Raspberry Pi 5"; then
@@ -576,7 +573,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         usage
         exit 0
         ;;

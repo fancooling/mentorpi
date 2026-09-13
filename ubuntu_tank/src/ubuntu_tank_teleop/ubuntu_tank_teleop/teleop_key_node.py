@@ -14,7 +14,7 @@ import sys
 import time
 from typing import Optional
 
-if os.name != 'nt':
+if os.name != "nt":
     import tty
     import termios
 
@@ -45,27 +45,25 @@ class TeleopKeyNode(Node):
     """ROS 2 Node publishing lease-bounded Twist commands from keyboard input."""
 
     def __init__(self):
-        super().__init__('teleop_key', start_parameter_services=False)
+        super().__init__("teleop_key", start_parameter_services=False)
 
-        self.declare_parameter('linear_vel', 0.2)
-        self.declare_parameter('angular_vel', 0.5)
-        self.declare_parameter('lease_duration_sec', 0.150)
-        self.declare_parameter('publish_rate_hz', 20.0)
+        self.declare_parameter("linear_vel", 0.2)
+        self.declare_parameter("angular_vel", 0.5)
+        self.declare_parameter("lease_duration_sec", 0.150)
+        self.declare_parameter("publish_rate_hz", 20.0)
 
-        lin_vel = self.get_parameter('linear_vel').value
-        ang_vel = self.get_parameter('angular_vel').value
-        lease_sec = self.get_parameter('lease_duration_sec').value
-        rate_hz = self.get_parameter('publish_rate_hz').value
+        lin_vel = self.get_parameter("linear_vel").value
+        ang_vel = self.get_parameter("angular_vel").value
+        lease_sec = self.get_parameter("lease_duration_sec").value
+        rate_hz = self.get_parameter("publish_rate_hz").value
 
         self.publish_rate_hz = float(rate_hz) if rate_hz is not None else 20.0
 
         self.lease_mgr = TeleopLeaseManager(
-            linear_vel=lin_vel,
-            angular_vel=ang_vel,
-            lease_duration_sec=lease_sec
+            linear_vel=lin_vel, angular_vel=ang_vel, lease_duration_sec=lease_sec
         )
 
-        self.cmd_pub = self.create_publisher(Twist, '/controller/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, "/controller/cmd_vel", 10)
 
     def publish_twist(self, linear_x: float, angular_z: float):
         msg = Twist()
@@ -87,13 +85,13 @@ def main(args=None):
     opened_tty = False
     old_settings = None
 
-    if os.name != 'nt':
+    if os.name != "nt":
         if sys.stdin.isatty():
             input_file = sys.stdin
             input_fd = sys.stdin.fileno()
         else:
             try:
-                input_file = open('/dev/tty', 'r')
+                input_file = open("/dev/tty", "r")
                 input_fd = input_file.fileno()
                 opened_tty = True
             except (OSError, IOError):
@@ -134,8 +132,8 @@ def main(args=None):
             if old_settings is not None and input_fd is not None:
                 rlist, _, _ = select.select([input_fd], [], [], loop_period)
                 if rlist:
-                    char = os.read(input_fd, 1).decode('utf-8', errors='ignore')
-                    if char == '\x03':  # Ctrl-C
+                    char = os.read(input_fd, 1).decode("utf-8", errors="ignore")
+                    if char == "\x03":  # Ctrl-C
                         break
                     node.lease_mgr.process_key(char, now_mono)
             else:
@@ -168,5 +166,5 @@ def main(args=None):
         print("\nTeleop exited. Robot commanded to stop.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

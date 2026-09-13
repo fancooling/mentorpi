@@ -498,6 +498,13 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
   amending or squashing; do not leave separate review-fix commits or create a
   new version for those revisions. The rule is recorded in root `AGENTS.md` and
   `.agents/rules/git_versioning.md`.
+- Always run code formatting and linting before each commit: format modified
+  authored Python code using `.venv/bin/ruff format <files>`, format modified
+  authored shell scripts using `.venv/bin/shfmt -i 2 -ci -w <files>` and verify
+  with `.venv/bin/shellcheck <files>`, ensure `git diff --check` reports zero
+  whitespace or formatting errors, and update `source-manifest.txt` hashes if
+  tracked files were modified. Never reformat vendor baseline files marked
+  `identical`.
 - Workspace skill `.agents/skills/ack-review/SKILL.md` documents the step-by-step
   operational procedure to parse `review.md`, remediate findings, execute full
   test gates and manifests, and amend into the existing commit.

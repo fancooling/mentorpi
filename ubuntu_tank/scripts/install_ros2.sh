@@ -8,8 +8,8 @@ TANK_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOCK_FILE="${LOCK_FILE:-${TANK_DIR}/versions.lock}"
 CHECK_HOST_SCRIPT="${SCRIPT_DIR}/check_host.sh"
 
-# shellcheck source=./check_host.sh
 if [ -f "${CHECK_HOST_SCRIPT}" ]; then
+  # shellcheck source=/dev/null
   . "${CHECK_HOST_SCRIPT}"
 fi
 
@@ -87,7 +87,8 @@ release_deployment_lock() {
 # the authoritative transitive artifact set.
 require_complete_package_lock() {
   local closure_status
-  closure_status="$(python3 - "${LOCK_FILE}" <<'PYCLOSURESTATUS'
+  closure_status="$(
+    python3 - "${LOCK_FILE}" <<'PYCLOSURESTATUS'
 import sys
 
 status = ""
@@ -106,7 +107,7 @@ with open(sys.argv[1], "r", encoding="utf-8") as lock_file:
 
 print(status)
 PYCLOSURESTATUS
-)"
+  )"
 
   if [ "${closure_status}" != "complete" ]; then
     echo "FAIL: versions.lock transitive closure is '${closure_status:-unspecified}', not 'complete'." >&2
@@ -200,7 +201,7 @@ record_host_baseline() {
     if command -v dpkg-query >/dev/null 2>&1; then
       dpkg-query -W -f='  ${Package}: ${Version} (${Architecture})\n'
     fi
-  } > "${tmp_file}"
+  } >"${tmp_file}"
 
   mkdir -p "$(dirname "${dest_file}")"
   mv -f "${tmp_file}" "${dest_file}"
@@ -250,12 +251,12 @@ validate_host_baseline() {
     fi
     owner_gid="$(stat -c %g "${baseline_file}" 2>/dev/null || echo 1)"
     perms="$(stat -c %a "${baseline_file}" 2>/dev/null || echo "777")"
-    mode_val=$(( 8#${perms} ))
-    if (( (mode_val & 0002) != 0 )); then
+    mode_val=$((8#${perms}))
+    if (((mode_val & 0002) != 0)); then
       echo "FAIL: Baseline file ${baseline_file} has unsafe world-writable permissions (${perms})." >&2
       return 1
     fi
-    if (( (mode_val & 0020) != 0 )) && [ "${owner_gid}" -ne 0 ]; then
+    if (((mode_val & 0020) != 0)) && [ "${owner_gid}" -ne 0 ]; then
       echo "FAIL: Baseline file ${baseline_file} has unsafe group-writable permissions (${perms}) with non-root group (GID ${owner_gid})." >&2
       return 1
     fi
@@ -310,7 +311,7 @@ validate_host_baseline() {
 cmd_verify_lock() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         echo "Usage: ./deploy.sh verify-lock [-h|--help]"
         return 0
         ;;
@@ -615,7 +616,7 @@ cmd_verify_closure() {
   local candidate_manifest=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         cat <<'CLOSUREHELP'
 Usage: ./scripts/install_ros2.sh verify-closure --candidates <manifest_file>
 
@@ -811,7 +812,7 @@ cmd_prepare_host() {
   local dry_run=false
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         cat <<'PREPHELP'
 Usage: ./deploy.sh prepare-host [--dry-run]
 
@@ -1103,7 +1104,7 @@ cmd_install_ros() {
   local candidate_manifest=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         cat <<'ROSHELP'
 Usage: ./deploy.sh install-ros [--dry-run] [--candidates <file>]
 
@@ -1220,7 +1221,8 @@ ROSHELP
 
   # 6. Parse lock details
   local lock_data
-  lock_data="$(python3 - "${LOCK_FILE}" <<'PYLOCK'
+  lock_data="$(
+    python3 - "${LOCK_FILE}" <<'PYLOCK'
 import sys, re
 
 def parse_lock(filepath):
@@ -1260,7 +1262,7 @@ def parse_lock(filepath):
 
 print(parse_lock(sys.argv[1]))
 PYLOCK
-)"
+  )"
 
   local pinned_url
   local pinned_sha
@@ -1360,7 +1362,7 @@ cmd_install_deps() {
   local dry_run=false
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help|help)
+      -h | --help | help)
         cat <<'DEPSHELP'
 Usage: ./deploy.sh install-deps [--dry-run]
 
@@ -1450,7 +1452,8 @@ DEPSHELP
 
   # Parse rosdep sources metadata from versions.lock
   local rosdep_json
-  rosdep_json="$(python3 - "${LOCK_FILE}" <<'PYROSDEP'
+  rosdep_json="$(
+    python3 - "${LOCK_FILE}" <<'PYROSDEP'
 import sys, json, re
 
 def parse_rosdep(filepath):
@@ -1491,7 +1494,7 @@ def parse_rosdep(filepath):
 
 print(parse_rosdep(sys.argv[1]))
 PYROSDEP
-)"
+  )"
 
   if [ "${dry_run}" = "true" ]; then
     echo "[DRY-RUN] Verified rosdep snapshot sources:"
@@ -1555,7 +1558,7 @@ PYDOWNLOAD
   # Configure rosdep to use strictly local snapshot files
   mkdir -p /etc/ros/rosdep/sources.list.d
   local local_sources_list="/etc/ros/rosdep/sources.list.d/10-ubuntu-tank.list"
-  cat > "${local_sources_list}" <<EOF
+  cat >"${local_sources_list}" <<EOF
 # Pinned local snapshot sources for MentorPi native controller
 yaml file://${rosdep_dir}/base.yaml
 yaml file://${rosdep_dir}/python.yaml
@@ -1567,7 +1570,8 @@ EOF
 
   echo "--> Updating rosdep using verified snapshot..."
   local index_url
-  index_url="$(python3 - "${LOCK_FILE}" <<'PYINDEX'
+  index_url="$(
+    python3 - "${LOCK_FILE}" <<'PYINDEX'
 import sys, yaml
 try:
     with open(sys.argv[1]) as f:
@@ -1576,7 +1580,7 @@ try:
 except Exception:
     pass
 PYINDEX
-)"
+  )"
   export ROSDISTRO_INDEX_URL="${index_url:-https://raw.githubusercontent.com/ros/rosdistro/a9f673b32f2469b5b3655f62d53f176ef69b233a/index-v4.yaml}"
   rosdep update --rosdistro lyrical
 
@@ -1601,7 +1605,8 @@ PYINDEX
 
   echo "--> Cross-checking resolved apt packages against versions.lock..."
   local install_candidates
-  install_candidates="$(python3 - "${LOCK_FILE}" "${resolved_pairs[*]}" <<'PYRESOLVE'
+  install_candidates="$(
+    python3 - "${LOCK_FILE}" "${resolved_pairs[*]}" <<'PYRESOLVE'
 import sys, re
 
 lock_path = sys.argv[1]
@@ -1674,7 +1679,7 @@ if errors:
 
 print(' '.join(pkgs_to_install.values()))
 PYRESOLVE
-)"
+  )"
 
   if [ -n "${install_candidates}" ]; then
     echo "--> Verifying resolved dependencies were installed by the verified install-ros transaction..."
@@ -1723,7 +1728,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     install-deps)
       cmd_install_deps "$@"
       ;;
-    help|-h|--help)
+    help | -h | --help)
       usage
       ;;
     *)

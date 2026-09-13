@@ -152,19 +152,19 @@ run_negative_test() {
 }
 
 # Negative Test 1: Unpinned version
-run_negative_test   "Reject unpinned version containing 'latest'"   'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"][0]["version"] = "latest"; yaml.dump(d, open(sys.argv[2], "w"))'   "unpinned version"
+run_negative_test "Reject unpinned version containing 'latest'" 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"][0]["version"] = "latest"; yaml.dump(d, open(sys.argv[2], "w"))' "unpinned version"
 
 # Negative Test 2: Forbidden perception package injection
-run_negative_test   "Reject forbidden perception package in locked closure"   'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"].append({"name": "cv_bridge", "version": "1.0.0", "architecture": "arm64", "repository": "ros2", "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}); yaml.dump(d, open(sys.argv[2], "w"))'   "Forbidden perception package"
+run_negative_test "Reject forbidden perception package in locked closure" 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"].append({"name": "cv_bridge", "version": "1.0.0", "architecture": "arm64", "repository": "ros2", "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}); yaml.dump(d, open(sys.argv[2], "w"))' "Forbidden perception package"
 
 # Negative Test 3: Invalid SHA256 checksum
-run_negative_test   "Reject invalid non-hex / truncated SHA256 checksum"   'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"][0]["sha256"] = "invalid_short_hash"; yaml.dump(d, open(sys.argv[2], "w"))'   "sha256 must be 64-char hex string"
+run_negative_test "Reject invalid non-hex / truncated SHA256 checksum" 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"][0]["sha256"] = "invalid_short_hash"; yaml.dump(d, open(sys.argv[2], "w"))' "sha256 must be 64-char hex string"
 
 # Negative Test 4: Omitted required dependency
-run_negative_test   "Reject lockfile with omitted declared dependency"   'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"] = [p for p in d["packages"] if p["name"] != "ros-lyrical-rclpy"]; yaml.dump(d, open(sys.argv[2], "w"))'   "missing from versions.lock"
+run_negative_test "Reject lockfile with omitted declared dependency" 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["packages"] = [p for p in d["packages"] if p["name"] != "ros-lyrical-rclpy"]; yaml.dump(d, open(sys.argv[2], "w"))' "missing from versions.lock"
 
 # Negative Test 5: apt source URL containing latest
-run_negative_test   "Reject ros2-apt-source URL containing 'latest'"   'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["ros_apt_source"]["url"] = "https://repo.ros2.org/ubuntu/ros2-apt-source/latest.deb"; yaml.dump(d, open(sys.argv[2], "w"))'   "cannot contain 'latest'"
+run_negative_test "Reject ros2-apt-source URL containing 'latest'" 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); d["ros_apt_source"]["url"] = "https://repo.ros2.org/ubuntu/ros2-apt-source/latest.deb"; yaml.dump(d, open(sys.argv[2], "w"))' "cannot contain 'latest'"
 
 run_negative_closure_test() {
   local test_name="$1"
@@ -173,7 +173,7 @@ run_negative_closure_test() {
 
   local tmp_cand
   tmp_cand="$(mktemp "${TANK_DIR}/candidates.tmp.XXXXXX")"
-  echo "${manifest_content}" > "${tmp_cand}"
+  echo "${manifest_content}" >"${tmp_cand}"
 
   set +e
   local output

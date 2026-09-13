@@ -40,29 +40,44 @@ ALLOW_STAGED_INSTALL=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help|help)
+    -h | --help | help)
       usage
       exit 0
       ;;
     --workspace)
       WORKSPACE_DIR="${2:-}"
-      shift 2 || { echo "ERROR: --workspace requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --workspace requires an argument" >&2
+        exit 1
+      }
       ;;
     --release-id)
       RELEASE_ID="${2:-}"
-      shift 2 || { echo "ERROR: --release-id requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --release-id requires an argument" >&2
+        exit 1
+      }
       ;;
     --rootfs)
       ROOTFS_DIR="${2:-}"
-      shift 2 || { echo "ERROR: --rootfs requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --rootfs requires an argument" >&2
+        exit 1
+      }
       ;;
     --build-root)
       BUILD_ROOT_DIR="${2:-}"
-      shift 2 || { echo "ERROR: --build-root requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --build-root requires an argument" >&2
+        exit 1
+      }
       ;;
     --opt-dir)
       OPT_DIR="${2:-}"
-      shift 2 || { echo "ERROR: --opt-dir requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --opt-dir requires an argument" >&2
+        exit 1
+      }
       ;;
     --clean)
       CLEAN=true
@@ -74,7 +89,10 @@ while [ $# -gt 0 ]; do
       ;;
     --packages)
       PACKAGES="${2:-}"
-      shift 2 || { echo "ERROR: --packages requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --packages requires an argument" >&2
+        exit 1
+      }
       ;;
     --allow-staged-install)
       ALLOW_STAGED_INSTALL=true
@@ -95,7 +113,7 @@ if [ -z "${RELEASE_ID}" ]; then
     echo "ERROR: VERSION file missing at '${VERSION_FILE}'" >&2
     exit 1
   fi
-  VERSION="$(tr -d '[:space:]' < "${VERSION_FILE}")"
+  VERSION="$(tr -d '[:space:]' <"${VERSION_FILE}")"
   SHORT_COMMIT="$(git -C "${WORKSPACE_DIR}" rev-parse --short=7 HEAD 2>/dev/null || echo "0000000")"
   RELEASE_ID="${VERSION}-g${SHORT_COMMIT}"
 fi
@@ -137,12 +155,12 @@ validate_disposable_target() {
   canon_target="$(realpath -m "${target}")"
 
   # Reject root, home, and broad system directories
-  if [ "${canon_target}" = "/" ] || [ "${canon_target}" = "/home" ] || [ "${canon_target}" = "/etc" ] || \
-     [ "${canon_target}" = "/usr" ] || [ "${canon_target}" = "/var" ] || [ "${canon_target}" = "/tmp" ] || \
-     [ "${canon_target}" = "/var/tmp" ] || [ "${canon_target}" = "/root" ] || [ "${canon_target}" = "/opt" ] || \
-     [ "${canon_target}" = "/boot" ] || [ "${canon_target}" = "/run" ] || [ "${canon_target}" = "/sys" ] || \
-     [ "${canon_target}" = "/proc" ] || [ "${canon_target}" = "/dev" ] || \
-     { [ -n "${HOME:-}" ] && [ "${canon_target}" = "${HOME}" ]; }; then
+  if [ "${canon_target}" = "/" ] || [ "${canon_target}" = "/home" ] || [ "${canon_target}" = "/etc" ] ||
+    [ "${canon_target}" = "/usr" ] || [ "${canon_target}" = "/var" ] || [ "${canon_target}" = "/tmp" ] ||
+    [ "${canon_target}" = "/var/tmp" ] || [ "${canon_target}" = "/root" ] || [ "${canon_target}" = "/opt" ] ||
+    [ "${canon_target}" = "/boot" ] || [ "${canon_target}" = "/run" ] || [ "${canon_target}" = "/sys" ] ||
+    [ "${canon_target}" = "/proc" ] || [ "${canon_target}" = "/dev" ] ||
+    { [ -n "${HOME:-}" ] && [ "${canon_target}" = "${HOME}" ]; }; then
     echo "ERROR: Refusing to clean broad or system directory for ${label}: '${target}' (${canon_target})" >&2
     exit 1
   fi
@@ -164,7 +182,7 @@ validate_disposable_target() {
     local rel_to_ws="${canon_target#"${canon_ws}/"}"
     # Reject protected workspace directories
     case "${rel_to_ws}" in
-      src|src/*|config|config/*|host|host/*|scripts|scripts/*|tests|tests/*|docs|docs/*|bin|bin/*)
+      src | src/* | config | config/* | host | host/* | scripts | scripts/* | tests | tests/* | docs | docs/* | bin | bin/*)
         echo "ERROR: Refusing to clean protected workspace path for ${label}: '${target}'" >&2
         exit 1
         ;;
@@ -221,7 +239,7 @@ verify_arm64_ubuntu_rootfs() {
   local arch_verified=false
   if [ -f "${rootfs}/var/lib/dpkg/arch" ]; then
     local dpkg_arch
-    dpkg_arch="$(tr -d '[:space:]' < "${rootfs}/var/lib/dpkg/arch")"
+    dpkg_arch="$(tr -d '[:space:]' <"${rootfs}/var/lib/dpkg/arch")"
     if [ "${dpkg_arch}" = "arm64" ]; then
       arch_verified=true
     fi
@@ -380,7 +398,7 @@ if [ "${BUILD_SUCCESS}" = false ]; then
     for tdir in "${TARGET_INSTALL_DIR}" "${ROOTFS_INSTALL_DIR}"; do
       mkdir -p "${tdir}/bin" "${tdir}/lib" "${tdir}/share"
 
-      cat <<EOF > "${tdir}/setup.bash"
+      cat <<EOF >"${tdir}/setup.bash"
 #!/usr/bin/env bash
 # Generated production environment for release ${RELEASE_ID}
 export COLCON_CURRENT_PREFIX="${PRODUCTION_PREFIX}"
@@ -390,7 +408,7 @@ export PATH="\${COLCON_CURRENT_PREFIX}/bin:\${PATH:-}"
 EOF
       chmod 0755 "${tdir}/setup.bash"
 
-      cat <<'EOF' > "${tdir}/bin/tank_verify_install"
+      cat <<'EOF' >"${tdir}/bin/tank_verify_install"
 #!/usr/bin/env python3
 """Verification executable confirming standalone execution at production prefix."""
 import os, sys
@@ -403,7 +421,7 @@ EOF
     # Ensure minimal rootfs markers exist in ROOTFS_DIR for consistency
     mkdir -p "${ROOTFS_DIR}/etc" "${ROOTFS_DIR}/var/lib/dpkg"
     if [ ! -f "${ROOTFS_DIR}/etc/os-release" ]; then
-      cat <<'EOF' > "${ROOTFS_DIR}/etc/os-release"
+      cat <<'EOF' >"${ROOTFS_DIR}/etc/os-release"
 NAME="Ubuntu"
 VERSION="26.04 LTS (Resolute Raccoon)"
 ID=ubuntu
@@ -411,7 +429,7 @@ VERSION_ID="26.04"
 EOF
     fi
     if [ ! -f "${ROOTFS_DIR}/var/lib/dpkg/arch" ]; then
-      echo "arm64" > "${ROOTFS_DIR}/var/lib/dpkg/arch"
+      echo "arm64" >"${ROOTFS_DIR}/var/lib/dpkg/arch"
     fi
 
     BUILD_SUCCESS=true

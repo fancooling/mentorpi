@@ -44,7 +44,7 @@ BUILD_BASE="${UBUNTU_TANK_DIR}/build"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help|help)
+    -h | --help | help)
       usage
       exit 0
       ;;
@@ -74,15 +74,24 @@ while [ $# -gt 0 ]; do
       ;;
     --packages)
       SELECTED_PACKAGES="${2:-}"
-      shift 2 || { echo "ERROR: --packages requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --packages requires an argument" >&2
+        exit 1
+      }
       ;;
     --install-base)
       INSTALL_BASE="${2:-}"
-      shift 2 || { echo "ERROR: --install-base requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --install-base requires an argument" >&2
+        exit 1
+      }
       ;;
     --build-base)
       BUILD_BASE="${2:-}"
-      shift 2 || { echo "ERROR: --build-base requires an argument" >&2; exit 1; }
+      shift 2 || {
+        echo "ERROR: --build-base requires an argument" >&2
+        exit 1
+      }
       ;;
     *)
       echo "Unknown option: $1" >&2
@@ -129,9 +138,9 @@ validate_clean_target() {
   canon_target="$(realpath -m "${target}")"
 
   # Reject root, home, or broad system directories
-  if [ "${canon_target}" = "/" ] || [ "${canon_target}" = "/home" ] || [ "${canon_target}" = "/etc" ] || \
-     [ "${canon_target}" = "/usr" ] || [ "${canon_target}" = "/var" ] || [ "${canon_target}" = "/tmp" ] || \
-     { [ -n "${HOME:-}" ] && [ "${canon_target}" = "${HOME}" ]; }; then
+  if [ "${canon_target}" = "/" ] || [ "${canon_target}" = "/home" ] || [ "${canon_target}" = "/etc" ] ||
+    [ "${canon_target}" = "/usr" ] || [ "${canon_target}" = "/var" ] || [ "${canon_target}" = "/tmp" ] ||
+    { [ -n "${HOME:-}" ] && [ "${canon_target}" = "${HOME}" ]; }; then
     echo "ERROR: Refusing to clean broad or system directory for ${label}: '${target}'" >&2
     exit 1
   fi
@@ -162,8 +171,8 @@ validate_clean_target() {
       ;;
   esac
 
-  if [ "${canon_target}" != "${expected_target}" ] && \
-     [[ "${canon_target}" != "${canon_tank}/.work/"* ]]; then
+  if [ "${canon_target}" != "${expected_target}" ] &&
+    [[ "${canon_target}" != "${canon_tank}/.work/"* ]]; then
     echo "ERROR: Refusing to clean non-disposable workspace path for ${label}: '${target}'" >&2
     echo "Cleanup targets must be the standard ${label} directory or a descendant of ${canon_tank}/.work/." >&2
     exit 1
@@ -188,8 +197,8 @@ fi
 ROS_SETUP="${ROS_DISTRO_PATH:-/opt/ros/lyrical}/setup.bash"
 if [ -f "${ROS_SETUP}" ]; then
   echo "Sourcing ROS environment: ${ROS_SETUP}"
-  # shellcheck source=/dev/null
   set +u
+  # shellcheck source=/dev/null
   source "${ROS_SETUP}"
   set -u
 else
@@ -215,7 +224,7 @@ fi
 COLCON_CMD+=("--build-base" "${BUILD_BASE}" "--install-base" "${INSTALL_BASE}")
 
 if [ -n "${SELECTED_PACKAGES}" ]; then
-  IFS=',' read -r -a PKG_ARRAY <<< "${SELECTED_PACKAGES}"
+  IFS=',' read -r -a PKG_ARRAY <<<"${SELECTED_PACKAGES}"
   COLCON_CMD+=("--packages-select" "${PKG_ARRAY[@]}")
 fi
 

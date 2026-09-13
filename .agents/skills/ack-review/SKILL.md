@@ -63,6 +63,8 @@ Run the full regression test suite:
 ```
 Verify:
 - 100% test pass rate across all unit, integration, and provenance tests.
+- Run code formatting with `.venv/bin/ruff format <files>` across modified authored Python files (never reformat files marked `identical`).
+- Run code formatting with `.venv/bin/shfmt -i 2 -ci -w <files>` and linting with `.venv/bin/shellcheck <files>` across modified authored shell scripts.
 - Zero whitespace errors:
   ```bash
   git diff --check

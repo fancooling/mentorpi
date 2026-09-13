@@ -14,6 +14,13 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
 - Fold revisions addressing code review comments into the existing commit for
   that feature or milestone by amending or squashing them; do not leave separate
   review-fix commits or create a new version for those revisions.
+- Always run code formatting and linting before each commit: format modified
+  authored Python code using `.venv/bin/ruff format <files>`, format modified
+  authored shell scripts using `.venv/bin/shfmt -i 2 -ci -w <files>` and verify
+  with `.venv/bin/shellcheck <files>`, ensure `git diff --check` reports zero
+  whitespace or formatting errors, and update `source-manifest.txt` hashes if
+  tracked files were modified.
+- Never reformat vendor files marked `identical` to preserve provenance parity.
 - Every commit must include an informational body explaining what changed and
   why, including relevant operational effects and validation. Keep that body
   current when incorporating review revisions.

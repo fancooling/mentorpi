@@ -26,7 +26,7 @@ while [ $# -gt 0 ]; do
       ALLOW_ARMED=1
       shift
       ;;
-    help|--help|-h)
+    help | --help | -h)
       usage
       exit 0
       ;;
