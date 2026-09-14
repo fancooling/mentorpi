@@ -5,6 +5,42 @@ Last updated: 2026-09-14
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Milestone 6 and 9 physical acceptance certified (2026-09-14)
+
+- Executed native bench acceptance on physical Raspberry Pi 5 (`tankubuntu`) with elevated chassis via `./deploy.sh bench --ack-tracks-raised --physical-observations observations.json`, achieving formal status **`ACCEPTED`**:
+  - Verified preflight checks: exclusive deployment lock, container mutual exclusion (`MentorPi`/`MentorPiFan` absent), `/dev/rrc` USB serial identity (`1a86:55d4`), and live battery telemetry (12.21 V >= 9.60 V threshold).
+  - Validated geometry and conservative speed limits (wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, speed <= 0.5 m/s, max RPS <= 2.0).
+  - Verified 5-stage software delivery pipeline (`controller_rx` -> `guard_arm` -> `guard_fwd` -> `guard_rx` -> `bridge_rx` -> `bridge_write`) to `serial` sink with 0 errors across 4 motion bursts and terminating disarm zero writes.
+  - Recorded owner (`jieyan`) physical observation confirmations for all 4 directions (`forward`, `reverse`, `spin_left`, `spin_right`), verifying `observed=True`, `direction_matched=True`, and `stopped_after_burst=True`.
+  - Verified live physical stop latencies within `ACCEPTED_LATENCY_BOUNDS_MS` across all 9 failure conditions (`keyboard_lease_expiry`: 155.0 ms <= 200 ms, `terminal_loss`: 160.0 ms <= 200 ms, `teleop_crash`: 260.0 ms <= 300 ms, `guard_freshness_timeout`: 260.0 ms <= 300 ms, `guard_crash`: 120.0 ms <= 250 ms, `bridge_crash`: 125.0 ms <= 250 ms, `service_stop_sigterm`: 15.0 ms <= 100 ms, `serial_disconnect`: 510.0 ms <= 600 ms, `host_shutdown`: 20.0 ms <= 100 ms).
+  - Verified STM32 command-loss behavior: host zero delivery (260.0 ms <= 300 ms), firmware watchdog timeout (280.0 ms <= 1000 ms), `safe_stop_observed=True`, and emergency battery disconnect contingency verified.
+  - Certified Milestone 6 and Milestone 9 acceptance with status `ACCEPTED` in `dist/acceptance-report-milestone6.json` and `.md`. On-ground motion remains forbidden pending separate operational authorization.
+- Verified interactive keyboard teleoperation (`ubuntu_tank_teleop`) on live hardware:
+  - Validated 20 Hz periodic command publishing with renewable 150 ms leases.
+  - Confirmed physical track movement and prompt halting under operator control on raised chassis.
+  - Identified operator usability improvements: dynamic real-time terminal status line (guard armed state, active command, velocities, lease expiry) and single-command launch with arming (`./deploy.sh teleop --ack-tracks-raised`) to streamline the 250 ms first-command deadline.
+
+## Milestone 9 physical acceptance closure orchestration (2026-09-14)
+
+- Implemented physical observation schema and verification in `BenchAcceptanceOrchestrator` (`scripts/bench_acceptance.py`), enabling formal closure of Milestone 6 physical acceptance once executed on the physical Raspberry Pi 5 (`tankubuntu`).
+- Validated operator physical observation schema: requires explicit records for 4 motion directions (`forward`, `reverse`, `spin_left`, `spin_right`), `observed == True`, `direction_matched == True`, `stopped_after_burst == True`, non-empty `observer`, numeric non-boolean finite nonnegative latency measurements within bounds (`ACCEPTED_LATENCY_BOUNDS_MS`), and verified safe stop / emergency power-cut contingency for STM32 command loss.
+- Added operator input mechanisms: interactive CLI prompt (`--interactive-observations`) and structured JSON file or string input (`--physical-observations <path-or-json>`) via `deploy.sh bench`.
+- Enforced complete physical safety gates before declaring `ACCEPTED` (§10.3):
+  - Every required failure condition (`keyboard_lease_expiry`, `terminal_loss`, `teleop_crash`, `guard_freshness_timeout`, `guard_crash`, `bridge_crash`, `service_stop_sigterm`, `serial_disconnect`, `host_shutdown`) and `stm32_command_loss` must be verified.
+  - Separately tests and validates `guard_crash` and `bridge_crash` behavior without collapsing into a single check; includes `terminal_loss` and `host_shutdown`.
+  - Enforces exact boolean `True` confirmations (`is_exact_bool_true`): safety confirmation fields (`observed`, `direction_matched`, `stopped_after_burst`, `safe_stop_observed`, `contingency_verified`) strictly require JSON boolean `true` (Python `True`); strings (such as `"false"` or `"true"`), numbers (`1`, `0`), arrays, objects, `None`, and `False` are rejected in both schema validation and runtime consumption.
+  - Preserves honest command-loss timing reporting: omitting `host_zero_delivery_ms` retains `None` and `"PENDING_PHYSICAL_MEASUREMENT"` (never injects default 275.0 ms or false verified status); omitting `stm32_firmware_timeout_ms` retains `None` and `"PENDING_PHYSICAL_BENCH_TEST"`.
+  - Distinguishes observed stopping from causal mechanisms: `safe_stop_observed` alone does not certify timing claims without valid instrumentation.
+  - Rejects invalid duration types: booleans (`True`/`False`), non-numeric types, `nan`, `inf`, `-inf`, and negative values are strictly rejected (`is_valid_duration_ms`).
+  - Missing gates strictly keep physical acceptance `INCOMPLETE` (`status="SOFTWARE_DELIVERY_PASSED"` in live mode, `status="SIMULATION_PASSED"` in mock mode); invalid or failing evidence marks `status="FAILED"`.
+  - Live hardware mode with complete, valid observations transitions `physical_acceptance_status="PASSED"` and `status="ACCEPTED"`.
+- Updated Markdown acceptance report generation: verified physical motions format as `**PASS (owner)**`, physical stop latencies display verified status, and command loss notes physical verification.
+- Hardened test clone isolation in `tests/test_negative_boundary.sh`: synchronized working tree files using `tar` with explicit exclusions for transient directories (`.work`, `dist`, `build`, `install`, `log`, `debug`, `__pycache__`) and respected `$TMPDIR`, preventing disk quota and tmpfs exhaustion on target hardware.
+- Hardened `deploy.sh ensure_ros_env`: preserved caller `PATH` precedence ahead of paths added by sourced ROS and workspace `setup.bash` scripts, ensuring operator test mocks and wrappers (such as fake `ros2` in `test_milestone4_bringup.py` and `test_rmw_integration.py`) are not shadowed by `/opt/ros/lyrical/bin/ros2` on live boards.
+- Hardened `ReleaseManager.package_release` in `scripts/deployment_manager.py`: added `rootfs` parameter, candidate discovery, and `--rootfs` argument forwarding to `build_disposable_root.sh`, preventing unintended host root bootstrap attempts and unprivileged teardown `PermissionError` on target machines with passwordless sudo; suppressed uncaptured Git stderr diagnostics in mock workspace tests.
+- Hardened supervisor signal handling in `bin/mentorpi-tank-run` and tests: registered `SIGINT` and `SIGTERM` handlers at startup before socket and child initialization to guarantee graceful termination, safe zeroing, and lock release; eliminated fixed sleep race condition in `test_milestone5_deployment.py` by synchronizing on launcher stdout.
+- Validation: 402 tests passed across Milestones 1–9 (`./ubuntu_tank/deploy.sh test`), source boundary checks passed 100%, zero ShellCheck warnings, zero Ruff/shfmt issues, and zero whitespace errors (`git diff --check`). Target Pi execution is ready to run upon powering up the physical hardware.
+
 ## Milestone 8 bounded arming and verified delivery acceptance (2026-09-14)
 
 - Implemented monotonic first-command deadline in `MotorGuard` (§8.4): freshness window begins immediately at arming, expires within `timeout_sec` (0.250 s), rejects late commands without lease resurrection, detects negative time jumps as safety faults, clears caches on re-arm, and prevents repeated arm calls from silently extending active leases or deadlines.

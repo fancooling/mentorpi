@@ -1648,6 +1648,73 @@ exit 0
             self.assertIn("ENABLE=true", output)
             self.assertIn("STRATEGY=Enforce", output)
 
+    def test_deploy_arm_preserves_caller_path_precedence_over_sourced_ros(self):
+        """deploy.sh ensure_ros_env must preserve caller PATH overrides ahead of sourced setup scripts."""
+        import subprocess
+
+        deploy_sh = os.path.join(UBUNTU_TANK_DIR, "deploy.sh")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws_tank = os.path.join(tmpdir, "ws", "ubuntu_tank")
+            ws_install = os.path.join(tmpdir, "ws", "install")
+            upstream_bin = os.path.join(tmpdir, "upstream_ros", "bin")
+            caller_bin = os.path.join(tmpdir, "caller", "bin")
+            os.makedirs(ws_tank)
+            os.makedirs(ws_install)
+            os.makedirs(upstream_bin)
+            os.makedirs(caller_bin)
+
+            # Copy deploy.sh into mock workspace
+            import shutil
+
+            mock_deploy_sh = os.path.join(ws_tank, "deploy.sh")
+            shutil.copyfile(deploy_sh, mock_deploy_sh)
+            os.chmod(mock_deploy_sh, 0o755)
+
+            # Upstream setup script that prepends upstream_bin to PATH
+            mock_setup = os.path.join(ws_install, "setup.bash")
+            with open(mock_setup, "w") as f:
+                f.write(f'export PATH="{upstream_bin}:$PATH"\n')
+
+            # Upstream ros2 that would fail if called
+            upstream_ros2 = os.path.join(upstream_bin, "ros2")
+            with open(upstream_ros2, "w") as f:
+                f.write('#!/bin/sh\necho "ERROR: Upstream ROS 2 called" >&2\nexit 42\n')
+            os.chmod(upstream_ros2, 0o755)
+
+            # Caller mock ros2
+            caller_ros2 = os.path.join(caller_bin, "ros2")
+            caller_log = os.path.join(tmpdir, "caller_ros2.log")
+            with open(caller_ros2, "w") as f:
+                f.write(f'#!/bin/sh\necho "$@" > "{caller_log}"\nexit 0\n')
+            os.chmod(caller_ros2, 0o755)
+
+            # Caller mock docker
+            caller_docker = os.path.join(caller_bin, "docker")
+            with open(caller_docker, "w") as f:
+                f.write(
+                    "#!/bin/sh\necho 'CONTAINER ID IMAGE COMMAND CREATED STATUS PORTS NAMES'\nexit 0\n"
+                )
+            os.chmod(caller_docker, 0o755)
+
+            env = dict(os.environ)
+            env["PATH"] = f"{caller_bin}:{env.get('PATH', '')}"
+
+            res = subprocess.run(
+                ["bash", mock_deploy_sh, "arm", "--ack-tracks-raised"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(
+                res.returncode,
+                0,
+                f"deploy.sh arm failed to preserve caller PATH precedence: {res.stderr}",
+            )
+            with open(caller_log, "r") as f:
+                log_data = f.read()
+            self.assertIn("run ubuntu_tank_bringup operator_client --arm", log_data)
+
     def test_operator_client_disabled_services_and_timeout(self):
         """OperatorClientNode must disable unneeded parameter/type services and timeout cleanly."""
         from ubuntu_tank_bringup.operator_client import (

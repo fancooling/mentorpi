@@ -37,11 +37,12 @@ Target Operations (Milestone 5):
   status                         Display service health, ROS graph, and guard state
   logs                           Show recent systemd journal logs for mentorpi-tank.service
 
-Hardware Actuation (Milestones 4 & 6):
+Hardware Actuation (Milestones 4, 6, & 9):
   arm --ack-tracks-raised        Explicitly arm motor guard (requires physical safety acknowledgment)
   disarm                         Immediately disarm and send repeated zero commands
   teleop                         Run interactive keyboard teleoperation (W/A/S/D)
   bench --ack-tracks-raised      Run bounded bench test of forward/reverse/left/right motion
+                                 Options: [--physical-observations <file>] [--interactive-observations]
 
 Safety Rules:
   1. Motor guard starts disarmed by default after every restart.
@@ -120,14 +121,19 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
 
   echo ""
+  echo "--> Running Milestone 9 Physical Acceptance Closure tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, & 8 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, & 9 tests PASSED successfully!"
   echo "============================================================"
 }
 
 # Load ROS and the active release overlay for operator commands, falling back to
 # the local install tree. Disable nounset while sourcing upstream setup scripts.
 ensure_ros_env() {
+  local pre_ros_path="${PATH:-}"
   if [ -f /opt/ros/lyrical/setup.bash ]; then
     set +u
     # shellcheck source=/dev/null
@@ -144,6 +150,30 @@ ensure_ros_env() {
     # shellcheck source=/dev/null
     source "${WORKSPACE_ROOT}/install/setup.bash"
     set -u
+  fi
+
+  # Preserve caller PATH precedence (e.g. test harness mocks or explicit wrappers)
+  if [ -n "${pre_ros_path}" ]; then
+    local new_path=""
+    local p
+    local oifs="${IFS}"
+    IFS=':'
+    for p in ${pre_ros_path} ${PATH}; do
+      [ -n "${p}" ] || continue
+      case ":${new_path}:" in
+        *":${p}:"*) ;;
+        *)
+          if [ -z "${new_path}" ]; then
+            new_path="${p}"
+          else
+            new_path="${new_path}:${p}"
+          fi
+          ;;
+      esac
+    done
+    IFS="${oifs}"
+    PATH="${new_path}"
+    export PATH
   fi
 
   # Resolve Fast DDS loopback profile

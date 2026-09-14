@@ -1046,9 +1046,16 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         proc = subprocess.Popen(
             [runner_path], env=env_sleep, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        time.sleep(0.3)
+        # Wait until runner has launched child and entered supervisor loop
+        start_wait = time.monotonic()
+        while time.monotonic() - start_wait < 10.0:
+            line = proc.stdout.readline()
+            if b"Launching ROS graph" in line:
+                break
+            if proc.poll() is not None:
+                break
         proc.terminate()
-        stdout, stderr = proc.communicate(timeout=4.0)
+        stdout, stderr = proc.communicate(timeout=5.0)
         self.assertEqual(
             proc.returncode,
             0,
@@ -2582,6 +2589,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                     output_dir=out_dist,
                     release_id="1.0.0-failedbuild",
                     build_root=fail_build_root,
+                    rootfs=fail_rootfs,
                     allow_staged_install=False,
                 )
             self.assertIn("Production builder failed", str(ctx.exception))
@@ -2625,7 +2633,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
             self.assertTrue(any("install" in e.lower() for e in errs))
         finally:
             if os.path.exists(tmp_test):
-                shutil.rmtree(tmp_test)
+                shutil.rmtree(tmp_test, ignore_errors=True)
 
 
 class TestReviewFindingsRound6(BaseDeploymentTestCase):

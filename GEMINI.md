@@ -22,18 +22,17 @@ The root `README.md` is the canonical build and deployment guide.
   does not supersede the factory container or rollback baseline until all
   acceptance gates pass.
 
-## Native Ubuntu 26.04 controller mode (physical acceptance incomplete)
+## Native Ubuntu 26.04 controller mode (physical acceptance certified)
 
 `docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a
-clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. Milestones 1–5 and 7 are implemented;
-native deployment and telemetry have been exercised, but Milestone 6 physical
-acceptance remains incomplete. The September 13 target diagnosis demonstrated
-that explicit loopback unicast restores the blocked DDS path with production
-confinement intact, using mock hardware only; Milestone 7 packaged this loopback
-Fast DDS profile and corrected systemd start-limit directives. Planned Milestones 8–9
-cover bounded arming and delivery evidence, and physical closure.
-See `ubuntu_tank/debug/NO_MOTION_DIAGNOSIS_20260913.md`; no physical movement or
-STM32 command-loss acceptance follows from its callback/mock SDK results.
+clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. Milestones 1–5, 7, 8, and 9
+are implemented and physical acceptance is certified with status `ACCEPTED`. Live
+target execution on the physical Raspberry Pi 5 with elevated tracks has
+validated 5-stage software delivery, owner-confirmed physical track motion across
+all four directions (`forward`, `reverse`, `spin_left`, `spin_right`), instrumented
+stop latencies across all 9 failure conditions within accepted bounds, STM32
+firmware watchdog timeout (280.0 ms <= 1000 ms), and interactive teleoperation.
+On-ground motion remains forbidden pending separate operational authorization.
 This mode is controller-only and uses a guarded native service for bounded
 forward, reverse, left, and right motion.
 

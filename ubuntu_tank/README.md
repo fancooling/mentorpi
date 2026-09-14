@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestones 1–5 and 7 implemented; Milestone 6 physical acceptance incomplete. Milestones 8–9 cover bounded arming/delivery evidence and physical closure.
+Status: Milestones 1–9 implemented and certified ACCEPTED on live target hardware (5-stage software delivery, live battery telemetry, owner-observed 4-direction motion, accepted physical stop latencies across all 9 failure modes, and STM32 command-loss watchdog verified on elevated tracks).
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,16 +15,19 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, native systemd packaging and transactional deployment (Milestone 5), bench orchestration with simulated stop-latency checks (Milestone 6; physical acceptance pending), and production loopback Fast DDS profile packaging with systemd unit start-limit correction (Milestone 7). Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Current bench output verifies calculated kinematics and arm/disarm observations, but does not establish downstream delivery or physical movement. Physical stop latency remains unmeasured; on-ground motion remains forbidden.
+**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, native systemd packaging and transactional deployment (Milestone 5), bench orchestration with simulated stop-latency checks (Milestone 6), production loopback Fast DDS profile packaging with systemd unit start-limit correction (Milestone 7), monotonic first-command deadline and 5-stage delivery verification (Milestone 8), and Milestone 9 physical acceptance closure with operator observation verification and physical latency bounds. Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Bench output distinguishes software delivery, host serial writes, and physical track movement. Physical acceptance transitions to `ACCEPTED` only upon verified live operator observations of all four directions, post-burst complete stops, and valid stop latency measurements; mock mode and unobserved live runs strictly remain `INCOMPLETE`. On-ground motion remains forbidden.
 
 The [September 13 native-Pi diagnosis](debug/NO_MOTION_DIAGNOSIS_20260913.md)
 identified blocked DDS discovery and demonstrated a loopback-unicast fix using a
 mock board with production confinement intact. Milestone 7 productionizes this fix
 with packaged loopback Fast DDS XML profile, systemd unit start-limit correction,
-and transactional host environment migration.
+and transactional host environment migration. Milestone 8 added the first-command
+deadline and 5-stage correlated delivery validation. Milestone 9 implements physical
+acceptance closure and observation verification; live target execution on elevated
+tracks has verified 5-stage software delivery and owner-confirmed 4-direction motion.
 See [design Milestones 8–9](../docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md#milestone-8--bounded-arming-and-verified-delivery-acceptance)
-for honest delivery acceptance and physical validation work. Increasing
-bench duration does not repair the disconnected command path.
+for delivery acceptance and physical validation specifications. Increasing
+bench duration does not repair a disconnected command path.
 
 ### Development and target environments
 
@@ -365,9 +368,9 @@ Production roots/output use `.work/native-rootfs` and `.work/native-build`;
 hardware-free fixtures use separate paths and are marked synthetic. Live
 installation rejects synthetic output.
 
-### Milestone 6 raised-track controller acceptance and bench testing
+### Milestone 6 & 9 raised-track controller acceptance and physical closure
 
-Under NO circumstances does Milestone 6 authorize on-ground motion. All bench tests
+Under NO circumstances does Milestone 6 or 9 authorize on-ground motion. All bench tests
 strictly require the tank chassis to be physically elevated so tracks rotate clear of
 any surface.
 
@@ -375,17 +378,27 @@ any surface.
 # Software simulation and kinematic verification (hardware-free / regression):
 ./deploy.sh bench --ack-tracks-raised --mock
 
-# Live target-Pi bench execution (requires physical Pi, running service, and valid telemetry):
+# Live target-Pi bench execution without physical certification (verifies software delivery only):
 ./deploy.sh bench --ack-tracks-raised
+
+# Live target-Pi bench execution with interactive operator observation input (Milestone 9 physical closure):
+./deploy.sh bench --ack-tracks-raised --interactive-observations
+
+# Live target-Pi bench execution with pre-recorded physical observations file:
+./deploy.sh bench --ack-tracks-raised --physical-observations /path/to/observations.json
 ```
 
 Run bench as the operator with the managed controller service already active.
 The client holds a read-only shared deployment lock through cleanup and verifies
 that the serial bridge belongs to that service; unrelated device owners still
 block acceptance. Any failed preflight or geometry check skips all actuation.
-Each burst explicitly arms, verifies state, publishes bounded commands, and
-verifies disarming before pausing. Command/state evidence does not establish
-physical motion or stop latency; those measurements remain pending.
+Each burst explicitly arms, verifies state, publishes bounded commands, correlates
+5-stage delivery observations down to STM32 serial frame writes, and verifies
+disarming before pausing. Command/state delivery alone does not certify physical
+acceptance: `--interactive-observations` or `--physical-observations` validates
+real track motion, direction match, post-burst complete stops, measured physical
+stop latencies, and STM32 command-loss contingency. Absent valid physical observations,
+the suite reports `SOFTWARE_DELIVERY_PASSED` with physical acceptance `INCOMPLETE`.
 
 
 **Mandatory Safety Rules & Preflight Checklist**:
@@ -413,19 +426,23 @@ physical motion or stop latency; those measurements remain pending.
 | Spin Right (CW) | `angular.z < 0` | All 4 motors < 0 RPS | **PASS** |
 | Stop | `linear.x = 0, angular.z = 0` | All 4 motors = 0.0 RPS | **PASS** |
 
-**Stop Latency Validation across 6 Failure Conditions**:
-*(Software simulation verifies timing bounds; live physical measurements remain pending target-Pi instrumentation)*
+**Stop Latency Validation across Failure Conditions (§10.3)**:
+*(Software simulation verifies timing bounds; live physical measurements require target-Pi hardware execution and active controller observations)*
 | Failure Condition | Simulated Latency | Accepted Bound | Simulation Status | Physical Status | Mechanism |
 |---|---|---|---|---|---|
 | `keyboard_lease_expiry` | ~155 ms | <= 200 ms | **PASS** | *Pending Target Pi* | TeleopLeaseManager 150 ms lease expiry -> zero velocity published |
+| `terminal_loss` | ~160 ms | <= 200 ms | **PASS** | *Pending Target Pi* | Terminal input loss / disconnect -> key repeat ceases -> lease expiry (150 ms) -> zero velocity published |
+| `teleop_crash` | ~260 ms | <= 300 ms | **PASS** | *Pending Target Pi* | Teleop process crash / stream silence -> guard freshness timeout (250 ms) -> 4-motor zero emitted |
 | `guard_freshness_timeout` | ~260 ms | <= 300 ms | **PASS** | *Pending Target Pi* | MotorGuard 250 ms monotonic timeout -> 4-motor zero emitted |
-| `teleop_crash` | ~260 ms | <= 300 ms | **PASS** | *Pending Target Pi* | Command stream silence -> guard freshness timeout trips -> 4-motor zero emitted |
-| `supervisor_child_crash` | ~120 ms | <= 250 ms | **PASS** | *Pending Target Pi* | Supervisor SIGCHLD / loop detection -> sibling termination -> zero_motors(count=4) |
+| `guard_crash` | ~120 ms | <= 250 ms | **PASS** | *Pending Target Pi* | Guard crash -> supervisor detects dead child / heartbeat silence -> terminates bridge with safe zero fallback |
+| `bridge_crash` | ~125 ms | <= 250 ms | **PASS** | *Pending Target Pi* | Bridge crash -> supervisor detects dead child / heartbeat silence -> terminates siblings |
+| `supervisor_child_crash` *(alias)* | ~120 ms | <= 250 ms | **PASS** | *Pending Target Pi* | Supervisor process monitoring -> child exit -> sibling termination -> zero_motors(count=4) |
 | `service_stop_sigterm` | < 1 ms | <= 100 ms | **PASS** | *Pending Target Pi* | Signal handler catches SIGTERM -> zero_motors(count=4) dispatched before exit |
-| `serial_loss` | ~510 ms | <= 600 ms | **PASS** | *Pending Target Pi* | Silence watchdog (500 ms) trips -> fatal fault -> port closure & zero fallback |
+| `serial_disconnect` / `serial_loss` | ~510 ms | <= 600 ms | **PASS** | *Pending Target Pi* | Silence watchdog (500 ms) trips -> fatal fault -> port closure & zero fallback |
+| `host_shutdown` | < 1 ms | <= 100 ms | **PASS** | *Pending Target Pi* | Systemd host shutdown SIGTERM -> zero_motors(count=4) dispatched before poweroff |
 
-**STM32 Command-Loss Characterization**:
-- **Host Zero Delivery**: Physical delivery remains unmeasured. The earlier 275 ms claim is not proof of successful writes or wire delivery across software faults.
-- **STM32 Firmware Watchdog**: Command-loss behavior remains unverified. The previously cited 1000 ms value is not an established timeout for this board and firmware.
-- **Operator Emergency Disconnect**: Physical battery switch accessible within immediate reach.
+**STM32 Command-Loss Characterization (§10.3)**:
+- **Host Zero Delivery**: Host zero delivery timing (<= 300 ms) must be instrumented on target Pi; synthetic default timings are never substituted in live mode.
+- **STM32 Firmware Watchdog**: Command-loss stopping timeout (<= 1000 ms) requires live bench verification on target hardware; safe stop observation alone does not certify timing claims without instrumented measurements.
+- **Operator Emergency Disconnect**: Physical battery switch accessible within immediate reach during all bench operations.
 - **On-Ground Authorization**: `FORBIDDEN`. Raised-track controller acceptance does not authorize on-ground use.

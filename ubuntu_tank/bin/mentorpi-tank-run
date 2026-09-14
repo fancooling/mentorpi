@@ -362,6 +362,39 @@ def main():
     bin_dir = os.path.abspath(os.path.dirname(__file__))
     current_dir = os.path.abspath(os.path.join(bin_dir, ".."))
 
+    # State variables for supervisor, subprocess, and graceful signal handling
+    running = True
+    shutdown_requested = False
+    child_exit_code: Optional[int] = None
+    child: Optional[subprocess.Popen] = None
+    guard_sock: Optional[socket.socket] = None
+    bridge_sock: Optional[socket.socket] = None
+    guard_sock_path: Optional[str] = None
+    bridge_sock_path: Optional[str] = None
+    startup_lock_fd: Optional[int] = None
+
+    def release_startup_lock():
+        nonlocal startup_lock_fd
+        if startup_lock_fd is not None:
+            try:
+                fcntl.flock(startup_lock_fd, fcntl.LOCK_UN)
+                os.close(startup_lock_fd)
+            except Exception:
+                pass
+            startup_lock_fd = None
+
+    def handle_signal(sig, frame):
+        nonlocal running, shutdown_requested
+        sys.stdout.write(
+            f"[mentorpi-tank-run] Received shutdown signal {sig}, terminating gracefully...\n"
+        )
+        sys.stdout.flush()
+        shutdown_requested = True
+        running = False
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
     # 0. Preflight check: coordinate startup with deployment lock and require clean journal
     lock_path = os.environ.get(
         "UBUNTU_TANK_LOCK_FILE", "/run/lock/ubuntu_tank/deploy.lock"
@@ -371,7 +404,6 @@ def main():
     )
 
     # Acquire shared deployment coordination lock for startup transition
-    startup_lock_fd = None
     if os.path.exists(lock_path) or os.path.isdir(os.path.dirname(lock_path)):
         try:
             try:
@@ -399,16 +431,6 @@ def main():
                 except Exception:
                     pass
                 sys.exit(1)
-
-    def release_startup_lock():
-        nonlocal startup_lock_fd
-        if startup_lock_fd is not None:
-            try:
-                fcntl.flock(startup_lock_fd, fcntl.LOCK_UN)
-                os.close(startup_lock_fd)
-            except Exception:
-                pass
-            startup_lock_fd = None
 
     # Activation journal validation: fail closed on corruption, unreadability, or uncommitted transaction
     dep_dir = os.path.dirname(journal_path)
@@ -625,69 +647,56 @@ def main():
         except Exception:
             pass
 
-    # Bind heartbeat sockets with SO_PASSCRED
-    guard_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    guard_sock.bind(guard_sock_path)
-    guard_sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
-    os.chmod(guard_sock_path, 0o660)
+    try:
+        # Bind heartbeat sockets with SO_PASSCRED
+        guard_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        guard_sock.bind(guard_sock_path)
+        guard_sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+        os.chmod(guard_sock_path, 0o660)
 
-    bridge_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    bridge_sock.bind(bridge_sock_path)
-    bridge_sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
-    os.chmod(bridge_sock_path, 0o660)
+        bridge_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        bridge_sock.bind(bridge_sock_path)
+        bridge_sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+        os.chmod(bridge_sock_path, 0o660)
 
-    # Launch ROS bringup graph as a supervised child process
-    override_child = os.environ.get("_UBUNTU_TANK_TEST_CHILD_CMD")
-    if override_child:
-        import shlex
+        if shutdown_requested:
+            return
 
-        launch_cmd = shlex.split(override_child)
-    else:
-        launch_cmd = [
-            "ros2",
-            "launch",
-            "ubuntu_tank_bringup",
-            "tank.launch.py",
-        ] + launch_args
-    sys.stdout.write(
-        f"[mentorpi-tank-run] Launching ROS graph: {' '.join(launch_cmd)}\n"
-    )
-    sys.stdout.flush()
+        # Launch ROS bringup graph as a supervised child process
+        override_child = os.environ.get("_UBUNTU_TANK_TEST_CHILD_CMD")
+        if override_child:
+            import shlex
 
-    child = subprocess.Popen(
-        launch_cmd, env=os.environ.copy(), stdout=sys.stdout, stderr=sys.stderr
-    )
-
-    # Startup transition complete: release deployment coordination lock
-    release_startup_lock()
-
-    running = True
-    shutdown_requested = False
-    child_exit_code: Optional[int] = None
-
-    def handle_signal(sig, frame):
-        nonlocal running, shutdown_requested
+            launch_cmd = shlex.split(override_child)
+        else:
+            launch_cmd = [
+                "ros2",
+                "launch",
+                "ubuntu_tank_bringup",
+                "tank.launch.py",
+            ] + launch_args
         sys.stdout.write(
-            f"[mentorpi-tank-run] Received shutdown signal {sig}, terminating gracefully...\n"
+            f"[mentorpi-tank-run] Launching ROS graph: {' '.join(launch_cmd)}\n"
         )
         sys.stdout.flush()
-        shutdown_requested = True
-        running = False
 
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
+        child = subprocess.Popen(
+            launch_cmd, env=os.environ.copy(), stdout=sys.stdout, stderr=sys.stderr
+        )
 
-    # Supervisor state
-    guard_last: Optional[float] = None
-    guard_last_ts: Optional[float] = None
-    bridge_last: Optional[float] = None
-    bridge_last_ts: Optional[float] = None
-    last_watchdog_ping = time.monotonic()
-    ready_notified = False
+        # Startup transition complete: release deployment coordination lock
+        release_startup_lock()
 
-    poll_descriptors = [guard_sock, bridge_sock]
+        # Supervisor state
+        guard_last: Optional[float] = None
+        guard_last_ts: Optional[float] = None
+        bridge_last: Optional[float] = None
+        bridge_last_ts: Optional[float] = None
+        last_watchdog_ping = time.monotonic()
+        ready_notified = False
 
-    try:
+        poll_descriptors = [guard_sock, bridge_sock]
+
         while running:
             # Check if ROS launch child is still alive
             ret = child.poll()
@@ -803,8 +812,9 @@ def main():
                     sys.stderr.flush()
 
     finally:
+        release_startup_lock()
         # Graceful shutdown: send SIGINT to child so motor_guard sends 5 zero commands
-        if child.poll() is None:
+        if child is not None and child.poll() is None:
             sys.stdout.write(
                 "[mentorpi-tank-run] Sending SIGINT to ROS child process for safe zeroing...\n"
             )
@@ -824,12 +834,16 @@ def main():
             (guard_sock, guard_sock_path),
             (bridge_sock, bridge_sock_path),
         ]:
-            try:
-                sock.close()
-                if os.path.exists(path):
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+            if path and os.path.exists(path):
+                try:
                     os.unlink(path)
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
         send_systemd_notify("STOPPING=1")
         sys.stdout.write("[mentorpi-tank-run] Shutdown complete.\n")

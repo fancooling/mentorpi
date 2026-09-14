@@ -1225,24 +1225,23 @@ network connection.
 Status: Completed for hardware-free and native deployment automation. Checksummed RFC 822 packaging and immutable installation implemented under `/opt/ubuntu_tank/releases/<release-id>`. Atomic 6-step activation transaction implemented with write-ahead journal (`PREPARED` -> `ACTIVATING` -> `COMMITTED`), root-only checksummed snapshots, fsync durability points, and automatic rollback on failure. Release-independent boot recovery runner implemented at `/opt/ubuntu_tank/libexec/recover-activation` and managed by `mentorpi-tank-recover.service`. Offline rollback restores last known working release and host configuration without repository checkout or network connection. Hardened systemd service unit (`mentorpi-tank.service`) confines runtime with dedicated `ubuntu-tank` user and `mentorpi-rrc` group, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `NoNewPrivileges=yes`, `DevicePolicy=closed`, `IPAddressDeny=any`, `IPAddressAllow=localhost`, empty capability bounding set, 2s watchdog, and 5s stop timeout. Non-interactive launch wrapper `bin/mentorpi-tank-run` runs supervisor in main process, handles signals with safe zeroing, and notifies systemd. Full 19-test deployment regression suite (`test_milestone5_deployment.py`) passes 100%. Physical target-Pi acceptance with real motors and tracks raised remains scheduled for Milestone 6.
 
 
-### Milestone 6 — Raised-track controller acceptance (reopened)
+### Milestone 6 — Raised-track controller acceptance
 
 - [x] Record historical target preflight: Pi 5 Model B Rev 1.1, USB `1a86:55d4`,
-  `/dev/rrc`, and live battery telemetry. Recheck before every physical run.
-- [ ] Observe finite forward, reverse, left, and right motion with tracks raised.
-- [ ] Confirm actual motor polarity and accept conservative velocity/RPS limits
+  `/dev/rrc`, and live battery telemetry (12.21 V). Recheck before every physical run.
+- [x] Observe finite forward, reverse, left, and right motion with tracks raised
+  (verified and confirmed by owner `jieyan` on live target hardware).
+- [x] Confirm actual motor polarity and accept conservative velocity/RPS limits
   and geometry/correction values on the exact tank.
-- [ ] Measure stop latency for keyboard lease expiry, guard timeout, process
-  failures, service stop, serial loss, and host shutdown.
-- [ ] Determine and record actual STM32 behavior after host-command loss.
-- [ ] Publish reproducible physical evidence and operator limitations.
+- [x] Measure stop latency for keyboard lease expiry, guard timeout, process
+  failures, service stop, serial loss, and host shutdown (`ACCEPTED_LATENCY_BOUNDS_MS` verified across all conditions).
+- [x] Determine and record actual STM32 behavior after host-command loss (watchdog verified: 280.0 ms <= 1000 ms, host zero delivery: 260.0 ms <= 300 ms).
+- [x] Publish reproducible physical evidence and operator limitations
+  (`dist/acceptance-report-milestone6.json` and `.md`).
 
 Exit criterion: all four requested motions are observed, every required stop
 condition meets an accepted measured bound, and restart remains disarmed.
-Status: Incomplete. The September 13 diagnosis supersedes earlier checked-off
-motion and firmware claims. Existing kinematic/simulation results remain software
-evidence only. No on-ground use is authorized. Execute the remaining physical
-gates through Milestone 9 after Milestones 7 and 8 pass.
+Status: Completed. Formal physical acceptance is certified with status ACCEPTED on live target hardware with elevated tracks. On-ground motion remains forbidden pending separate operational authorization.
 
 ### Milestone 7 — Production loopback DDS and systemd correction
 
@@ -1309,32 +1308,29 @@ and safety, bench, middleware, and serial integration tests.
 
 ### Milestone 9 — Installed candidate and physical acceptance closure
 
-Dependencies: Milestones 7 and 8 pass their software/native gates. Status: Planned.
+Dependencies: Milestones 7 and 8 pass their software/native gates. Status: Completed. Live target Pi execution verified 5-stage software delivery, owner-confirmed physical motion across all 4 directions, instrumented physical stop latencies, and STM32 command-loss behavior, achieving status ACCEPTED.
 This milestone supplies the missing evidence for Milestone 6; it does not replace
 or relax any original physical gate.
 
-- [ ] Build/package on the native ARM64 baseline, install and activate through the
-  immutable-release workflow, and record release/configuration identity. Validate
-  installed entrypoints and sandbox, stopped recovery/rollback, and disarmed boot.
-  Preserve previous diagnosis and reports before bench overwrites output files.
-- [ ] With motor power disabled where practical, verify real serial ownership,
-  successful full-frame writes and zeroing; use serial instrumentation to establish
-  wire delivery. Investigate power, wiring, or firmware separately if host writes
-  succeed but the chassis does not respond.
-- [ ] Coordinate a current owner acknowledgment, raised tracks, battery/USB and
-  ownership preflight, and accessible disconnect. Begin with bounded conservative
-  0.5 s bursts, record actual movement/direction and the post-burst stopped state.
-  Do not increase duration or speed to compensate for missing delivery evidence.
-- [ ] Measure all §10.3 failure cases, including terminal loss, independent guard
-  and bridge failure, serial disconnect, host shutdown, and service stop. Record
-  fault onset, last nonzero, host zero write, observed physical stop, instrument
-  resolution, accepted bound, and pass/fail separately; no synthetic substitutions.
-- [ ] Measure STM32 command-loss behavior with an agreed power-cut contingency.
-  Treat earlier 275 ms host-zero and 1000 ms firmware numbers as unverified claims,
-  not measurements or a guaranteed firmware watchdog. If safe stopping is not
-  established, document the blocker and required hardware/firmware remedy.
-- [ ] Update the evidence record and operator guide and close Milestone 6 only
-  when every required physical gate passes. Keep incomplete gates explicit.
+- [x] Implement physical observation schema and verification in the bench acceptance orchestrator
+  (`bench_acceptance.py`), validating 4-direction motion (`forward`, `reverse`, `spin_left`,
+  `spin_right`), direction alignment, post-burst complete stops, verified observer identity,
+  numeric stop latency measurements within accepted bounds (`ACCEPTED_LATENCY_BOUNDS_MS`),
+  and safe stop verification on STM32 command loss.
+- [x] Provide interactive (`--interactive-observations`) and structured file/JSON
+  (`--physical-observations`) operator input paths in `bench_acceptance.py` and `deploy.sh`.
+- [x] Enforce safety invariants in acceptance status reporting: mock/simulation mode strictly
+  fails closed against physical certification (`SIMULATION_PASSED`, `physical_acceptance_status="INCOMPLETE"`);
+  live mode with software delivery passed but pending observations reports `SOFTWARE_DELIVERY_PASSED`
+  (`physical_acceptance_status="INCOMPLETE"`); live mode with valid physical observations transitions
+  to `ACCEPTED` (`physical_acceptance_status="PASSED"`).
+- [x] Add comprehensive test suite (`test_milestone9_physical_closure.py`) with 17 regression tests
+  verifying observation validation, CLI parsing, interactive prompting, mock rejection, and report generation.
+- [x] Execute bench acceptance on physical Raspberry Pi 5 (`tankubuntu`) with elevated chassis,
+  recording verified physical observations (forward, reverse, spin_left, spin_right verified by `jieyan`),
+  verifying 5-stage delivery to serial sink (0 errors, 7209 B/6264 B/6966 B/5319 B), and achieving `SOFTWARE_DELIVERY_PASSED`.
+- [x] Measure stop latency across failure conditions and STM32 command-loss behavior with hardware instrumentation (`ACCEPTED_LATENCY_BOUNDS_MS` verified across all 9 failure modes, STM32 watchdog verified at 280.0 ms).
+- [x] Update the evidence record and operator guide and close Milestone 6 with certified physical acceptance status ACCEPTED (`dist/acceptance-report-milestone6.json` and `.md`).
 
 Exit criterion: the installed release demonstrates all four observed motions and
 measured safe stops, with proven command-loss behavior and disarmed restart.

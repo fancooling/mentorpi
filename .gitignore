@@ -41,6 +41,7 @@ ubuntu_tank/.work/
 ubuntu_tank/debug/
 *.tar.zst
 *.sock
+observations.json
 
 # Temporary files
 *_review.md

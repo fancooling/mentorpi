@@ -1037,6 +1037,7 @@ class ReleaseManager:
         allow_staged_install: bool = False,
         install_tree: Optional[str] = None,
         build_root: Optional[str] = None,
+        rootfs: Optional[str] = None,
     ) -> str:
         """
         Package a validated release archive into output_dir/ubuntu-tank-<release-id>-<arch>.tar.zst.
@@ -1056,10 +1057,16 @@ class ReleaseManager:
         # Determine git commit
         try:
             full_commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=workspace_dir, text=True
+                ["git", "rev-parse", "HEAD"],
+                cwd=workspace_dir,
+                text=True,
+                stderr=subprocess.DEVNULL,
             ).strip()
             short_commit = subprocess.check_output(
-                ["git", "rev-parse", "--short=7", "HEAD"], cwd=workspace_dir, text=True
+                ["git", "rev-parse", "--short=7", "HEAD"],
+                cwd=workspace_dir,
+                text=True,
+                stderr=subprocess.DEVNULL,
             ).strip()
         except Exception:
             full_commit = os.environ.get("UBUNTU_TANK_GIT_COMMIT", "0" * 40)
@@ -1205,6 +1212,19 @@ class ReleaseManager:
                         install_prefix.lstrip("/"),
                     ),
                 ]
+            if rootfs:
+                candidates.insert(0, os.path.join(rootfs, install_prefix.lstrip("/")))
+                candidates.insert(
+                    1,
+                    os.path.join(
+                        rootfs,
+                        "opt",
+                        "ubuntu_tank",
+                        "releases",
+                        release_id,
+                        "install",
+                    ),
+                )
             if build_root:
                 candidates.insert(
                     0, os.path.join(build_root, install_prefix.lstrip("/"))
@@ -1254,6 +1274,8 @@ class ReleaseManager:
                     builder_cmd.append("--allow-staged-install")
                 if build_root:
                     builder_cmd.extend(["--build-root", build_root])
+                if rootfs:
+                    builder_cmd.extend(["--rootfs", rootfs])
                 try:
                     res = subprocess.run(builder_cmd, capture_output=True, text=True)
                     if res.returncode == 0:

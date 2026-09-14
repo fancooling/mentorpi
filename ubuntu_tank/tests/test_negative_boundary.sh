@@ -11,7 +11,7 @@ echo "============================================================"
 echo "Running Negative Boundary Regression Tests"
 echo "============================================================"
 
-TMP_DIR="$(mktemp -d /tmp/mentorpi_neg_test_XXXXXX)"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mentorpi_neg_test_XXXXXX")"
 cleanup() {
   rm -rf "${TMP_DIR}"
 }
@@ -20,8 +20,16 @@ trap cleanup EXIT
 create_test_clone() {
   local target="$1"
   git clone --shared "${WORKSPACE_ROOT}" "${target}" >/dev/null 2>&1
-  # Synchronize working tree files into clone (to support testing with uncommitted working-tree edits)
-  cp -a "${WORKSPACE_ROOT}/ubuntu_tank" "${target}/"
+  # Synchronize working tree files into clone, excluding transient build/log/cache directories
+  tar -cf - -C "${WORKSPACE_ROOT}" \
+    --exclude='.work' \
+    --exclude='dist' \
+    --exclude='build' \
+    --exclude='install' \
+    --exclude='log' \
+    --exclude='debug' \
+    --exclude='__pycache__' \
+    ubuntu_tank | tar -xf - -C "${target}"
   git -C "${target}" add ubuntu_tank >/dev/null 2>&1
 }
 
