@@ -22,14 +22,20 @@ The root `README.md` is the canonical build and deployment guide.
   does not supersede the factory container or rollback baseline until all
   acceptance gates pass.
 
-## Native Ubuntu 26.04 controller mode (pre-deployment implementation)
+## Native Ubuntu 26.04 controller mode (physical acceptance incomplete)
 
 `docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a
-clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. Milestones 1-3 have a
-hardware-free implementation and regression suite, but the complete target apt
-closure, native ROS build, host installation, and physical deployment do not
-yet have target-Pi acceptance. This mode is controller-only and uses a guarded native
-service for bounded forward, reverse, left, and right motion.
+clean Ubuntu 26.04 Pi 5 with native ROS 2 Lyrical. Milestones 1–5 and 7 are implemented;
+native deployment and telemetry have been exercised, but Milestone 6 physical
+acceptance remains incomplete. The September 13 target diagnosis demonstrated
+that explicit loopback unicast restores the blocked DDS path with production
+confinement intact, using mock hardware only; Milestone 7 packaged this loopback
+Fast DDS profile and corrected systemd start-limit directives. Planned Milestones 8–9
+cover bounded arming and delivery evidence, and physical closure.
+See `ubuntu_tank/debug/NO_MOTION_DIAGNOSIS_20260913.md`; no physical movement or
+STM32 command-loss acceptance follows from its callback/mock SDK results.
+This mode is controller-only and uses a guarded native service for bounded
+forward, reverse, left, and right motion.
 
 This is a personal, single-owner robot. The owner controls the Ubuntu image and
 all software, services, and user accounts installed on it. Treat owner-approved
@@ -137,7 +143,10 @@ safety acknowledgment is valid.
 - Preserve vendor copyright/license notices and avoid unrelated vendor-code reformatting.
 - Every commit must include an informational body explaining what changed and
   why, including relevant operational effects and validation. Keep that body
-  current when incorporating review revisions.
+  current when incorporating review revisions. Do not append or enumerate addressed
+  code review comments in the commit message; review revisions are integral parts
+  of the change and should be described naturally as part of the overall implementation
+  without being explicitly called out.
 
 ## Python environment and local tooling
 

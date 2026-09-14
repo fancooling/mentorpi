@@ -52,6 +52,18 @@ if UBUNTU_TANK_DIR not in sys.path:
 if WORKSPACE_ROOT not in sys.path:
     sys.path.insert(0, WORKSPACE_ROOT)
 
+try:
+    from fastdds_setup import resolve_loopback_profile, get_loopback_env
+except ImportError:
+    try:
+        from ubuntu_tank.scripts.fastdds_setup import (
+            resolve_loopback_profile,
+            get_loopback_env,
+        )
+    except ImportError:
+        resolve_loopback_profile = None
+        get_loopback_env = None
+
 for pkg in [
     "ubuntu_tank_safety",
     "ubuntu_tank_supervisor",
@@ -513,9 +525,25 @@ class BenchAcceptanceOrchestrator:
             )
 
         # Live mode: strictly require authenticated live telemetry
+        prof = None
+        if resolve_loopback_profile is not None:
+            try:
+                prof = resolve_loopback_profile(base_dir=UBUNTU_TANK_DIR)
+            except Exception:
+                pass
+        if not prof:
+            prof = os.environ.get(
+                "FASTDDS_DEFAULT_PROFILES_FILE",
+                os.path.join(UBUNTU_TANK_DIR, "config", "fastdds", "loopback.xml"),
+            )
+
         env_backup = {}
         target_env = {
+            "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+            "ROS_DOMAIN_ID": "0",
             "ROS_LOCALHOST_ONLY": os.environ.get("ROS_LOCALHOST_ONLY", "1"),
+            "ROS_AUTOMATIC_DISCOVERY_RANGE": "SYSTEM_DEFAULT",
+            "FASTDDS_DEFAULT_PROFILES_FILE": prof,
             "ROS_SECURITY_ENABLE": os.environ.get("ROS_SECURITY_ENABLE", "true"),
             "ROS_SECURITY_STRATEGY": os.environ.get("ROS_SECURITY_STRATEGY", "Enforce"),
             "ROS_SECURITY_KEYSTORE": os.environ.get(
@@ -803,9 +831,25 @@ class BenchAcceptanceOrchestrator:
             }
         else:
             # Live Hardware Mode: Execute bounded bursts via BenchClientNode and observe state
+            prof = None
+            if resolve_loopback_profile is not None:
+                try:
+                    prof = resolve_loopback_profile(base_dir=UBUNTU_TANK_DIR)
+                except Exception:
+                    pass
+            if not prof:
+                prof = os.environ.get(
+                    "FASTDDS_DEFAULT_PROFILES_FILE",
+                    os.path.join(UBUNTU_TANK_DIR, "config", "fastdds", "loopback.xml"),
+                )
+
             env_backup = {}
             target_env = {
+                "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+                "ROS_DOMAIN_ID": "0",
                 "ROS_LOCALHOST_ONLY": os.environ.get("ROS_LOCALHOST_ONLY", "1"),
+                "ROS_AUTOMATIC_DISCOVERY_RANGE": "SYSTEM_DEFAULT",
+                "FASTDDS_DEFAULT_PROFILES_FILE": prof,
                 "ROS_SECURITY_ENABLE": os.environ.get("ROS_SECURITY_ENABLE", "true"),
                 "ROS_SECURITY_STRATEGY": os.environ.get(
                     "ROS_SECURITY_STRATEGY", "Enforce"

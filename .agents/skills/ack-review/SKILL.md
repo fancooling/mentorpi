@@ -16,7 +16,7 @@ or when instructed to fix review comments and fold them into an existing Git com
 Per repository policy in `AGENTS.md`, `GEMINI.md`, and `.agents/rules/git_versioning.md`:
 1. Never create separate review-fix commits.
 2. Fold all review remediations into the existing feature or milestone commit via `git commit --amend`.
-3. Keep the commit message's informational body updated with what changed, why, and validation evidence.
+3. Keep the commit message's informational body updated with what changed, why, and validation evidence, without appending or enumerating code review comments.
 
 ---
 
@@ -86,8 +86,8 @@ Verify:
   git commit --amend
   ```
 - Update the informational commit body:
-  - Summarize the newly addressed review findings and why changes were made.
-  - List the modified/added components.
+  - Keep the overall description of what changed, why, and operational effects accurate and current.
+  - Do not append, list, or explicitly call out addressed code review comments; describe fixes naturally as part of the overall feature/milestone implementation.
   - Record the updated test suite results and validation counts.
 
 ### 6. Verify and Report

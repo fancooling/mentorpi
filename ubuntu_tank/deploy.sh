@@ -112,8 +112,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
 
   echo ""
+  echo "--> Running Milestone 7 Fast DDS Loopback & Service Correction tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, & 6 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, & 7 tests PASSED successfully!"
   echo "============================================================"
 }
 
@@ -136,6 +140,24 @@ ensure_ros_env() {
     # shellcheck source=/dev/null
     source "${WORKSPACE_ROOT}/install/setup.bash"
     set -u
+  fi
+
+  # Resolve Fast DDS loopback profile
+  local prof=""
+  if [ -f /opt/ubuntu_tank/current/config/fastdds/loopback.xml ]; then
+    prof="$(readlink -f /opt/ubuntu_tank/current/config/fastdds/loopback.xml 2>/dev/null || echo /opt/ubuntu_tank/current/config/fastdds/loopback.xml)"
+  elif [ -f "${SCRIPT_DIR}/config/fastdds/loopback.xml" ]; then
+    prof="${SCRIPT_DIR}/config/fastdds/loopback.xml"
+  elif [ -n "${FASTDDS_DEFAULT_PROFILES_FILE:-}" ] && [ -f "${FASTDDS_DEFAULT_PROFILES_FILE}" ]; then
+    prof="${FASTDDS_DEFAULT_PROFILES_FILE}"
+  fi
+
+  if [ -n "${prof}" ] && [ -r "${prof}" ]; then
+    export RMW_IMPLEMENTATION="rmw_fastrtps_cpp"
+    export ROS_DOMAIN_ID="0"
+    export ROS_LOCALHOST_ONLY="1"
+    export ROS_AUTOMATIC_DISCOVERY_RANGE="SYSTEM_DEFAULT"
+    export FASTDDS_DEFAULT_PROFILES_FILE="${prof}"
   fi
 }
 

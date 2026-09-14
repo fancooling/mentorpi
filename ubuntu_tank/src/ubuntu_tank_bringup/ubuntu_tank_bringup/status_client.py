@@ -8,6 +8,7 @@ to satisfy least-privilege SROS2 DDS security permissions.
 Strictly read-only: creates subscriptions only, zero publishers, zero service clients.
 """
 
+import os
 import sys
 import time
 
@@ -206,6 +207,27 @@ def main(args=None):
     if rclpy is None:
         sys.stderr.write("ERROR: rclpy is required to run status_client.\n")
         return 1
+
+    if "FASTDDS_DEFAULT_PROFILES_FILE" not in os.environ:
+        for cand in [
+            "/opt/ubuntu_tank/current/config/fastdds/loopback.xml",
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "..",
+                "..",
+                "..",
+                "config",
+                "fastdds",
+                "loopback.xml",
+            ),
+        ]:
+            if os.path.isfile(cand):
+                os.environ["FASTDDS_DEFAULT_PROFILES_FILE"] = os.path.realpath(cand)
+                os.environ.setdefault("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp")
+                os.environ.setdefault("ROS_DOMAIN_ID", "0")
+                os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
+                os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "SYSTEM_DEFAULT")
+                break
 
     rclpy.init(args=args)
     node = StatusClientNode()

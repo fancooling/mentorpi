@@ -19,10 +19,11 @@ import subprocess
 
 root = "${WORKSPACE_ROOT}"
 tank_dir = "${UBUNTU_TANK_DIR}"
-required_dirs = ['bin', 'config', 'config/sros2', 'host', 'scripts', 'src', 'tests', 'docs']
+required_dirs = ['bin', 'config', 'config/fastdds', 'config/sros2', 'host', 'scripts', 'src', 'tests', 'docs']
 required_files = [
     'bin/mentorpi-tank-run',
     'config/controller.yaml',
+    'config/fastdds/loopback.xml',
     'config/sros2/README.md',
     'host/99-mentorpi-rrc.rules',
     'host/mentorpi-tank.service',
@@ -36,6 +37,7 @@ required_files = [
     'scripts/verify_runtime.sh',
     'scripts/deployment_manager.py',
     'scripts/config_migration.py',
+    'scripts/fastdds_setup.py',
     'docs/RELEASE_MANIFEST_SPEC.md',
     'docs/DEPENDENCY_CLOSURE.md',
     'versions.lock',

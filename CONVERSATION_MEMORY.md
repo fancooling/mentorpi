@@ -5,6 +5,39 @@ Last updated: 2026-09-13
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Milestone 7 production loopback DDS and systemd correction (2026-09-13)
+
+- Implemented and packaged `ubuntu_tank/config/fastdds/loopback.xml` with explicit UDPv4 `127.0.0.1` transport (`useBuiltinTransports=false`, unicast user data, metatraffic, and initial peer locators), eliminating multicast `EPERM` under systemd `IPAddressDeny=any` / `IPAddressAllow=localhost`.
+- Created `ubuntu_tank/scripts/fastdds_setup.py` implementing profile resolution, schema/transport validation, and discovery contract application (`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=0`, `ROS_LOCALHOST_ONLY=1`, `ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT`, `FASTDDS_DEFAULT_PROFILES_FILE`).
+- Corrected `host/mentorpi-tank.service` by placing `StartLimitIntervalSec=30s` and `StartLimitBurst=5` under `[Unit]` per systemd standards.
+- Updated launcher `mentorpi-tank-run`, host environment `mentorpi-tank.env`, `deploy.sh` commands, `bench_acceptance.py`, bringup clients (`operator_client.py`, `status_client.py`), and `verify_runtime.sh` to enforce the discovery contract before ROS context initialization.
+- Implemented transactional host environment migration (`migrate_host_env`) in `ReleaseManager` (`scripts/deployment_manager.py`) preserving custom user settings, comments, and calibration during install/activation.
+- Remediated code review findings: preserved legacy release validation without loopback profile for rollback and recovery baselines, ensured existing host environment is untouched during install and migrated only inside the activation transaction after durable snapshotting, and verified byte-for-byte environment restoration across failed activation, interrupted activation, and explicit rollback.
+- Added 21 automated tests in `tests/test_milestone7_dds_correction.py` covering XML structure, locator binding, environment resolution, launcher verification, legacy baseline validation, byte-for-byte rollback/recovery restoration, multicast deadlock regression, and negative security checks.
+- Validation: 315 tests passed across Milestones 1–7 (`./ubuntu_tank/deploy.sh test`), source boundary checks passed 100%, zero ShellCheck warnings, zero Ruff/shfmt issues, and zero whitespace errors (`git diff --check`). Physical actuation remains pending Milestones 8 and 9.
+
+## Native no-motion diagnosis and revised plan (2026-09-13)
+
+- Moved target diagnosis documentation to `ubuntu_tank/debug/NO_MOTION_DIAGNOSIS_20260913.md` (git-ignored).
+  Installed release `1.0.0-g8c67ddd` lost controller-to-guard delivery because
+  production discovery multicast was denied by the systemd localhost IP filter.
+- Explicit loopback unicast locators plus
+  `ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT` restored native mock-board
+  delivery with IP filtering and SROS2 Enforce intact: four-direction run
+  recorded 176 controller, 176 guard, and 196 bridge receipts. Real serial was
+  prohibited; production files were unchanged by that diagnosis.
+- Design §6.4.1 specifies shared release-owned DDS configuration for service and
+  all clients, including migration/rollback. Added planned Milestones 7 (DDS/unit
+  correction), 8 (first-command deadline and verified delivery/reporting), and
+  9 (installed candidate and physical acceptance closure).
+- Milestone 6 is reopened. Prior claims of observed movement, confirmed physical
+  polarity, measured host zero delivery, and characterized STM32 watchdog are
+  withdrawn. Publication, arm/disarm, calculated RPS, and mock SDK calls cannot
+  establish those outcomes. Stop/firmware measurements remain pending.
+- This update changes documentation only. No runtime implementation, deployment,
+  or hardware validation was performed; the target diagnosis is recorded evidence,
+  not a fresh physical-state check or authorization to actuate the tank.
+
 ## Source documentation simplification (2026-09-13)
 
 - User rejected per-file source-manifest bookkeeping: Git owns source history;
@@ -489,10 +522,9 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
   - Service stop (SIGTERM): < 1 ms (bound <= 100 ms)
   - Serial loss / disconnect: ~510 ms (bound <= 600 ms)
   Physical target-Pi measurements remain pending physical instrumentation.
-- STM32 chassis controller command-loss characterization:
-  - Host zero delivery: Design specification <= 275 ms delivery of 4-motor zero packets.
-  - STM32 firmware timeout: Vendor specification <= 1000 ms timeout for motor PWM cutoff.
-  - Emergency disconnect: Manual power cut accessible within 0s reach.
+- STM32 command-loss characterization remains pending: earlier 275 ms host-zero
+  and 1000 ms firmware-timeout claims are not target measurements. Verify the
+  exact firmware behavior and emergency disconnect before physical acceptance.
 - Reports and test suite: Emits structured JSON and Markdown acceptance reports.
   Added 28-test regression suite `tests/test_milestone6_acceptance.py` integrated
   into `./deploy.sh test`. Physical target-Pi bench execution remains scheduled for
@@ -531,25 +563,17 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
 - Emergency disconnect: Verified physical rocker power switch on chassis within operator reach.
 - Motion safety invariant strictly preserved: zero motor commands issued, tracks remained completely stationary. Task 1 accepted.
 
-## Milestone 6 physical bench acceptance and real-hardware fixes (2026-09-12)
+## Historical target runtime fixes (2026-09-12; acceptance corrected 2026-09-13)
 
-- Target execution: Physical Raspberry Pi 5 (`tankubuntu`) with chassis tracks mechanically elevated in the air on bench stand.
-- Resolved 7 real-hardware integration and runtime compatibility issues:
-  1. *Premature `READY=1` & Watchdog Timeout*: `bin/mentorpi-tank-run` defers `READY=1` until first valid socket heartbeats arrive from both guard and bridge, avoiding 2s watchdog SIGABRT during node startup.
-  2. *Fast-DDS SROS2 PKCS7 Verification*: Fast-DDS calls `PKCS7_verify(..., PKCS7_TEXT | ...)`; added `"-text"` to `cms -sign` in `scripts/deployment_manager.py` to ensure S/MIME plain-text headers are included for all enclaves.
-  3. *PySerial DTR/RTS Hardware Reset Trap*: QinHeng USB serial (`1a86:55d4`) wires DTR/RTS to STM32 NRST/BOOT pins; initialized `serial.Serial` with `dtr=True, rts=True` and wrapped in exception handler to tolerate non-modem PTY devices.
-  4. *Systemd Sandboxing AF_NETLINK & UMask*: Added `AF_NETLINK` to `RestrictAddressFamilies` (required for `getifaddrs` UDP loopback discovery) and `UMask=0002` to `host/mentorpi-tank.service` (allowing group `mentorpi-rrc` access to shared-memory POSIX semaphores).
-  5. *`RcutilsLogger` API Compatibility*: Upstream rclpy `RcutilsLogger` provides `.warning()`, not `.warn()`. Replaced `.warn()` calls across `motor_guard_node.py`, `ros_robot_controller_node.py`, `odom_publisher_node.py`, and `cp.py`.
-  6. *Telemetry Polling Synchronization*: Updated `collect_status` in `status_client.py` and `bench_acceptance.py` to wait up to `timeout_sec` (3.0s) when `battery_mv is None` to reliably synchronize with the 1 Hz battery polling timer.
-  7. *Virtual PTY IOCTL Tolerance*: Wrapped DTR/RTS control line configuration in `ros_robot_controller_sdk.py` to gracefully ignore `ENOTTY` / `[Errno 25] Inappropriate ioctl for device` on virtual pseudo-terminals during hardware-free regression testing.
-- Physical Bench Acceptance Suite Results (`./deploy.sh bench --ack-tracks-raised --duration 0.5`):
-  - **Hardware Preflight**: PASSED (Deployment lock available, container mutual exclusion passed, USB identity `1a86:55d4`, battery voltage 12.19 V >= 9.60 V cutoff).
-  - **Geometry & Conservative Limits**: PASSED (Wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0, max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS).
-  - **Kinematic Motor Polarity & Bounded Motion Sequences**: PASSED. Four 0.5s bursts executed on live hardware: forward (M1/M2=-0.849, M3/M4=+0.849 RPS), reverse (M1/M2=+0.849, M3/M4=-0.849 RPS), spin left (all +0.478 RPS), spin right (all -0.478 RPS), terminating strictly in 4-motor zero. Guard armed before each burst and explicitly disarmed after each burst.
-  - **Stop Latency Validation**: Software timing mechanisms verified in simulation against accepted bounds (lease <= 200 ms, guard <= 300 ms, teleop crash <= 300 ms, supervisor <= 250 ms, sigterm <= 100 ms, serial loss <= 600 ms). Physical target-Pi instrumentation remains pending and fails closed in live mode.
-  - **STM32 Command-Loss Characterization**: Characterized (host zero <= 275 ms, firmware watchdog <= 1000 ms, emergency rocker switch within 0s reach). On-ground motion remains forbidden.
-  - **Post-Run State**: `mentorpi-tank.service` returned cleanly to disarmed state, then safely stopped on target host. Acceptance reports saved to `ubuntu_tank/dist/acceptance-report-milestone6.*`.
-- Full 52-test hardware-free unit and 41-test acceptance regression suite passes 100%. Zero provenance or formatting errors.
+The target integration work added heartbeat-gated readiness, S/MIME text signing,
+DTR/RTS setup with PTY tolerance, AF_NETLINK and group-compatible umask, Lyrical
+logger compatibility, and battery polling waits. Those implementation changes
+remain distinct from motion acceptance.
+
+The earlier entry overstated bench publication as observed physical movement and
+STM32 command-loss characterization. Those claims are withdrawn by the September
+13 diagnosis and reopened Milestone 6. Historical USB/battery observations remain
+preflight evidence only; verify transient facts again before target operation.
 
 ## Commit and review conventions
 
@@ -557,7 +581,9 @@ On 2026-09-08, Milestone 1 (Repository scaffold and provenance) was implemented 
 - Fold code review revisions into the existing feature or milestone commit by
   amending or squashing; do not leave separate review-fix commits or create a
   new version for those revisions. The rule is recorded in root `AGENTS.md` and
-  `.agents/rules/git_versioning.md`.
+  `.agents/rules/git_versioning.md`. Do not append or enumerate addressed code
+  review comments in the git commit message; review revisions are integral parts
+  of the change and should be described naturally as part of the overall implementation.
 - Always run code formatting and linting before each commit: format modified
   authored Python code using `.venv/bin/ruff format <files>`, format modified
   authored shell scripts using `.venv/bin/shfmt -i 2 -ci -w <files>` and verify

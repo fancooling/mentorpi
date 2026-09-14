@@ -67,7 +67,32 @@ else
   echo "    ROS_SECURITY_STRATEGY=Enforce confirmed."
 fi
 
-# 3. Verify ROS 2 CLI availability
+# 3. Verify Fast DDS loopback profile
+echo "--> Checking Fast DDS loopback profile..."
+LOOPBACK_PROFILE="${FASTDDS_DEFAULT_PROFILES_FILE:-}"
+if [ -z "${LOOPBACK_PROFILE}" ]; then
+  if [ -f /opt/ubuntu_tank/current/config/fastdds/loopback.xml ]; then
+    LOOPBACK_PROFILE="/opt/ubuntu_tank/current/config/fastdds/loopback.xml"
+  elif [ -f "$(dirname "$0")/../config/fastdds/loopback.xml" ]; then
+    LOOPBACK_PROFILE="$(readlink -f "$(dirname "$0")/../config/fastdds/loopback.xml")"
+  fi
+fi
+
+if [ -z "${LOOPBACK_PROFILE}" ] || [ ! -f "${LOOPBACK_PROFILE}" ]; then
+  echo "ERROR: Fast DDS loopback profile missing or unreadable." >&2
+  ERRORS=$((ERRORS + 1))
+else
+  echo "    FASTDDS_DEFAULT_PROFILES_FILE=${LOOPBACK_PROFILE} confirmed."
+fi
+
+if [ -n "${ROS_AUTOMATIC_DISCOVERY_RANGE:-}" ] && [ "${ROS_AUTOMATIC_DISCOVERY_RANGE}" != "SYSTEM_DEFAULT" ]; then
+  echo "ERROR: ROS_AUTOMATIC_DISCOVERY_RANGE must be 'SYSTEM_DEFAULT' (found: '${ROS_AUTOMATIC_DISCOVERY_RANGE}')." >&2
+  ERRORS=$((ERRORS + 1))
+else
+  echo "    ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT confirmed."
+fi
+
+# 4. Verify ROS 2 CLI availability
 if ! command -v ros2 >/dev/null 2>&1; then
   echo "ERROR: ros2 CLI is not found. Please source your ROS 2 environment." >&2
   exit 1
@@ -75,7 +100,11 @@ fi
 
 STATUS_ENV=(
   env
+  RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
   ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
+  ROS_AUTOMATIC_DISCOVERY_RANGE="${ROS_AUTOMATIC_DISCOVERY_RANGE:-SYSTEM_DEFAULT}"
+  FASTDDS_DEFAULT_PROFILES_FILE="${LOOPBACK_PROFILE}"
   ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}"
   ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}"
   ROS_SECURITY_KEYSTORE="${ROS_SECURITY_KEYSTORE:-/etc/opt/ubuntu_tank/security/keystore}"

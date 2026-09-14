@@ -53,6 +53,18 @@ except ImportError:
     except ImportError:
         check_hardware_mutual_exclusion = None
 
+try:
+    from fastdds_setup import apply_loopback_env, validate_loopback_profile
+except ImportError:
+    try:
+        from ubuntu_tank.scripts.fastdds_setup import (
+            apply_loopback_env,
+            validate_loopback_profile,
+        )
+    except ImportError:
+        apply_loopback_env = None
+        validate_loopback_profile = None
+
 
 def parse_env_file(filepath: str) -> Dict[str, str]:
     """Parse key-value environment variables from an env file."""
@@ -226,6 +238,19 @@ def verify_runtime_paths(current_dir: str) -> bool:
     if not os.path.isfile(setup_file):
         sys.stderr.write(f"ERROR: setup.bash missing in install tree: {setup_file}\n")
         return False
+    fastdds_prof = os.path.join(current_dir, "config", "fastdds", "loopback.xml")
+    if not os.path.isfile(fastdds_prof):
+        sys.stderr.write(f"ERROR: Fast DDS loopback profile missing: {fastdds_prof}\n")
+        return False
+    if validate_loopback_profile is not None:
+        ok, errs = validate_loopback_profile(fastdds_prof)
+        if not ok:
+            sys.stderr.write(
+                f"ERROR: Fast DDS loopback profile invalid:\n"
+                + "\n".join(f"  - {e}" for e in errs)
+                + "\n"
+            )
+            return False
     return True
 
 
@@ -443,8 +468,34 @@ def main():
     for k, v in sourced_env.items():
         os.environ[k] = v
 
-    # 3. Enforce security and isolation invariants
-    os.environ["ROS_LOCALHOST_ONLY"] = "1"
+    # 3. Enforce security, isolation, and Fast DDS loopback discovery invariants
+    if apply_loopback_env is not None:
+        try:
+            apply_loopback_env(base_dir=current_dir)
+        except Exception as exc:
+            sys.stderr.write(
+                f"[mentorpi-tank-run] FATAL: Fast DDS loopback discovery setup failed: {exc}\n"
+            )
+            sys.stderr.flush()
+            release_startup_lock()
+            sys.exit(1)
+    else:
+        prof = os.path.join(current_dir, "config", "fastdds", "loopback.xml")
+        if not os.path.isfile(prof):
+            sys.stderr.write(
+                f"[mentorpi-tank-run] FATAL: Fast DDS loopback profile missing at '{prof}'. Failing closed.\n"
+            )
+            sys.stderr.flush()
+            release_startup_lock()
+            sys.exit(1)
+        os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
+        os.environ["ROS_DOMAIN_ID"] = "0"
+        os.environ["ROS_LOCALHOST_ONLY"] = "1"
+        os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "SYSTEM_DEFAULT"
+        os.environ["FASTDDS_DEFAULT_PROFILES_FILE"] = prof
+        os.environ["ROS_SECURITY_ENABLE"] = "true"
+        os.environ["ROS_SECURITY_STRATEGY"] = "Enforce"
+
     log_dir = os.environ.get("ROS_LOG_DIR", "/var/opt/ubuntu_tank/ros-log")
     os.environ["ROS_LOG_DIR"] = log_dir
     try:

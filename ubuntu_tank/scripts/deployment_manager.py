@@ -33,6 +33,14 @@ import tempfile
 import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+try:
+    from fastdds_setup import validate_loopback_profile
+except ImportError:
+    try:
+        from ubuntu_tank.scripts.fastdds_setup import validate_loopback_profile
+    except ImportError:
+        validate_loopback_profile = None
+
 
 DEFAULT_OPT_DIR = "/opt/ubuntu_tank"
 DEFAULT_ETC_DIR = "/etc/opt/ubuntu_tank"
@@ -871,7 +879,10 @@ class ReleaseManager:
         self.snapshot_mgr = SnapshotManager(self.snapshots_dir)
 
     def validate_release(
-        self, release_dir: str, expected_release_id: Optional[str] = None
+        self,
+        release_dir: str,
+        expected_release_id: Optional[str] = None,
+        require_fastdds_profile: bool = True,
     ) -> Tuple[bool, List[str]]:
         """Validate structure, permissions, and checksums of an installed or staged release."""
         errors = []
@@ -920,6 +931,17 @@ class ReleaseManager:
             errors.append("Missing bin/mentorpi-tank-run launcher")
         elif not os.access(runner_path, os.X_OK):
             errors.append("bin/mentorpi-tank-run is not executable")
+
+        loopback_prof = os.path.join(release_dir, "config", "fastdds", "loopback.xml")
+        if os.path.isfile(loopback_prof):
+            if validate_loopback_profile is not None:
+                ok, p_errs = validate_loopback_profile(loopback_prof)
+                if not ok:
+                    errors.extend(p_errs)
+        elif require_fastdds_profile:
+            errors.append(
+                "Required Fast DDS loopback profile missing: config/fastdds/loopback.xml"
+            )
 
         # Verify all files match recorded checksums
         for rel_p, rec in file_records.items():
@@ -1316,6 +1338,19 @@ class ReleaseManager:
             raise RuntimeError(
                 f"Packaging rejected: invalid production build: {error}"
             ) from error
+
+        loopback_prof = os.path.join(staging_dir, "config", "fastdds", "loopback.xml")
+        if not os.path.isfile(loopback_prof):
+            raise RuntimeError(
+                "Packaging rejected: required Fast DDS loopback profile missing: config/fastdds/loopback.xml"
+            )
+        if validate_loopback_profile is not None:
+            ok, p_errs = validate_loopback_profile(loopback_prof)
+            if not ok:
+                raise RuntimeError(
+                    f"Packaging rejected: invalid Fast DDS loopback profile:\n"
+                    + "\n".join(f"  - {e}" for e in p_errs)
+                )
 
         # Copy root files
         for fn in ["deploy.sh", "README.md"]:
@@ -1803,6 +1838,86 @@ class ReleaseManager:
         if not ok:
             raise RuntimeError("Deployment preflight rejected: " + "; ".join(errors))
 
+    def migrate_host_env(self, target_env: str, candidate_release_dir: str) -> bool:
+        """
+        Transactionally migrate /etc/opt/ubuntu_tank/mentorpi-tank.env to ensure
+        managed Fast DDS discovery contract variables are present.
+        Preserves existing user calibration and custom configuration.
+        """
+        managed_keys = {
+            "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+            "ROS_DOMAIN_ID": "0",
+            "ROS_LOCALHOST_ONLY": "1",
+            "ROS_AUTOMATIC_DISCOVERY_RANGE": "SYSTEM_DEFAULT",
+            "FASTDDS_DEFAULT_PROFILES_FILE": f"{self.opt_dir}/current/config/fastdds/loopback.xml",
+            "ROS_SECURITY_ENABLE": "true",
+            "ROS_SECURITY_STRATEGY": "Enforce",
+        }
+
+        default_env = os.path.join(candidate_release_dir, "host", "mentorpi-tank.env")
+        if not os.path.exists(target_env):
+            if os.path.isfile(default_env):
+                shutil.copy2(default_env, target_env)
+                fsync_file(target_env)
+                os.chmod(target_env, 0o644)
+                sys.stdout.write(
+                    f"[Install] Initialized host environment file at {target_env}\n"
+                )
+                return True
+            return False
+
+        # Read existing file
+        existing_lines = []
+        existing_dict = {}
+        with open(target_env, "r", encoding="utf-8") as f:
+            for line in f:
+                existing_lines.append(line)
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    k, v = stripped.split("=", 1)
+                    existing_dict[k.strip()] = v.strip().strip("'\"")
+
+        # Check if migration needed
+        needs_migration = False
+        for k, v in managed_keys.items():
+            if k not in existing_dict or existing_dict[k] != v:
+                needs_migration = True
+                break
+
+        if not needs_migration:
+            sys.stdout.write(
+                f"[Install] Preserved existing host environment at {target_env}\n"
+            )
+            return False
+
+        # Retain comments and existing user keys, updating/injecting managed keys
+        written_keys = set()
+        new_lines = []
+        for line in existing_lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                k, _ = stripped.split("=", 1)
+                k = k.strip()
+                if k in managed_keys:
+                    new_lines.append(f"{k}={managed_keys[k]}\n")
+                    written_keys.add(k)
+                else:
+                    new_lines.append(line)
+                    written_keys.add(k)
+            else:
+                new_lines.append(line)
+
+        for k, v in managed_keys.items():
+            if k not in written_keys:
+                new_lines.append(f"{k}={v}\n")
+
+        migrated_content = "".join(new_lines)
+        atomic_write_file(target_env, migrated_content.encode("utf-8"), mode=0o644)
+        sys.stdout.write(
+            f"[Install] Migrated host environment file with Fast DDS discovery contract at {target_env}\n"
+        )
+        return True
+
     def _provision_host_assets(
         self, target_release_dir: str, require_root: bool = True
     ) -> None:
@@ -2048,7 +2163,9 @@ class ReleaseManager:
                     )
                 # Validate full staged release checksums and immutability
                 valid, errs = self.validate_release(
-                    staged_release, expected_release_id=rel_id
+                    staged_release,
+                    expected_release_id=rel_id,
+                    require_fastdds_profile=True,
                 )
                 if not valid:
                     raise RuntimeError(
@@ -2058,7 +2175,9 @@ class ReleaseManager:
                 target_release_dir = os.path.join(self.releases_dir, rel_id)
                 if os.path.exists(target_release_dir):
                     t_valid, t_errs = self.validate_release(
-                        target_release_dir, expected_release_id=rel_id
+                        target_release_dir,
+                        expected_release_id=rel_id,
+                        require_fastdds_profile=True,
                     )
                     if not t_valid:
                         raise RuntimeError(
@@ -2155,7 +2274,9 @@ class ReleaseManager:
 
             # Step 1: Validate candidate release integrity and non-starting paths
             valid, errs = self.validate_release(
-                candidate_dir, expected_release_id=release_id
+                candidate_dir,
+                expected_release_id=release_id,
+                require_fastdds_profile=True,
             )
             if not valid:
                 raise RuntimeError(
@@ -2285,8 +2406,10 @@ class ReleaseManager:
                     "No previous verified release found in activation journal for rollback."
                 )
 
-            # Verify previous release integrity before mutation
-            valid, errs = self.validate_release(prev_path, expected_release_id=prev_id)
+            # Verify previous release integrity before mutation (allow legacy baseline without loopback profile)
+            valid, errs = self.validate_release(
+                prev_path, expected_release_id=prev_id, require_fastdds_profile=False
+            )
             if not valid:
                 raise RuntimeError(
                     f"Rollback rejected: previous release at '{prev_path}' failed integrity validation:\n"
@@ -2424,7 +2547,9 @@ class ReleaseManager:
                     )
                     return False
                 valid, errs = self.validate_release(
-                    target_path, expected_release_id=target_id
+                    target_path,
+                    expected_release_id=target_id,
+                    require_fastdds_profile=False,
                 )
                 if not valid:
                     sys.stderr.write(
@@ -2699,6 +2824,12 @@ class ReleaseManager:
                 with open(src, "rb") as f:
                     data = f.read()
                 atomic_write_file(dst, data, mode=0o644)
+
+        target_env = os.path.join(self.etc_dir, "mentorpi-tank.env")
+        if os.path.isfile(target_env) or os.path.isfile(
+            os.path.join(candidate_dir, "host", "mentorpi-tank.env")
+        ):
+            self.migrate_host_env(target_env, candidate_dir)
 
         self._reload_systemd_and_udev()
 

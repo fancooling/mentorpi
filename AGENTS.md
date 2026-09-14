@@ -23,7 +23,10 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
 - Preserve vendor copyright/license notices and avoid unrelated vendor-code reformatting.
 - Every commit must include an informational body explaining what changed and
   why, including relevant operational effects and validation. Keep that body
-  current when incorporating review revisions.
+  current when incorporating review revisions. Do not append or enumerate addressed
+  code review comments in the commit message; review revisions are integral parts
+  of the change and should be described naturally as part of the overall implementation
+  without being explicitly called out.
 
 ## Python environment and local tooling
 

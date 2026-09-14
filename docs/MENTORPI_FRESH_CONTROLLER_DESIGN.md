@@ -1,8 +1,8 @@
 # MentorPi Native Tank Controller Design
 
-Status: Milestone 1 hardware-free scaffold implemented; native installation, full bringup, and physical deployment remain unimplemented
+Status: Milestones 1–5 implemented; native no-motion blocker diagnosed with mock hardware. Milestone 6 physical acceptance remains incomplete; corrective Milestones 7–9 are planned.
 
-Date: 2026-09-07
+Date: 2026-09-13
 
 Target: Hiwonder MentorPi Tank, Raspberry Pi 5 ARM64, STM32 RRC controller
 
@@ -31,6 +31,37 @@ automation, and operator instructions will live below one repository directory:
 `ubuntu_tank/`. Production installation is a separate, versioned, root-owned
 release under `/opt/ubuntu_tank`; the robot will not run from a developer checkout
 or a user's home directory.
+
+### 1.1 Target-Pi diagnosis and revised acceptance status (2026-09-13)
+
+The [native-Pi diagnosis](../ubuntu_tank/debug/NO_MOTION_DIAGNOSIS_20260913.md)
+records tests against installed release `1.0.0-g8c67ddd`. Production discovery
+attempted multicast sends to `239.255.0.1:7400` that failed with `EPERM` under
+`IPAddressDeny=any` / `IPAddressAllow=localhost`. The operator could arm and send
+velocity to the controller while the guard and bridge received no motor commands.
+Increasing burst duration does not fix that delivery failure.
+
+Explicit loopback unicast discovery restored delivery while retaining the IP
+filter, SROS2 Enforce, service identity, and filesystem/device confinement:
+
+| Native diagnostic run | Controller receipts | Guard receipts | Bridge receipts |
+| --- | ---: | ---: | ---: |
+| Production discovery, one 0.5 s burst | 14 | 0 | 0 |
+| Loopback unicast, one 0.5 s burst | 14 | 14 | 19 |
+| Loopback unicast, four 2 s bursts | 176 | 176 | 196 |
+
+The working four-direction run observed 40 nonzero commands per direction at
+the mock SDK, with signs `--++`, `++--`, `++++`, and `----`, plus stop calls.
+These are native callback/mock SDK results. Real serial opening was prohibited;
+no physical actuation occurred. The profile is a demonstrated candidate, not
+an installed production correction or a uniquely minimal configuration.
+
+Earlier Milestone 6 claims of physical movement, confirmed motor polarity,
+measured host zero delivery, and characterized STM32 command-loss behavior are
+withdrawn. Publication and arm/disarm state do not establish downstream receipt,
+successful serial writes, or movement. Milestones 7–9 below implement the
+correction and close those evidence gaps; Milestone 6 stays open until its
+physical exit criteria actually pass.
 
 ## 2. Assumptions and scope
 
@@ -110,7 +141,9 @@ not optional enhancements:
 4. Only a complete command containing unique motor IDs 1 through 4, finite RPS
    values, and values within the configured limit may reach the bridge.
 5. A command older than 250 ms causes the guard to disarm and repeatedly publish
-   four zero motor values.
+   four zero motor values. Arming must also start a monotonic first-command
+   deadline of at most 250 ms; receiving no valid command must not leave the
+   guard armed indefinitely (planned correction in Milestone 8).
 6. Invalid input, teleop loss, process exit, SIGINT, SIGTERM, serial loss, or
    launch failure must result in repeated zero commands where communication is
    still possible and must shut down the controller graph.
@@ -571,6 +604,52 @@ Installation and acceptance tests must prove that an uncredentialed local ROS
 process cannot discover protected interfaces, arm, disarm, publish accepted
 motion, or publish directly to the actuator-facing topic.
 
+### 6.4.1 Shared Fast DDS loopback discovery contract (planned)
+
+Package `ubuntu_tank/config/fastdds/loopback.xml` as a root-owned, read-only
+release asset. Start from the exact successful XML in the diagnosis: disable
+built-in transports, select UDPv4 with interface whitelist `127.0.0.1`, and
+explicitly supply loopback default user-data unicast, metatraffic unicast, and
+initial-peer locators. An interface whitelist alone failed in earlier tests.
+Keep the tested settings together until native regression evidence justifies
+any simplification.
+
+Before creating any ROS context, every service and CLI entrypoint must apply:
+
+```text
+RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ROS_DOMAIN_ID=0
+ROS_LOCALHOST_ONLY=1
+ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT
+FASTDDS_DEFAULT_PROFILES_FILE=/opt/ubuntu_tank/releases/<release-id>/config/fastdds/loopback.xml
+ROS_SECURITY_ENABLE=true
+ROS_SECURITY_STRATEGY=Enforce
+```
+
+`SYSTEM_DEFAULT` lets the XML control discovery rather than allowing ROS discovery
+options to modify it; see the upstream
+[rmw_fastrtps discovery configuration](https://github.com/ros2/rmw_fastrtps#change-participant-discovery-options).
+The diagnosis tested domain 0. Other domains require explicit validation and are
+not covered by that result. SROS2 identities and key permissions remain separate
+for controller, guard, bridge, operator, and status.
+
+Resolve the active release once under the deployment lock and derive the absolute
+profile path from that release. Service launch, bench, teleop, arm/disarm, status,
+and runtime verification must use the same resolver before ROS initialization,
+including distinct bench preflight/operator contexts. Do not rely on interactive
+shell exports, a checkout path, or a profile beneath `/home` or `/tmp`. Reject
+missing, malformed, unreadable, or incompatible configuration before starting
+participants; do not fall back to default discovery. Validate or reject inherited
+transport/discovery overrides that conflict with the managed configuration.
+
+Activation must migrate existing host environment files, not just seed defaults
+on first install. Preserve unrelated owner configuration and calibration, include
+managed discovery settings in transaction snapshots, and restore matching profile,
+environment, unit, and security state on rollback or interrupted activation.
+The old release's known delivery defect must remain documented; restoring its
+files does not make it an accepted motion baseline. Configuration selection must
+never implicitly start or arm the controller.
+
 ### 6.5 systemd confinement and supervision
 
 The production unit is a reliability and motion-safety boundary on a trusted,
@@ -593,6 +672,11 @@ running as the controller service UID. Its reviewed baseline will include:
   bridge health heartbeats; and
 - conservative resource limits validated not to starve the watchdog or serial
   zero path.
+
+Retain `IPAddressDeny=any` and `IPAddressAllow=localhost`; removing the filter or
+allowing multicast is not the production remedy. Move `StartLimitIntervalSec=30s`
+and `StartLimitBurst=5` from `[Service]` to `[Unit]`, then verify the effective
+restart limit on the target. These corrections are pending Milestone 7.
 
 Exact directives and limits are implementation outputs because they must be
 tested with Lyrical's DDS and `/dev/rrc`. Automated gates use
@@ -750,7 +834,16 @@ healthy child cannot mask the other's hang. Only this main process receives
 systemd's notify socket. A missed deadline stops the graph. The guard's maximum
 RPS will initially be conservative and raised only after bench evidence. Arming
 clears any cached command, so the operator must provide a new command after
-arming. The guard will publish its armed/disarmed state as a transient-local
+arming. The current implementation waits indefinitely for that first command;
+Milestone 8 must start the freshness deadline at the arm transition, expire it
+within the configured guard timeout, clear cached commands on every re-arm, and
+require a new explicit arm after expiry. A late command cannot resurrect a lease.
+CLI discovery/readiness waits must occur before arming so they do not consume
+the first-command window. Tests must include no first command, a command arriving
+at/after the deadline, and repeated arm requests that must not silently renew an
+active motion lease.
+
+The guard will publish its armed/disarmed state as a transient-local
 `std_msgs/msg/Bool` topic so `deploy.sh status` can query state without mutating
 it.
 
@@ -931,6 +1024,33 @@ No on-ground motion is authorized by completion of this design or by a successfu
 software-only test. It requires a separate decision after the STM32 stale-command
 behavior and raised-track stop latency are proven.
 
+### 10.4 Delivery evidence and honest acceptance reports (planned)
+
+Separate evidence into publication, controller receipt, guard acceptance, bridge
+receipt, successful SDK serial write, and observed physical movement. A matched
+subscriber, armed state, healthy heartbeat, calculated RPS, or mock `Board` call
+cannot stand in for a later stage. Successful host writes still do not prove
+STM32 receipt, firmware response, wheel speed, or track motion.
+
+Milestone 8 must provide bounded, read-only delivery observations through protected
+interfaces and narrowly scoped SROS2 grants. Each observation must identify the
+process run, a monotonic sequence/time, command motor IDs/values, and the relevant
+stage; bridge evidence must distinguish attempted writes from complete successful
+writes and include errors/short writes. Reset or baseline evidence for each burst
+and correlate the expected direction/nonzero values and terminating zeros within
+the burst window. Old transient-local samples, prior runs, unrelated traffic,
+mock calls, and a restarted process must not satisfy a new live test.
+
+The bench must prepare discovery while disarmed, enforce bounded receipt waits,
+stop further bursts on failed delivery, and attempt repeated zeros and disarm in
+cleanup. Missing cleanup confirmation is itself a reported failure. Diagnostics
+must not add an actuator bypass or delay the independent watchdog/zero path.
+Reports must label simulated, native fake/PTY, live host-write, and owner-observed
+physical evidence separately, with missing measurements marked pending or failed.
+Keep the overall physical acceptance failed/incomplete until all mandatory
+physical gates pass; never print a physical polarity/motion PASS from kinematics.
+Record release/configuration identity and measurement method with each result.
+
 ## 11. Trackable implementation milestones
 
 Checkboxes are updated only when their exit criteria and evidence are recorded.
@@ -1106,22 +1226,121 @@ network connection.
 Status: Completed for hardware-free and native deployment automation. Checksummed RFC 822 packaging and immutable installation implemented under `/opt/ubuntu_tank/releases/<release-id>`. Atomic 6-step activation transaction implemented with write-ahead journal (`PREPARED` -> `ACTIVATING` -> `COMMITTED`), root-only checksummed snapshots, fsync durability points, and automatic rollback on failure. Release-independent boot recovery runner implemented at `/opt/ubuntu_tank/libexec/recover-activation` and managed by `mentorpi-tank-recover.service`. Offline rollback restores last known working release and host configuration without repository checkout or network connection. Hardened systemd service unit (`mentorpi-tank.service`) confines runtime with dedicated `ubuntu-tank` user and `mentorpi-rrc` group, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `NoNewPrivileges=yes`, `DevicePolicy=closed`, `IPAddressDeny=any`, `IPAddressAllow=localhost`, empty capability bounding set, 2s watchdog, and 5s stop timeout. Non-interactive launch wrapper `bin/mentorpi-tank-run` runs supervisor in main process, handles signals with safe zeroing, and notifies systemd. Full 19-test deployment regression suite (`test_milestone5_deployment.py`) passes 100%. Physical target-Pi acceptance with real motors and tracks raised remains scheduled for Milestone 6.
 
 
-### Milestone 6 — Raised-track controller acceptance
+### Milestone 6 — Raised-track controller acceptance (reopened)
 
-- [x] Verify the exact board revision, power path, USB identity, and emergency
-  disconnect before energizing motors (verified on physical target Pi 5: Raspberry Pi 5 Model B Rev 1.1, USB 1a86:55d4, /dev/rrc symlink, and live 3S LiPo battery at 12.19 V).
-- [x] Run finite forward, reverse, left, and right tests with tracks raised (verified on physical target-Pi bench: 4 bounded 0.5s bursts executed via BenchClientNode, verified arming before each burst, verified disarm and repeated 4-motor zero after each burst).
-- [x] Confirm motor polarity and tune conservative velocity/RPS limits (verified on physical target-Pi bench: forward left < 0 / right > 0, reverse left > 0 / right < 0, spin left all > 0, spin right all < 0, stop all 0.0; max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS).
-- [ ] Measure stop latency for keyboard lease expiry, guard timeout, crash,
-  service stop, serial loss, and host shutdown (simulation bounds verified against accepted bounds; physical target-Pi instrumentation remains pending and fails closed in live mode).
-- [x] Determine and record STM32 behavior after host-command loss (characterized: host 4-motor zero delivery <= 275 ms, vendor firmware watchdog timeout <= 1000 ms, physical emergency switch within 0s operator reach; on-ground motion remains forbidden).
-- [x] Record accepted geometry and correction values for this tank.
-- [x] Update the operator guide with reproducible evidence and limitations.
+- [x] Record historical target preflight: Pi 5 Model B Rev 1.1, USB `1a86:55d4`,
+  `/dev/rrc`, and live battery telemetry. Recheck before every physical run.
+- [ ] Observe finite forward, reverse, left, and right motion with tracks raised.
+- [ ] Confirm actual motor polarity and accept conservative velocity/RPS limits
+  and geometry/correction values on the exact tank.
+- [ ] Measure stop latency for keyboard lease expiry, guard timeout, process
+  failures, service stop, serial loss, and host shutdown.
+- [ ] Determine and record actual STM32 behavior after host-command loss.
+- [ ] Publish reproducible physical evidence and operator limitations.
 
-Exit criterion: the four requested motions work on raised tracks, every tested
-stop condition meets an explicitly accepted bound, and the controller remains
-disarmed after restart. This milestone still does not authorize on-ground use.
-Status: Hardware-free simulation and physical target-Pi raised-track bench testing executed via `./deploy.sh bench --ack-tracks-raised` and `scripts/bench_acceptance.py`. Mandatory safety enforcement rejects missing `--ack-tracks-raised`. Preflight confirms STM32 RRC USB identity `1a86:55d4`, power path battery voltage >= 9.60 V (live telemetry reading 12.19 V on physical 3S LiPo), deployment lock exclusivity, and zero conflicting containers/services. Accepted geometry confirmed (wheelbase 0.1368 m, track width 0.1446 m, sprocket 0.075 m, left/right correction 1.0) with conservative limits (max linear <= 0.5 m/s, max angular <= 2.0 rad/s, max RPS <= 2.0 RPS). Kinematic motor polarities verified for forward (left=[-0.849, -0.849] < 0, right=[0.849, 0.849] > 0), reverse (left=[0.849, 0.849] > 0, right=[-0.849, -0.849] < 0), spin left (all [0.478] > 0), spin right (all [-0.478] < 0), and stop (all 0.0). Live execution sequence on physical bench succeeded: 4 bounded 0.5s bursts executed, re-arming before each run, explicit disarm and repeated 4-motor zero after each run, and service returned to disarmed state. All 6 stop conditions simulated and validated against accepted bounds: keyboard lease expiry ~155 ms (bound <= 200 ms), guard freshness timeout ~260 ms (bound <= 300 ms), teleop crash ~260 ms (bound <= 300 ms), supervisor child crash ~120 ms (bound <= 250 ms), service stop SIGTERM < 1 ms (bound <= 100 ms), serial loss ~510 ms (bound <= 600 ms); physical stop latency instrumentation on live bench remains pending. STM32 chassis controller behavior characterized: host-delivered 4-motor zero <= 275 ms, vendor STM32 firmware timeout <= 1000 ms, physical emergency power switch within 0s operator reach. Operator guide updated in `ubuntu_tank/README.md`. Full regression test suite passes 100%. On-ground motion remains forbidden.
+Exit criterion: all four requested motions are observed, every required stop
+condition meets an accepted measured bound, and restart remains disarmed.
+Status: Incomplete. The September 13 diagnosis supersedes earlier checked-off
+motion and firmware claims. Existing kinematic/simulation results remain software
+evidence only. No on-ground use is authorized. Execute the remaining physical
+gates through Milestone 9 after Milestones 7 and 8 pass.
+
+### Milestone 7 — Production loopback DDS and systemd correction
+
+Dependencies: existing Milestones 4–5 implementation and the September 13 native
+mock-board diagnosis. Status: Complete (2026-09-13).
+
+- [x] Package the shared profile and environment contract in §6.4.1; update
+  service launcher and every operator/status/verification entrypoint before ROS
+  context creation. Document profile purpose, paths, overrides, and failures.
+- [x] Migrate existing installations transactionally, preserve calibration and
+  enclave isolation, and test immutable-prefix packaging, activation failure,
+  offline rollback, and interrupted-activation recovery of matching assets.
+- [x] Move both start-limit directives into `[Unit]`; validate the unit with
+  `systemd-analyze verify` and inspect effective restart-throttling properties.
+- [x] Add a repeatable native-Pi test using installed modules, service/operator
+  identities, SROS2 Enforce, and the production sandbox with serial access denied.
+  Preserve the old-discovery failure as a regression fixture and require delivery
+  through controller, guard, bridge, and mock SDK with the candidate profile.
+- [x] Test cold starts, all four directions, repeated CLI participant creation,
+  and concurrent read-only status under domain 0. Capture loopback-only traffic
+  and absence of denied discovery sends for the working profile.
+- [x] Prove unauthorized local/status participants cannot arm or command motion;
+  exercise forbidden non-loopback network, filesystem, and device access. Test
+  missing/invalid profile rejection, restart throttling, and disarmed restart.
+
+Exit criterion: a packaged candidate passes native delivery and negative security
+checks with the IP filter intact, and installation/rollback selects consistent
+assets. Mock callback success is not physical or real serial-write acceptance.
+Likely files: `config/fastdds/loopback.xml`, `host/mentorpi-tank.env`,
+`host/mentorpi-tank.service`, `bin/mentorpi-tank-run`, `deploy.sh`, deployment and
+runtime-verification scripts, bringup clients, and their integration tests.
+
+### Milestone 8 — Bounded arming and verified delivery acceptance
+
+Dependencies: Milestone 7 for native integrated acceptance; guard/report unit
+work can proceed independently. Status: Planned.
+
+- [ ] Implement the monotonic first-command deadline in §8.4; test expiry with
+  no input, delayed input, repeated arm, re-arm, time jumps, and stale caches.
+  Preserve the existing command freshness, speed limits, and stop behavior.
+- [ ] Implement the stage-specific observations in §10.4, including successful
+  serial-write evidence, without granting operator/status actuator-topic access.
+  Update message/API documentation and signed policy generation as needed.
+- [ ] Make bench prepare subscriptions before arm, require fresh correlated
+  downstream evidence for each burst and stop, and fail closed on a broken edge,
+  timeout, rejected command, process restart, write error, or short write.
+- [ ] Reproduce publication-plus-arming with zero downstream receipts and require
+  a failed delivery result. Exercise each disconnected pipeline edge, stale
+  receipts, false/mock write success, and failed disarm/cleanup confirmation.
+- [ ] Add native fake-board/PTY coverage that observes actual encoded frame writes
+  into the test sink; distinguish that evidence from real `/dev/rrc` writes.
+  Production-style tests must never open the physical serial device.
+- [ ] Revise console, JSON, Markdown, and operator documentation to distinguish
+  software delivery, physical movement, physical stopping, and firmware behavior.
+  Require owner observation for physical movement and instrumentation for timing;
+  leave unmeasured gates incomplete even if all software checks pass.
+
+Exit criterion: no disconnected or failed-write path can produce a successful
+software-delivery result; an armed guard with no first command expires within
+its configured bound; no software-only run can certify physical acceptance.
+Likely files: safety core/node, bridge/SDK, controller observations, bringup bench
+and status clients, `scripts/bench_acceptance.py`, ROS interfaces/SROS2 policies,
+and safety, bench, middleware, and serial integration tests.
+
+### Milestone 9 — Installed candidate and physical acceptance closure
+
+Dependencies: Milestones 7 and 8 pass their software/native gates. Status: Planned.
+This milestone supplies the missing evidence for Milestone 6; it does not replace
+or relax any original physical gate.
+
+- [ ] Build/package on the native ARM64 baseline, install and activate through the
+  immutable-release workflow, and record release/configuration identity. Validate
+  installed entrypoints and sandbox, stopped recovery/rollback, and disarmed boot.
+  Preserve previous diagnosis and reports before bench overwrites output files.
+- [ ] With motor power disabled where practical, verify real serial ownership,
+  successful full-frame writes and zeroing; use serial instrumentation to establish
+  wire delivery. Investigate power, wiring, or firmware separately if host writes
+  succeed but the chassis does not respond.
+- [ ] Coordinate a current owner acknowledgment, raised tracks, battery/USB and
+  ownership preflight, and accessible disconnect. Begin with bounded conservative
+  0.5 s bursts, record actual movement/direction and the post-burst stopped state.
+  Do not increase duration or speed to compensate for missing delivery evidence.
+- [ ] Measure all §10.3 failure cases, including terminal loss, independent guard
+  and bridge failure, serial disconnect, host shutdown, and service stop. Record
+  fault onset, last nonzero, host zero write, observed physical stop, instrument
+  resolution, accepted bound, and pass/fail separately; no synthetic substitutions.
+- [ ] Measure STM32 command-loss behavior with an agreed power-cut contingency.
+  Treat earlier 275 ms host-zero and 1000 ms firmware numbers as unverified claims,
+  not measurements or a guaranteed firmware watchdog. If safe stopping is not
+  established, document the blocker and required hardware/firmware remedy.
+- [ ] Update the evidence record and operator guide and close Milestone 6 only
+  when every required physical gate passes. Keep incomplete gates explicit.
+
+Exit criterion: the installed release demonstrates all four observed motions and
+measured safe stops, with proven command-loss behavior and disarmed restart.
+On-ground operation still requires a separate decision and is not authorized by
+this milestone or by the diagnosis.
 
 ## 12. Definition of done for this phase
 

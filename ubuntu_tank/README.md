@@ -1,6 +1,6 @@
 # MentorPi Native Tank Controller
 
-Status: Milestones 1–6 are implemented with comprehensive hardware-free and raised-track acceptance tests.
+Status: Milestones 1–5 and 7 implemented; Milestone 6 physical acceptance incomplete. Milestones 8–9 cover bounded arming/delivery evidence and physical closure.
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
 
@@ -15,7 +15,16 @@ This workspace provides a fresh, native controller-only implementation for the H
 - Turn right (`D`)
 - Stop within 150 ms lease (`Space` or key repeat cessation)
 
-**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, native systemd packaging and transactional deployment (Milestone 5), and raised-track controller acceptance with stop latency validation (Milestone 6). Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Bench acceptance verifies motor kinematics and stop latencies under raised-track conditions; on-ground motion remains forbidden.
+**Current Implementation Scope**: This delivery provides the complete hardware-free repository scaffold, native host preparation and ROS installation workflow, complete 424-package dependency closure, Lyrical source port, serial-bridge watchdog/error handling, guarded bringup pipeline (`ubuntu_tank_bringup`), safe teleoperation (`ubuntu_tank_teleop`), SROS2 access-control policies, native systemd packaging and transactional deployment (Milestone 5), bench orchestration with simulated stop-latency checks (Milestone 6; physical acceptance pending), and production loopback Fast DDS profile packaging with systemd unit start-limit correction (Milestone 7). Actuator commands are strictly guarded by `ubuntu_tank_safety`, monitored by `ubuntu_tank_supervisor`, and commanded via renewable short leases with `ubuntu_tank_teleop`. Current bench output verifies calculated kinematics and arm/disarm observations, but does not establish downstream delivery or physical movement. Physical stop latency remains unmeasured; on-ground motion remains forbidden.
+
+The [September 13 native-Pi diagnosis](debug/NO_MOTION_DIAGNOSIS_20260913.md)
+identified blocked DDS discovery and demonstrated a loopback-unicast fix using a
+mock board with production confinement intact. Milestone 7 productionizes this fix
+with packaged loopback Fast DDS XML profile, systemd unit start-limit correction,
+and transactional host environment migration.
+See [design Milestones 8–9](../docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md#milestone-8--bounded-arming-and-verified-delivery-acceptance)
+for honest delivery acceptance and physical validation work. Increasing
+bench duration does not repair the disconnected command path.
 
 ### Development and target environments
 
@@ -381,7 +390,7 @@ physical motion or stop latency; those measurements remain pending.
 
 **Mandatory Safety Rules & Preflight Checklist**:
 1. **Elevate Tracks**: Physically prop the tank chassis so both left and right tracks rotate freely without surface contact.
-2. **Emergency Disconnect**: Ensure the physical battery power switch is within immediate reach (< 0s operator intervention).
+2. **Emergency Disconnect**: Ensure the physical battery power switch is within immediate reach.
 3. **USB Identity**: Confirms STM32 RRC serial interface matching USB ID `1a86:55d4` at `/dev/rrc`.
 4. **Battery Health**: Battery voltage must be >= 9.6V (3.2V/cell 3S LiPo cutoff) to prevent brownouts during motor spin. In live mode, fresh telemetry from `StatusClientNode` under the `/ubuntu_tank/status` SROS2 enclave is strictly required; missing or unauthenticated telemetry fails closed without falling back to synthetic voltage.
 5. **Mutual Exclusion**: Verifies zero conflicting Docker containers (`MentorPi`, `MentorPiFan`, `runtime-core`) and exclusive deployment lock.
@@ -395,7 +404,7 @@ physical motion or stop latency; those measurements remain pending.
 - **Max Angular Speed**: 2.0 rad/s (bench test nominal: 0.8 rad/s)
 - **Max Motor RPS**: 2.0 RPS (hard guard limit per motor)
 
-**Kinematic Motor Polarity Table**:
+**Calculated Kinematic Motor Polarity Table (physical direction unverified)**:
 | Motion | Command | Motor RPS [M1 (FL), M2 (RL), M3 (FR), M4 (RR)] | Polarity Result |
 |---|---|---|---|
 | Forward | `linear.x > 0` | Left < 0 RPS, Right > 0 RPS | **PASS** |
@@ -416,7 +425,7 @@ physical motion or stop latency; those measurements remain pending.
 | `serial_loss` | ~510 ms | <= 600 ms | **PASS** | *Pending Target Pi* | Silence watchdog (500 ms) trips -> fatal fault -> port closure & zero fallback |
 
 **STM32 Command-Loss Characterization**:
-- **Host Zero Delivery**: Design specification <= 275 ms delivery of 4-motor zero commands across all software faults (software simulation verified).
-- **STM32 Firmware Watchdog**: Vendor specification <= 1000 ms timeout where STM32 firmware ceases motor PWM if serial stream is severed (physical verification pending on target Pi).
-- **Operator Emergency Disconnect**: Physical battery switch accessible within 0s manual reach.
+- **Host Zero Delivery**: Physical delivery remains unmeasured. The earlier 275 ms claim is not proof of successful writes or wire delivery across software faults.
+- **STM32 Firmware Watchdog**: Command-loss behavior remains unverified. The previously cited 1000 ms value is not an established timeout for this board and firmware.
+- **Operator Emergency Disconnect**: Physical battery switch accessible within immediate reach.
 - **On-Ground Authorization**: `FORBIDDEN`. Raised-track controller acceptance does not authorize on-ground use.
