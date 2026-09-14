@@ -11,6 +11,7 @@ status enclaves
         <profile ns="/" node="controller">
           <topics publish="ALLOW">
             <topic>/ubuntu_tank_safety/motor_input</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/odom_raw</topic>
             <topic>/rosout</topic>
             <topic>/parameter_events</topic>
@@ -38,6 +39,7 @@ status enclaves
         <profile ns="/" node="motor_guard">
           <topics publish="ALLOW">
             <topic>/ros_robot_controller/set_motor_guarded</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
             <topic>/rosout</topic>
@@ -66,6 +68,7 @@ status enclaves
         <profile ns="/" node="ros_robot_controller">
           <topics publish="ALLOW">
             <topic>/ros_robot_controller/battery</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/rosout</topic>
             <topic>/parameter_events</topic>
           </topics>
@@ -98,6 +101,7 @@ status enclaves
           <topics subscribe="ALLOW">
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
           <services request="ALLOW">
@@ -122,6 +126,23 @@ status enclaves
           <topics subscribe="ALLOW">
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services request="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+        </profile>
+        <profile ns="/" node="bench_client">
+          <topics publish="ALLOW">
+            <topic>/controller/cmd_vel</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
           <services request="ALLOW">
@@ -149,6 +170,7 @@ status enclaves
             <topic>/ubuntu_tank_safety/armed</topic>
             <topic>/ros_robot_controller/battery</topic>
             <topic>/odom_raw</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
         </profile>
@@ -162,6 +184,7 @@ status enclaves
             <topic>/ubuntu_tank_safety/armed</topic>
             <topic>/ros_robot_controller/battery</topic>
             <topic>/odom_raw</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
         </profile>

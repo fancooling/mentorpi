@@ -116,8 +116,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
 
   echo ""
+  echo "--> Running Milestone 8 Bounded Arming & Verified Delivery Acceptance tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, & 7 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, & 8 tests PASSED successfully!"
   echo "============================================================"
 }
 

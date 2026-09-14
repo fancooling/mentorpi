@@ -9,6 +9,7 @@ Provides:
 - Non-ROS monotonic heartbeat emission for process supervision
 """
 
+import json
 import os
 import signal
 import socket
@@ -19,7 +20,7 @@ from typing import List, Tuple
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool
 
 try:
@@ -88,6 +89,13 @@ class MotorGuardNode(Node):
             MotorsState, "/ros_robot_controller/set_motor_guarded", 10
         )
 
+        # Process run ID and delivery observation publisher
+        self.run_id = f"guard-{os.getpid()}-{time.monotonic():.3f}"
+        self._obs_seq = 0
+        self.obs_pub = self.create_publisher(
+            String, "/ubuntu_tank/delivery_observation", 20
+        )
+
         self.motor_sub = self.create_subscription(
             MotorsState, "/ubuntu_tank_safety/motor_input", self._on_motor_input, 10
         )
@@ -111,6 +119,26 @@ class MotorGuardNode(Node):
             "MotorGuard initialized. State: DISARMED (safety invariant)."
         )
 
+    def _publish_observation(self, stage: str, **kwargs):
+        """Publish structured JSON delivery observation to /ubuntu_tank/delivery_observation."""
+        if not hasattr(self, "obs_pub") or self.obs_pub is None:
+            return
+        self._obs_seq += 1
+        obs = {
+            "run_id": self.run_id,
+            "node": "motor_guard",
+            "stage": stage,
+            "seq": self._obs_seq,
+            "stamp_mono": time.monotonic(),
+            **kwargs,
+        }
+        try:
+            msg = String()
+            msg.data = json.dumps(obs)
+            self.obs_pub.publish(msg)
+        except Exception:
+            pass
+
     def _publish_state(self):
         msg = Bool()
         msg.data = self.guard.is_armed
@@ -128,13 +156,25 @@ class MotorGuardNode(Node):
         zero_cmd = self.guard.get_zero_command()
         for _ in range(count):
             self._publish_motor_command(zero_cmd)
+        self._publish_observation(
+            "guard_fwd",
+            motors=[[m_id, float(rps)] for m_id, rps in zero_cmd],
+            is_armed=self.guard.is_armed,
+        )
 
     def _handle_set_arm(self, request, response):
         if request.data:
-            success, message = self.guard.arm()
+            now_mono = time.monotonic()
+            success, message = self.guard.arm(now_monotonic=now_mono)
             response.success = success
             response.message = message
             self._publish_state()
+            self._publish_observation(
+                "guard_arm",
+                success=success,
+                message=message,
+                is_armed=self.guard.is_armed,
+            )
             self.get_logger().warning("MotorGuard explicitly ARMED by operator.")
         else:
             success, message, zero_cmd = self.guard.disarm()
@@ -142,12 +182,24 @@ class MotorGuardNode(Node):
             response.success = success
             response.message = message
             self._publish_state()
+            self._publish_observation(
+                "guard_disarm",
+                success=success,
+                message=message,
+                is_armed=self.guard.is_armed,
+            )
             self.get_logger().info("MotorGuard explicitly DISARMED.")
         return response
 
     def _on_motor_input(self, msg: MotorsState):
         now_mono = time.monotonic()
         input_tuples = [(m.id, m.rps) for m in msg.data]
+
+        self._publish_observation(
+            "guard_rx",
+            motors=[[m.id, float(m.rps)] for m in msg.data],
+            is_armed=self.guard.is_armed,
+        )
 
         fwd_cmd, fault_disarmed, reason = self.guard.handle_command(
             input_tuples, now_mono
@@ -158,8 +210,19 @@ class MotorGuardNode(Node):
             )
             self._publish_repeated_zero(count=5)
             self._publish_state()
+            self._publish_observation(
+                "guard_fault",
+                reason=reason,
+                motors=[[m.id, float(m.rps)] for m in msg.data],
+                is_armed=False,
+            )
         elif fwd_cmd is not None:
             self._publish_motor_command(fwd_cmd)
+            self._publish_observation(
+                "guard_fwd",
+                motors=[[m_id, float(rps)] for m_id, rps in fwd_cmd],
+                is_armed=True,
+            )
 
     def _on_watchdog_tick(self):
         now_mono = time.monotonic()
@@ -170,6 +233,11 @@ class MotorGuardNode(Node):
             )
             self._publish_repeated_zero(count=5)
             self._publish_state()
+            self._publish_observation(
+                "guard_timeout",
+                reason=f"Deadline/lease expired (> {self.guard.timeout_sec}s)",
+                is_armed=False,
+            )
 
     def _emit_heartbeat(self):
         """Emit non-ROS monotonic heartbeat via inherited FD or dedicated UNIX socket."""

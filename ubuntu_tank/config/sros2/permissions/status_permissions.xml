@@ -31,6 +31,7 @@ DDS Security permissions XML for read-only status monitor enclave
             <topic>rt/ubuntu_tank_safety/armed</topic>
             <topic>rt/ros_robot_controller/battery</topic>
             <topic>rt/odom_raw</topic>
+            <topic>rt/ubuntu_tank/delivery_observation</topic>
             <topic>rt/parameter_events</topic>
             <topic>rq/status_client/*Request</topic>
             <topic>rq/_ros2cli_direct*/*Request</topic>

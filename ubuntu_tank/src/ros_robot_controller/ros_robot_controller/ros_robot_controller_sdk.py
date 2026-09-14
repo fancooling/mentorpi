@@ -14,11 +14,12 @@ added zero_motors helper; implemented signal-safe close.
 
 import enum
 import math
-import time
+import os
 import queue
-import struct
 import serial
+import struct
 import threading
+import time
 
 
 class PacketControllerState(enum.IntEnum):
@@ -410,10 +411,29 @@ class Board:
         self.is_mock = device == "mock" or device is None
         self.mock_written_buffers = []
         self.mock_battery_voltage = 12000
+        self.last_write_info = None
 
         if self.is_mock:
+            self.sink_type = "mock"
             self.port = None
         else:
+            dev_str = str(device)
+            try:
+                st = os.stat(dev_str)
+                if (
+                    os.major(st.st_rdev) == 136
+                    or "/pts/" in dev_str
+                    or "pty" in dev_str.lower()
+                ):
+                    self.sink_type = "pty"
+                else:
+                    self.sink_type = "serial"
+            except Exception:
+                self.sink_type = (
+                    "pty"
+                    if ("/pts/" in dev_str or "pty" in dev_str.lower())
+                    else "serial"
+                )
             try:
                 self.port = serial.Serial(
                     device, baudrate, timeout=timeout, write_timeout=self.write_timeout
@@ -655,26 +675,59 @@ class Board:
         buf.extend(data)
         buf.append(checksum_crc8(bytes(buf[2:])))
         buf = bytes(buf)
+        t0 = time.monotonic()
         with self._write_lock:
+            self.last_write_info = {
+                "sink_type": self.sink_type,
+                "bytes_written": 0,
+                "bytes_expected": len(buf),
+                "frame_hex": buf.hex(),
+                "duration_sec": 0.0,
+                "success": False,
+                "error": None,
+                "stamp_mono": t0,
+            }
             if self._closed:
-                raise RuntimeError(
-                    f"Cannot write to closed serial port on '{self.device}'"
-                )
+                err = f"Cannot write to closed serial port on '{self.device}'"
+                self.last_write_info["error"] = err
+                raise RuntimeError(err)
             if self.is_mock:
                 self.mock_written_buffers.append(buf)
+                self.last_write_info.update(
+                    {
+                        "bytes_written": len(buf),
+                        "duration_sec": time.monotonic() - t0,
+                        "success": True,
+                    }
+                )
                 return len(buf)
             if self.port is None or not self.port.is_open:
-                raise RuntimeError(
-                    f"Cannot write to closed serial port on '{self.device}'"
-                )
+                err = f"Cannot write to closed serial port on '{self.device}'"
+                self.last_write_info["error"] = err
+                raise RuntimeError(err)
             try:
                 written = self.port.write(buf)
+                dur = time.monotonic() - t0
+                self.last_write_info.update(
+                    {
+                        "bytes_written": written,
+                        "duration_sec": dur,
+                        "success": (written == len(buf)),
+                    }
+                )
                 if written != len(buf):
-                    raise IOError(
-                        f"Short serial write on '{self.device}': wrote {written} of {len(buf)} bytes"
-                    )
+                    err = f"Short serial write on '{self.device}': wrote {written} of {len(buf)} bytes"
+                    self.last_write_info["error"] = err
+                    raise IOError(err)
                 return written
             except Exception as e:
+                self.last_write_info.update(
+                    {
+                        "duration_sec": time.monotonic() - t0,
+                        "success": False,
+                        "error": str(e),
+                    }
+                )
                 self.fatal_error = RuntimeError(
                     f"Serial write error on '{self.device}': {e}"
                 )
@@ -741,7 +794,7 @@ class Board:
             data = [0x01, len(speeds)]
             for i in speeds:
                 data.extend(struct.pack("<Bf", int(i[0] - 1), float(i[1])))
-            self.buf_write(PacketFunction.PACKET_FUNC_MOTOR, data)
+            return self.buf_write(PacketFunction.PACKET_FUNC_MOTOR, data)
 
     def set_motor_type(self, motor_type=0x02):
         """

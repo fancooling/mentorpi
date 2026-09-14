@@ -13,19 +13,20 @@ supervisor heartbeats; added dedicated 1Hz battery polling in controller_only mo
 restricted topics.
 """
 
-import os
-import sys
+import json
 import math
-import time
-import socket
-import rclpy
+import os
 import signal
+import socket
+import sys
 import threading
+import time
 import yaml
+import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from sensor_msgs.msg import Imu, Joy
-from std_msgs.msg import UInt16, Bool
+from std_msgs.msg import UInt16, Bool, String
 from ros_robot_controller.ros_robot_controller_sdk import Board, PacketReportKeyEvents
 from ros_robot_controller_msgs.srv import GetBusServoState, GetPWMServoState
 from ros_robot_controller_msgs.msg import (
@@ -236,10 +237,37 @@ class RosRobotController(Node):
             self.heartbeat_interval_sec, self._emit_heartbeat
         )
 
+        # Process run ID and delivery observation publisher
+        self.run_id = f"bridge-{os.getpid()}-{time.monotonic():.3f}"
+        self._obs_seq = 0
+        self.obs_pub = self.create_publisher(
+            String, "/ubuntu_tank/delivery_observation", 20
+        )
+
         self.get_logger().info(
             "ros_robot_controller initialized (controller_only=%s)"
             % self.controller_only
         )
+
+    def _publish_observation(self, stage: str, **kwargs):
+        """Publish structured JSON delivery observation to /ubuntu_tank/delivery_observation."""
+        if not hasattr(self, "obs_pub") or self.obs_pub is None:
+            return
+        self._obs_seq += 1
+        obs = {
+            "run_id": self.run_id,
+            "node": "bridge",
+            "stage": stage,
+            "seq": self._obs_seq,
+            "stamp_mono": time.monotonic(),
+            **kwargs,
+        }
+        try:
+            msg = String()
+            msg.data = json.dumps(obs)
+            self.obs_pub.publish(msg)
+        except Exception:
+            pass
 
     def _battery_timer_callback(self):
         """Poll and publish battery telemetry in controller-only mode."""
@@ -412,6 +440,12 @@ class RosRobotController(Node):
 
     def set_motor_state(self, msg):
         with self._motor_lock:
+            motors_data = [[i.id, float(i.rps)] for i in msg.data]
+            self._publish_observation(
+                "bridge_rx",
+                motors=motors_data,
+                fatal_fault=self._fatal_fault,
+            )
             if self._fatal_fault or self._shutting_down:
                 self.get_logger().error(
                     "Bridge in fatal fault state; dropping motor command"
@@ -423,6 +457,18 @@ class RosRobotController(Node):
             is_moving = any(abs(float(getattr(i, "rps", 0.0))) > 1e-4 for i in msg.data)
             try:
                 self.board.set_motor_speed(data)
+                write_info = getattr(self.board, "last_write_info", {}) or {}
+                self._publish_observation(
+                    "bridge_write",
+                    motors=motors_data,
+                    sink_type=write_info.get("sink_type", "unknown"),
+                    bytes_written=write_info.get("bytes_written", 0),
+                    bytes_expected=write_info.get("bytes_expected", 0),
+                    frame_hex=write_info.get("frame_hex", ""),
+                    duration_sec=write_info.get("duration_sec", 0.0),
+                    success=write_info.get("success", False),
+                    error=write_info.get("error", None),
+                )
                 # Advance freshness timestamp ONLY for active motion after successful write
                 if not self._fatal_fault and not self._shutting_down:
                     if is_moving:
@@ -432,6 +478,18 @@ class RosRobotController(Node):
                             None  # Stationary; no active motion lease to expire
                         )
             except Exception as e:
+                write_info = getattr(self.board, "last_write_info", {}) or {}
+                self._publish_observation(
+                    "bridge_write",
+                    motors=motors_data,
+                    sink_type=write_info.get("sink_type", "unknown"),
+                    bytes_written=write_info.get("bytes_written", 0),
+                    bytes_expected=write_info.get("bytes_expected", 0),
+                    frame_hex=write_info.get("frame_hex", ""),
+                    duration_sec=write_info.get("duration_sec", 0.0),
+                    success=False,
+                    error=str(e),
+                )
                 self._enter_fatal_fault(f"Serial write error in bridge: {e}")
 
     def set_oled_state(self, msg):

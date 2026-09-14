@@ -19,6 +19,7 @@ DDS Security permissions XML for serial bridge enclave
           <topics>
             <topic>ros_discovery_info</topic>
             <topic>rt/ros_robot_controller/battery</topic>
+            <topic>rt/ubuntu_tank/delivery_observation</topic>
             <topic>rt/rosout</topic>
             <topic>rt/parameter_events</topic>
             <topic>rr/ros_robot_controller/*Reply</topic>

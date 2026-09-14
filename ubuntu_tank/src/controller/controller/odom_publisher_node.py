@@ -16,14 +16,16 @@ factors; documented dead reckoning command integration; guarded Pose2D import fo
 Lyrical.
 """
 
-import os
+import json
 import math
+import os
+import signal
+import threading
 import time
 import yaml
 import rclpy
-import signal
-import threading
 from rclpy.node import Node
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from nav_msgs.msg import Odometry
 from controller import ackermann, mecanum
@@ -402,9 +404,36 @@ class Controller(Node):
             )
             self.create_service(Trigger, "~/init_finish", self.get_node_state)
 
+        # Process run ID and delivery observation publisher
+        self.run_id = f"controller-{os.getpid()}-{time.monotonic():.3f}"
+        self._obs_seq = 0
+        self.obs_pub = self.create_publisher(
+            String, "/ubuntu_tank/delivery_observation", 20
+        )
+
         self.get_logger().info(
             "Controller initialized (controller_only=%s)" % self.controller_only
         )
+
+    def _publish_observation(self, stage: str, **kwargs):
+        """Publish structured JSON delivery observation to /ubuntu_tank/delivery_observation."""
+        if not hasattr(self, "obs_pub") or self.obs_pub is None:
+            return
+        self._obs_seq += 1
+        obs = {
+            "run_id": self.run_id,
+            "node": "controller",
+            "stage": stage,
+            "seq": self._obs_seq,
+            "stamp_mono": time.monotonic(),
+            **kwargs,
+        }
+        try:
+            msg = String()
+            msg.data = json.dumps(obs)
+            self.obs_pub.publish(msg)
+        except Exception:
+            pass
 
     def get_node_state(self, request, response):
         response.success = True
@@ -525,6 +554,18 @@ class Controller(Node):
                 self.linear_x, self.linear_y, self.angular_z
             )
             self.motor_pub.publish(speeds)
+            motor_list = []
+            if hasattr(speeds, "data"):
+                try:
+                    motor_list = [[m.id, float(m.rps)] for m in speeds.data]
+                except Exception:
+                    pass
+            self._publish_observation(
+                "controller_rx",
+                linear_x=float(msg.linear.x),
+                angular_z=float(msg.angular.z),
+                motors=motor_list,
+            )
 
     def cal_odom_fun(self):
         while True:

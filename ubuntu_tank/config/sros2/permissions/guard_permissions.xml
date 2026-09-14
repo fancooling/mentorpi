@@ -19,6 +19,7 @@ DDS Security permissions XML for motor guard enclave
           <topics>
             <topic>ros_discovery_info</topic>
             <topic>rt/ros_robot_controller/set_motor_guarded</topic>
+            <topic>rt/ubuntu_tank/delivery_observation</topic>
             <topic>rt/ubuntu_tank_safety/state</topic>
             <topic>rt/ubuntu_tank_safety/armed</topic>
             <topic>rt/rosout</topic>

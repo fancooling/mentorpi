@@ -486,6 +486,40 @@ def verify_security_invariants(
                 "Status DDS permissions must not publish service requests"
             )
 
+    obs_dds = "rt/ubuntu_tank/delivery_observation"
+    for pub_node in ["controller", "guard", "bridge"]:
+        if not matches_any_dds_pattern(obs_dds, dds_perms[pub_node]["publish_topics"]):
+            raise PolicyValidationError(
+                f"Enclave {pub_node} must be allowed to publish {obs_dds}"
+            )
+    for sub_node in ["operator", "status"]:
+        if not matches_any_dds_pattern(
+            obs_dds, dds_perms[sub_node]["subscribe_topics"]
+        ):
+            raise PolicyValidationError(
+                f"Enclave {sub_node} must be allowed to subscribe to {obs_dds}"
+            )
+        if matches_any_dds_pattern(obs_dds, dds_perms[sub_node]["publish_topics"]):
+            raise PolicyValidationError(
+                f"Enclave {sub_node} must not be allowed to publish {obs_dds}"
+            )
+
+    # 9. Verify actuator topic access is strictly denied to operator and status
+    for restricted_node in ["operator", "status"]:
+        for act_topic in [input_dds, guarded_dds]:
+            if matches_any_dds_pattern(
+                act_topic, dds_perms[restricted_node]["publish_topics"]
+            ):
+                raise PolicyValidationError(
+                    f"Security violation: Enclave {restricted_node} may publish actuator topic {act_topic}"
+                )
+            if matches_any_dds_pattern(
+                act_topic, dds_perms[restricted_node]["subscribe_topics"]
+            ):
+                raise PolicyValidationError(
+                    f"Security violation: Enclave {restricted_node} may subscribe to actuator topic {act_topic}"
+                )
+
     return True
 
 

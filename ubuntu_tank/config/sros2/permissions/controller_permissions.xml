@@ -19,6 +19,7 @@ DDS Security permissions XML for controller enclave
           <topics>
             <topic>ros_discovery_info</topic>
             <topic>rt/ubuntu_tank_safety/motor_input</topic>
+            <topic>rt/ubuntu_tank/delivery_observation</topic>
             <topic>rt/odom_raw</topic>
             <topic>rt/rosout</topic>
             <topic>rt/parameter_events</topic>

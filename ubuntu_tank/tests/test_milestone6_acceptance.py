@@ -1135,7 +1135,7 @@ class TestBenchSafetyRegressions(unittest.TestCase):
         def set_arm(value, **kwargs):
             arms.append(value)
             if value:
-                return guard.arm()
+                return guard.arm(now_monotonic=clock[0])
             ok, message, _ = guard.disarm()
             return ok, message
 

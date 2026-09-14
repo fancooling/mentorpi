@@ -19,6 +19,7 @@ python3-yaml), maintainer dev@mentorpi.local, version 1.0.0, and Apache-2.0 lice
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>ros_robot_controller_msgs</depend>
 

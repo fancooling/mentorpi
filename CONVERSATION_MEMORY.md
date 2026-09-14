@@ -1,9 +1,20 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Milestone 8 bounded arming and verified delivery acceptance (2026-09-14)
+
+- Implemented monotonic first-command deadline in `MotorGuard` (§8.4): freshness window begins immediately at arming, expires within `timeout_sec` (0.250 s), rejects late commands without lease resurrection, detects negative time jumps as safety faults, clears caches on re-arm, and prevents repeated arm calls from silently extending active leases or deadlines.
+- Implemented stage-specific delivery observations on `/ubuntu_tank/delivery_observation` (`std_msgs/msg/String` JSON): tracks `run_id`, `node`, `stage`, `seq`, `stamp_mono`, and `motors` across 5 stages (`controller_rx`, `guard_rx`, `guard_fwd`, `bridge_rx`, `bridge_write`) with byte accounting, frame hex, duration, success, error, and sink type (`mock`, `pty`, `serial`).
+- Configured narrow SROS2 publish/subscribe grants for `/ubuntu_tank/delivery_observation` in `policies.xml` and permissions XML files while strictly denying actuator control topics (`/ubuntu_tank/cmd_vel`, `/ubuntu_tank/motor_cmd_unfiltered`, `/ros_robot_controller/set_motor`) to operator and status enclaves.
+- Enhanced bench orchestrator (`bench_client.py` and `scripts/bench_acceptance.py`) to prepare topic subscriptions while disarmed before arming, correlate matching 4-motor commands across all 5 stages (`controller_rx`, `guard_rx`, `guard_fwd`, `bridge_rx`, `bridge_write`) for every motion burst, unpack and validate STM32 wire frames (`0xAA 0x55 0x03 0x16 0x01 0x04 ... CRC8`), reject zero-only downstream delivery during motion, verify subsequent terminating 4-motor zero receipt and serial write, verify downstream 4-motor zero receipt and serial write during disarm (`verify_disarm_stop_delivery`), and fail closed on disconnected edges, timeouts, rejected commands, process restarts, or write errors.
+- Created native fake-board/PTY test fixture verifying encoded frame bytes (`0xAA 0x55 0x03 0x16 0x01 0x04 ... CRC8`) without opening `/dev/rrc`.
+- Updated reporting across console, JSON, and Markdown outputs to segregate software delivery, host serial writes, physical movement (marked pending owner observation), physical stop latency, and STM32 command loss.
+- Added 44 automated unit and integration tests in `tests/test_milestone8_delivery.py` (covering 5-stage correlation, frame decoding, zero-only delivery rejection, wrong direction rejection, delivered motion followed by missing/failed/short terminating zeros, disarm zero write verification, and orchestrator fail-closed handling); aligned synthetic clock handling in Milestone 4 and 6 tests.
+- Validation: 359 tests passed across Milestones 1–8 (`./ubuntu_tank/deploy.sh test`), source boundary checks passed 100%, zero ShellCheck warnings, zero Ruff/shfmt issues, and zero whitespace errors (`git diff --check`). Physical actuation remains pending Milestone 9.
 
 ## Milestone 7 production loopback DDS and systemd correction (2026-09-13)
 

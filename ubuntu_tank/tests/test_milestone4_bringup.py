@@ -1075,9 +1075,8 @@ class TestFaultInjectionRegressions(unittest.TestCase):
         from ubuntu_tank_safety.motor_guard import MotorGuard
 
         guard = MotorGuard(max_rps=2.0, timeout_sec=0.250)
-        guard.arm()
-
         mono_now = 500.0
+        guard.arm(now_monotonic=mono_now)
         guard.handle_command(
             [(1, 1.0), (2, 1.0), (3, 1.0), (4, 1.0)], now_monotonic=mono_now
         )

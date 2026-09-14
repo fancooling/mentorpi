@@ -104,7 +104,7 @@ IMPORT_TO_PKG_MAP = {
 STDLIB = {
     'os', 'sys', 'time', 'math', 'signal', 'threading', 'socket', 'struct',
     'select', 'enum', 'queue', 'termios', 'tty', 'typing', 'unittest', 'glob',
-    'subprocess', 'tempfile', 'hashlib', 'ast', 'xml'
+    'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json'
 }
 
 dep_tags = {'depend', 'build_depend', 'build_export_depend', 'exec_depend', 'test_depend'}

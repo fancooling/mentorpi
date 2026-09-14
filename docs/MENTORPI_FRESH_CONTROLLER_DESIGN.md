@@ -143,7 +143,7 @@ not optional enhancements:
 5. A command older than 250 ms causes the guard to disarm and repeatedly publish
    four zero motor values. Arming must also start a monotonic first-command
    deadline of at most 250 ms; receiving no valid command must not leave the
-   guard armed indefinitely (planned correction in Milestone 8).
+   guard armed indefinitely (implemented in Milestone 8).
 6. Invalid input, teleop loss, process exit, SIGINT, SIGTERM, serial loss, or
    launch failure must result in repeated zero commands where communication is
    still possible and must shut down the controller graph.
@@ -834,10 +834,9 @@ healthy child cannot mask the other's hang. Only this main process receives
 systemd's notify socket. A missed deadline stops the graph. The guard's maximum
 RPS will initially be conservative and raised only after bench evidence. Arming
 clears any cached command, so the operator must provide a new command after
-arming. The current implementation waits indefinitely for that first command;
-Milestone 8 must start the freshness deadline at the arm transition, expire it
-within the configured guard timeout, clear cached commands on every re-arm, and
-require a new explicit arm after expiry. A late command cannot resurrect a lease.
+arming. Milestone 8 starts the freshness deadline at the arm transition, expires it
+within the configured guard timeout (0.250 s), clears cached commands on every re-arm,
+and requires a new explicit arm after expiry. A late command cannot resurrect a lease.
 CLI discovery/readiness waits must occur before arming so they do not consume
 the first-command window. Tests must include no first command, a command arriving
 at/after the deadline, and repeated arm requests that must not silently renew an
@@ -1032,8 +1031,8 @@ subscriber, armed state, healthy heartbeat, calculated RPS, or mock `Board` call
 cannot stand in for a later stage. Successful host writes still do not prove
 STM32 receipt, firmware response, wheel speed, or track motion.
 
-Milestone 8 must provide bounded, read-only delivery observations through protected
-interfaces and narrowly scoped SROS2 grants. Each observation must identify the
+Milestone 8 provides bounded, read-only delivery observations through protected
+interfaces and narrowly scoped SROS2 grants. Each observation identifies the
 process run, a monotonic sequence/time, command motor IDs/values, and the relevant
 stage; bridge evidence must distinguish attempted writes from complete successful
 writes and include errors/short writes. Reset or baseline evidence for each burst
@@ -1279,24 +1278,24 @@ runtime-verification scripts, bringup clients, and their integration tests.
 ### Milestone 8 — Bounded arming and verified delivery acceptance
 
 Dependencies: Milestone 7 for native integrated acceptance; guard/report unit
-work can proceed independently. Status: Planned.
+work can proceed independently. Status: Complete.
 
-- [ ] Implement the monotonic first-command deadline in §8.4; test expiry with
+- [x] Implement the monotonic first-command deadline in §8.4; test expiry with
   no input, delayed input, repeated arm, re-arm, time jumps, and stale caches.
   Preserve the existing command freshness, speed limits, and stop behavior.
-- [ ] Implement the stage-specific observations in §10.4, including successful
+- [x] Implement the stage-specific observations in §10.4, including successful
   serial-write evidence, without granting operator/status actuator-topic access.
   Update message/API documentation and signed policy generation as needed.
-- [ ] Make bench prepare subscriptions before arm, require fresh correlated
+- [x] Make bench prepare subscriptions before arm, require fresh correlated
   downstream evidence for each burst and stop, and fail closed on a broken edge,
   timeout, rejected command, process restart, write error, or short write.
-- [ ] Reproduce publication-plus-arming with zero downstream receipts and require
+- [x] Reproduce publication-plus-arming with zero downstream receipts and require
   a failed delivery result. Exercise each disconnected pipeline edge, stale
   receipts, false/mock write success, and failed disarm/cleanup confirmation.
-- [ ] Add native fake-board/PTY coverage that observes actual encoded frame writes
+- [x] Add native fake-board/PTY coverage that observes actual encoded frame writes
   into the test sink; distinguish that evidence from real `/dev/rrc` writes.
   Production-style tests must never open the physical serial device.
-- [ ] Revise console, JSON, Markdown, and operator documentation to distinguish
+- [x] Revise console, JSON, Markdown, and operator documentation to distinguish
   software delivery, physical movement, physical stopping, and firmware behavior.
   Require owner observation for physical movement and instrumentation for timing;
   leave unmeasured gates incomplete even if all software checks pass.

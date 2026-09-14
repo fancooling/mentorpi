@@ -7,6 +7,7 @@ on timeout, fault, or disarm.
 """
 
 import math
+import time
 from typing import Dict, List, Optional, Tuple
 
 
@@ -26,6 +27,7 @@ class MotorGuard:
 
         # Invariant: starts disarmed after every launch, crash, or restart
         self._armed: bool = False
+        self._arm_time_monotonic: Optional[float] = None
         self._last_command_monotonic: Optional[float] = None
         self._last_command: Optional[List[Tuple[int, float]]] = None
 
@@ -34,17 +36,25 @@ class MotorGuard:
         """Return current arming state."""
         return self._armed
 
-    def arm(self) -> Tuple[bool, str]:
+    def arm(self, now_monotonic: Optional[float] = None) -> Tuple[bool, str]:
         """
         Explicitly arm the guard.
 
-        Arming clears any cached command so the operator must supply a fresh command
-        after arming.
+        Arming clears any cached command and starts the monotonic first-command deadline.
+        Repeated arm requests while already armed do not renew the deadline or motion lease.
         """
+        now = float(now_monotonic if now_monotonic is not None else time.monotonic())
+        if self._armed:
+            return (
+                True,
+                "Motor guard already armed. Existing lease deadline preserved.",
+            )
+
         self._armed = True
+        self._arm_time_monotonic = now
         self._last_command_monotonic = None
         self._last_command = None
-        return True, "Motor guard armed. Fresh command required to move."
+        return True, "Motor guard armed. Fresh command required within deadline."
 
     def disarm(self) -> Tuple[bool, str, List[Tuple[int, float]]]:
         """
@@ -53,6 +63,7 @@ class MotorGuard:
         Disarming clears active commands and returns a four-motor zero command.
         """
         self._armed = False
+        self._arm_time_monotonic = None
         self._last_command_monotonic = None
         self._last_command = None
         return True, "Motor guard disarmed.", self.get_zero_command()
@@ -120,15 +131,52 @@ class MotorGuard:
         if not self._armed:
             return None, False, "Guard is disarmed; command dropped"
 
+        now_mono = float(now_monotonic)
+        ref_time = (
+            self._last_command_monotonic
+            if self._last_command_monotonic is not None
+            else self._arm_time_monotonic
+        )
+
+        # Invariant: detect backwards monotonic time jumps
+        if ref_time is not None and now_mono < ref_time:
+            self._armed = False
+            self._arm_time_monotonic = None
+            self._last_command_monotonic = None
+            self._last_command = None
+            return (
+                self.get_zero_command(),
+                True,
+                f"Negative monotonic time jump ({now_mono:.6f} < {ref_time:.6f}); disarming",
+            )
+
+        # Invariant: late command cannot resurrect an expired lease or deadline
+        if ref_time is not None and (now_mono - ref_time) > self.timeout_sec:
+            desc = (
+                "Motion lease expired"
+                if self._last_command_monotonic is not None
+                else "First-command deadline expired"
+            )
+            self._armed = False
+            self._arm_time_monotonic = None
+            self._last_command_monotonic = None
+            self._last_command = None
+            return (
+                self.get_zero_command(),
+                True,
+                f"{desc} ({now_mono - ref_time:.3f}s > {self.timeout_sec:.3f}s); disarming",
+            )
+
         valid, reason = self.validate_command(motor_states)
         if not valid:
             # Fault invariant: invalid input immediately disarms and sends zero
             self._armed = False
+            self._arm_time_monotonic = None
             self._last_command_monotonic = None
             self._last_command = None
             return self.get_zero_command(), True, f"Invalid command: {reason}"
 
-        self._last_command_monotonic = now_monotonic
+        self._last_command_monotonic = now_mono
         # Store canonical ordered list [(1, r1), (2, r2), (3, r3), (4, r4)]
         ordered = sorted(motor_states, key=lambda x: x[0])
         self._last_command = ordered
@@ -138,7 +186,7 @@ class MotorGuard:
         self, now_monotonic: float
     ) -> Tuple[bool, Optional[List[Tuple[int, float]]]]:
         """
-        Check if the active motion lease has timed out according to monotonic clock.
+        Check if the first-command deadline or active motion lease has timed out.
 
         Returns:
             (timed_out, zero_command_if_timed_out)
@@ -146,14 +194,29 @@ class MotorGuard:
         if not self._armed:
             return False, None
 
-        if self._last_command_monotonic is None:
-            # Armed, but waiting for first valid command. No timeout yet.
+        now_mono = float(now_monotonic)
+        ref_time = (
+            self._last_command_monotonic
+            if self._last_command_monotonic is not None
+            else self._arm_time_monotonic
+        )
+
+        if ref_time is None:
             return False, None
 
-        elapsed = now_monotonic - self._last_command_monotonic
-        if elapsed > self.timeout_sec:
-            # Freshness invariant violated: disarm and emit zero command
+        # Invariant: detect backwards monotonic time jumps
+        if now_mono < ref_time:
             self._armed = False
+            self._arm_time_monotonic = None
+            self._last_command_monotonic = None
+            self._last_command = None
+            return True, self.get_zero_command()
+
+        elapsed = now_mono - ref_time
+        if elapsed > self.timeout_sec:
+            # Freshness invariant violated (first command or active lease expired)
+            self._armed = False
+            self._arm_time_monotonic = None
             self._last_command_monotonic = None
             self._last_command = None
             return True, self.get_zero_command()

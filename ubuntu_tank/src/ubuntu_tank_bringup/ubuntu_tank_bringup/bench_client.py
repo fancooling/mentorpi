@@ -11,10 +11,17 @@ Provides:
 - Finite motion execution and stop latency measurements
 """
 
+import json
 import math
+import struct
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from ros_robot_controller.ros_robot_controller_sdk import checksum_crc8
+except (ImportError, AttributeError):
+    checksum_crc8 = None
 
 try:
     import rclpy
@@ -24,6 +31,11 @@ try:
     from geometry_msgs.msg import Twist
     from std_msgs.msg import Bool
     from std_srvs.srv import SetBool
+
+    try:
+        from std_msgs.msg import String
+    except (ImportError, AttributeError):
+        String = None
 except ImportError:
     rclpy = None
     Parameter = None
@@ -59,6 +71,10 @@ except ImportError:
         def __init__(self, data=False):
             self.data = data
 
+    class String:
+        def __init__(self, data=""):
+            self.data = data
+
     class _SetBool:
         class Request:
             def __init__(self):
@@ -83,6 +99,96 @@ if rclpy is not None:
         )
 
 
+def _extract_motors_map(motors_raw: Any) -> Dict[int, float]:
+    """Convert motors representation to {motor_id: float(rps)}."""
+    res: Dict[int, float] = {}
+    if isinstance(motors_raw, dict):
+        for k, v in motors_raw.items():
+            try:
+                res[int(k)] = float(v)
+            except (ValueError, TypeError):
+                pass
+    elif isinstance(motors_raw, (list, tuple)):
+        for item in motors_raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                try:
+                    res[int(item[0])] = float(item[1])
+                except (ValueError, TypeError):
+                    pass
+            elif isinstance(item, dict):
+                m_id = item.get("id", item.get("motor_id"))
+                rps = item.get("rps", item.get("speed", 0.0))
+                if m_id is not None:
+                    try:
+                        res[int(m_id)] = float(rps)
+                    except (ValueError, TypeError):
+                        pass
+    return res
+
+
+def _motors_match(
+    m1: Dict[int, float], m2: Dict[int, float], tol: float = 1e-3
+) -> bool:
+    """Check whether two motor maps contain all motors 1..4 and match within tolerance."""
+    req_ids = {1, 2, 3, 4}
+    if not req_ids.issubset(m1.keys()) or not req_ids.issubset(m2.keys()):
+        return False
+    for mid in req_ids:
+        if not math.isclose(m1[mid], m2[mid], abs_tol=tol):
+            return False
+    return True
+
+
+def _is_zero_motors(m: Dict[int, float], tol: float = 1e-4) -> bool:
+    """Check whether motor map contains all motors 1..4 and all speeds are zero within tolerance."""
+    req_ids = {1, 2, 3, 4}
+    if not req_ids.issubset(m.keys()):
+        return False
+    return all(abs(m[mid]) <= tol for mid in req_ids)
+
+
+def _decode_motor_frame(
+    frame_bytes: bytes,
+) -> Tuple[bool, Optional[Dict[int, float]], Optional[str]]:
+    """Decode a 27-byte STM32 motor frame (0xAA 0x55 0x03 0x16 0x01 0x04 ... CRC8)."""
+    if len(frame_bytes) != 27:
+        return False, None, f"invalid frame length {len(frame_bytes)}, expected 27"
+    if frame_bytes[0] != 0xAA or frame_bytes[1] != 0x55:
+        return False, None, f"invalid header 0x{frame_bytes[:2].hex()}, expected aa55"
+    if frame_bytes[2] != 0x03:
+        return (
+            False,
+            None,
+            f"invalid function code 0x{frame_bytes[2]:02x}, expected 0x03",
+        )
+    if frame_bytes[3] != 0x16:
+        return False, None, f"invalid length 0x{frame_bytes[3]:02x}, expected 0x16"
+    if frame_bytes[4] != 0x01:
+        return (
+            False,
+            None,
+            f"invalid sub-command 0x{frame_bytes[4]:02x}, expected 0x01",
+        )
+    motor_count = frame_bytes[5]
+    if motor_count != 4:
+        return False, None, f"invalid motor count {motor_count}, expected 4"
+    if checksum_crc8 is not None:
+        expected_crc = checksum_crc8(frame_bytes[2:-1])
+        if frame_bytes[-1] != expected_crc:
+            return (
+                False,
+                None,
+                f"CRC8 mismatch (expected 0x{expected_crc:02x}, got 0x{frame_bytes[-1]:02x})",
+            )
+    motors: Dict[int, float] = {}
+    offset = 6
+    for _ in range(motor_count):
+        m_idx, rps = struct.unpack_from("<Bf", frame_bytes, offset)
+        motors[m_idx + 1] = float(rps)
+        offset += 5
+    return True, motors, None
+
+
 class BenchClientNode(Node):
     """Client node for executing bounded bench motions and measuring stop latencies."""
 
@@ -98,6 +204,9 @@ class BenchClientNode(Node):
         self._last_state_time: Optional[float] = None
         self._fallback_context = context
         self._executor = None
+
+        self.observations: List[Dict[str, Any]] = []
+        self.sub_obs = None
 
         if rclpy is not None:
             kwargs = {
@@ -126,6 +235,12 @@ class BenchClientNode(Node):
             # Velocity command publisher
             self.cmd_vel_pub = self.create_publisher(Twist, "/controller/cmd_vel", 1)
 
+            # Delivery observation subscription
+            if String is not None:
+                self.sub_obs = self.create_subscription(
+                    String, "/ubuntu_tank/delivery_observation", self._obs_cb, 50
+                )
+
             # Transient-local guard status subscriptions
             if QoSProfile and DurabilityPolicy and ReliabilityPolicy:
                 transient_qos = QoSProfile(
@@ -152,6 +267,7 @@ class BenchClientNode(Node):
             self.cmd_vel_pub = None
             self.sub_state = None
             self.sub_armed = None
+            self.sub_obs = None
 
     def _state_cb(self, msg):
         self.guard_state = msg.data
@@ -160,6 +276,14 @@ class BenchClientNode(Node):
     def _armed_cb(self, msg):
         self.guard_armed = msg.data
         self._last_state_time = time.monotonic()
+
+    def _obs_cb(self, msg):
+        try:
+            data = json.loads(msg.data)
+            data["_rx_mono"] = time.monotonic()
+            self.observations.append(data)
+        except Exception:
+            pass
 
     def _is_ok(self) -> bool:
         ctx = getattr(self, "context", None) or self._fallback_context
@@ -320,6 +444,469 @@ class BenchClientNode(Node):
             if time.monotonic() - start >= timeout_sec:
                 break
         return {"guard_state": self.guard_state, "guard_armed": self.guard_armed}
+
+    def prepare_discovery(self, timeout_sec: float = 3.0) -> bool:
+        """Wait for required services and topics while DISARMED before arming."""
+        start = time.monotonic()
+        if self.arm_client is None or self.cmd_vel_pub is None:
+            return False
+
+        # 1. Wait for set_arm service
+        while not self.arm_client.wait_for_service(timeout_sec=0.2):
+            if time.monotonic() - start >= timeout_sec:
+                return False
+            if not self._is_ok():
+                return False
+            self._spin_once(timeout_sec=0.05)
+
+        # 2. Wait until guard state is observed and confirmed disarmed
+        while time.monotonic() - start < timeout_sec:
+            if not self._is_ok():
+                return False
+            self._spin_once(timeout_sec=0.05)
+            if self.guard_armed is False:
+                return True
+            if self.guard_armed is True:
+                # If unexpectedly armed at discovery, disarm it
+                self.call_set_arm(False, timeout_sec=1.0)
+        return self.guard_armed is False
+
+    def reset_observations(self) -> float:
+        """Clear recorded delivery observations and return start timestamp."""
+        self.observations.clear()
+        return time.monotonic()
+
+    def get_observations(self, since_mono: float = 0.0) -> List[Dict[str, Any]]:
+        """Return all observations received since monotonic timestamp."""
+        return [
+            obs for obs in self.observations if obs.get("stamp_mono", 0.0) >= since_mono
+        ]
+
+    def verify_correlated_delivery(
+        self,
+        since_mono: float,
+        burst_name: str,
+        expected_lx: float,
+        expected_az: float,
+        timeout_sec: float = 1.5,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Verify complete 5-stage correlated delivery pipeline for a motion burst.
+
+        Stages: controller_rx -> guard_rx -> guard_fwd -> bridge_rx -> bridge_write (success).
+        Correlates matching motor commands across all downstream stages, verifies positive
+        complete frame writes with valid encoding, and requires subsequent terminating four-motor
+        zero receipt and writes for motion bursts.
+        """
+        start_wait = time.monotonic()
+        target_stages = {
+            "controller_rx",
+            "guard_rx",
+            "guard_fwd",
+            "bridge_rx",
+            "bridge_write",
+        }
+        is_motion = abs(expected_lx) > 1e-3 or abs(expected_az) > 1e-3
+
+        while time.monotonic() - start_wait < timeout_sec:
+            self._spin_once(timeout_sec=0.05)
+            obs_list = self.get_observations(since_mono)
+            stages = {obs.get("stage") for obs in obs_list}
+            if target_stages.issubset(stages):
+                if is_motion:
+                    has_zero_write = any(
+                        o.get("stage") == "bridge_write"
+                        and _is_zero_motors(_extract_motors_map(o.get("motors")))
+                        for o in obs_list
+                    )
+                    if has_zero_write:
+                        break
+                else:
+                    break
+
+        obs_list = self.get_observations(since_mono)
+        evidence = {
+            "burst_name": burst_name,
+            "since_mono": since_mono,
+            "observation_count": len(obs_list),
+            "stages_found": list({obs.get("stage") for obs in obs_list}),
+            "runs": {},
+            "sink_type": "unknown",
+            "bytes_written": 0,
+            "bytes_expected": 0,
+            "errors": [],
+        }
+
+        # Check for process run IDs (detect process crash/restart during burst)
+        for obs in obs_list:
+            node = obs.get("node", "unknown")
+            run_id = obs.get("run_id", "none")
+            if node not in evidence["runs"]:
+                evidence["runs"][node] = run_id
+            elif evidence["runs"][node] != run_id:
+                msg = (
+                    f"Process restart detected during burst for node '{node}' "
+                    f"({evidence['runs'][node]} -> {run_id})"
+                )
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+
+        # 1. Stage: controller_rx
+        ctrl_obs = [o for o in obs_list if o.get("stage") == "controller_rx"]
+        if not ctrl_obs:
+            msg = f"{burst_name}: Missing stage 'controller_rx' (command dropped or unread by controller)"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        matching_ctrl = [
+            o
+            for o in ctrl_obs
+            if math.isclose(o.get("linear_x", 0.0), expected_lx, abs_tol=1e-3)
+            and math.isclose(o.get("angular_z", 0.0), expected_az, abs_tol=1e-3)
+        ]
+        if not matching_ctrl:
+            msg = (
+                f"{burst_name}: controller_rx command values mismatch "
+                f"(expected lx={expected_lx}, az={expected_az})"
+            )
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        ctrl = matching_ctrl[-1]
+        expected_motors = _extract_motors_map(ctrl.get("motors"))
+        if not expected_motors or not {1, 2, 3, 4}.issubset(expected_motors.keys()):
+            msg = f"{burst_name}: controller_rx observation missing required motor values (1..4)"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        if is_motion and _is_zero_motors(expected_motors):
+            msg = f"{burst_name}: controller_rx computed all-zero motors for nonzero motion command"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        # 2. Stage: guard_rx
+        guard_rx_obs = [o for o in obs_list if o.get("stage") == "guard_rx"]
+        if not guard_rx_obs:
+            msg = f"{burst_name}: Missing stage 'guard_rx' (edge controller->guard broken)"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        matching_guard_rx = [
+            o
+            for o in guard_rx_obs
+            if _motors_match(_extract_motors_map(o.get("motors")), expected_motors)
+        ]
+        if not matching_guard_rx:
+            msg = (
+                f"{burst_name}: guard_rx motor commands do not match expected motion "
+                f"(expected {expected_motors})"
+            )
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        # 3. Stage: guard_fwd
+        guard_fwd_obs = [o for o in obs_list if o.get("stage") == "guard_fwd"]
+        if not guard_fwd_obs:
+            faults = [
+                o
+                for o in obs_list
+                if o.get("stage") in ("guard_fault", "guard_timeout")
+            ]
+            fault_reasons = [f.get("reason", "unknown") for f in faults]
+            msg = f"{burst_name}: Missing stage 'guard_fwd' (guard rejected command: {fault_reasons})"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        matching_guard_fwd = [
+            o
+            for o in guard_fwd_obs
+            if _motors_match(_extract_motors_map(o.get("motors")), expected_motors)
+        ]
+        if not matching_guard_fwd:
+            msg = (
+                f"{burst_name}: guard_fwd motor commands do not match expected motion "
+                f"(expected {expected_motors})"
+            )
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        # 4. Stage: bridge_rx
+        bridge_rx_obs = [o for o in obs_list if o.get("stage") == "bridge_rx"]
+        if not bridge_rx_obs:
+            msg = f"{burst_name}: Missing stage 'bridge_rx' (edge guard->bridge broken)"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        matching_bridge_rx = [
+            o
+            for o in bridge_rx_obs
+            if _motors_match(_extract_motors_map(o.get("motors")), expected_motors)
+        ]
+        if not matching_bridge_rx:
+            msg = (
+                f"{burst_name}: bridge_rx motor commands do not match expected motion "
+                f"(expected {expected_motors})"
+            )
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        # 5. Stage: bridge_write (positive complete frame-write evidence)
+        bridge_write_obs = [o for o in obs_list if o.get("stage") == "bridge_write"]
+        if not bridge_write_obs:
+            msg = f"{burst_name}: Missing stage 'bridge_write' (bridge did not attempt serial write)"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        matching_bridge_writes = [
+            o
+            for o in bridge_write_obs
+            if _motors_match(_extract_motors_map(o.get("motors")), expected_motors)
+        ]
+        if not matching_bridge_writes:
+            msg = (
+                f"{burst_name}: bridge_write motor commands do not match expected motion "
+                f"(expected {expected_motors})"
+            )
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        for w in matching_bridge_writes:
+            if not w.get("success", False):
+                err = w.get("error", "unspecified serial write error")
+                msg = f"{burst_name}: bridge_write failed on sink '{w.get('sink_type')}': {err}"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            if w.get("bytes_written", 0) < w.get("bytes_expected", 0):
+                msg = (
+                    f"{burst_name}: short write on sink '{w.get('sink_type')}': "
+                    f"{w.get('bytes_written')}/{w.get('bytes_expected')}"
+                )
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            if w.get("bytes_written", 0) == 0:
+                msg = f"{burst_name}: zero bytes written on sink '{w.get('sink_type')}'"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            frame_hex = w.get("frame_hex", "")
+            if frame_hex and len(frame_hex) == 54:
+                try:
+                    frame_bytes = bytes.fromhex(frame_hex)
+                    ok, f_motors, f_err = _decode_motor_frame(frame_bytes)
+                    if not ok:
+                        msg = f"{burst_name}: bridge_write frame decoding failed on sink '{w.get('sink_type')}': {f_err}"
+                        evidence["errors"].append(msg)
+                        return False, msg, evidence
+                    if f_motors and not _motors_match(f_motors, expected_motors):
+                        msg = f"{burst_name}: bridge_write frame payload motor mismatch: {f_motors} != {expected_motors}"
+                        evidence["errors"].append(msg)
+                        return False, msg, evidence
+                except ValueError:
+                    pass
+
+        # 6. Subsequent terminating four-motor zero receipt and writes (for motion bursts)
+        if is_motion:
+            # Locate first matching motion write in observations
+            motion_write_idx = obs_list.index(matching_bridge_writes[0])
+            subsequent_obs = obs_list[motion_write_idx + 1 :]
+
+            zero_rx = [
+                o
+                for o in subsequent_obs
+                if o.get("stage") == "bridge_rx"
+                and _is_zero_motors(_extract_motors_map(o.get("motors")))
+            ]
+            if not zero_rx:
+                msg = f"{burst_name}: Missing terminating zero receipt at bridge (dropped stop command)"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+
+            zero_writes = [
+                o
+                for o in subsequent_obs
+                if o.get("stage") == "bridge_write"
+                and _is_zero_motors(_extract_motors_map(o.get("motors")))
+            ]
+            if not zero_writes:
+                msg = f"{burst_name}: Missing terminating zero serial write at bridge (motion not terminated with confirmed stop write)"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+
+            for zw in zero_writes:
+                if not zw.get("success", False):
+                    err = zw.get("error", "unspecified serial write error")
+                    msg = f"{burst_name}: terminating zero bridge_write failed on sink '{zw.get('sink_type')}': {err}"
+                    evidence["errors"].append(msg)
+                    return False, msg, evidence
+                if zw.get("bytes_written", 0) < zw.get("bytes_expected", 0):
+                    msg = (
+                        f"{burst_name}: terminating zero short write on sink '{zw.get('sink_type')}': "
+                        f"{zw.get('bytes_written')}/{zw.get('bytes_expected')}"
+                    )
+                    evidence["errors"].append(msg)
+                    return False, msg, evidence
+                if zw.get("bytes_written", 0) == 0:
+                    msg = f"{burst_name}: terminating zero write wrote 0 bytes on sink '{zw.get('sink_type')}'"
+                    evidence["errors"].append(msg)
+                    return False, msg, evidence
+                frame_hex = zw.get("frame_hex", "")
+                if frame_hex and len(frame_hex) == 54:
+                    try:
+                        frame_bytes = bytes.fromhex(frame_hex)
+                        ok, f_motors, f_err = _decode_motor_frame(frame_bytes)
+                        if not ok:
+                            msg = f"{burst_name}: terminating zero frame decoding failed on sink '{zw.get('sink_type')}': {f_err}"
+                            evidence["errors"].append(msg)
+                            return False, msg, evidence
+                        if f_motors and not _is_zero_motors(f_motors):
+                            msg = f"{burst_name}: terminating zero frame payload is not zero: {f_motors}"
+                            evidence["errors"].append(msg)
+                            return False, msg, evidence
+                    except ValueError:
+                        pass
+
+        last_write = matching_bridge_writes[-1]
+        evidence["sink_type"] = last_write.get("sink_type", "unknown")
+        evidence["bytes_written"] = sum(
+            o.get("bytes_written", 0)
+            for o in obs_list
+            if o.get("stage") == "bridge_write"
+        )
+        evidence["bytes_expected"] = sum(
+            o.get("bytes_expected", 0)
+            for o in obs_list
+            if o.get("stage") == "bridge_write"
+        )
+
+        return (
+            True,
+            f"Verified 5-stage delivery and terminating zero to {evidence['sink_type']} sink ({len(obs_list)} observations)",
+            evidence,
+        )
+
+    def verify_disarm_stop_delivery(
+        self,
+        since_mono: float,
+        burst_name: str = "disarm",
+        timeout_sec: float = 1.5,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Verify downstream four-motor zero receipt and successful serial write during/after disarm.
+
+        Confirms that zeros issued during disarm reached bridge_rx and were successfully written
+        to the serial sink (bridge_write) with zero errors, positive bytes written, and valid frame encoding.
+        Fails closed on missing, mismatched, empty, or failed write evidence.
+        """
+        start_wait = time.monotonic()
+        while time.monotonic() - start_wait < timeout_sec:
+            self._spin_once(timeout_sec=0.05)
+            obs_list = self.get_observations(since_mono)
+            has_rx = any(
+                o.get("stage") == "bridge_rx"
+                and _is_zero_motors(_extract_motors_map(o.get("motors")))
+                for o in obs_list
+            )
+            has_write = any(
+                o.get("stage") == "bridge_write"
+                and _is_zero_motors(_extract_motors_map(o.get("motors")))
+                for o in obs_list
+            )
+            if has_rx and has_write:
+                break
+
+        obs_list = self.get_observations(since_mono)
+        evidence = {
+            "burst_name": burst_name,
+            "since_mono": since_mono,
+            "observation_count": len(obs_list),
+            "stages_found": list({obs.get("stage") for obs in obs_list}),
+            "runs": {},
+            "sink_type": "unknown",
+            "bytes_written": 0,
+            "bytes_expected": 0,
+            "errors": [],
+        }
+
+        # Check for process run IDs
+        for obs in obs_list:
+            node = obs.get("node", "unknown")
+            run_id = obs.get("run_id", "none")
+            if node not in evidence["runs"]:
+                evidence["runs"][node] = run_id
+            elif evidence["runs"][node] != run_id:
+                msg = (
+                    f"Process restart detected during disarm for node '{node}' "
+                    f"({evidence['runs'][node]} -> {run_id})"
+                )
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+
+        # Require four-motor zero bridge_rx
+        zero_rx = [
+            o
+            for o in obs_list
+            if o.get("stage") == "bridge_rx"
+            and _is_zero_motors(_extract_motors_map(o.get("motors")))
+        ]
+        if not zero_rx:
+            msg = f"{burst_name}: Missing downstream zero command receipt at bridge during disarm"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        # Require four-motor zero bridge_write
+        zero_writes = [
+            o
+            for o in obs_list
+            if o.get("stage") == "bridge_write"
+            and _is_zero_motors(_extract_motors_map(o.get("motors")))
+        ]
+        if not zero_writes:
+            msg = f"{burst_name}: Missing downstream zero serial write at bridge during disarm"
+            evidence["errors"].append(msg)
+            return False, msg, evidence
+
+        last_write = zero_writes[-1]
+        evidence["sink_type"] = last_write.get("sink_type", "unknown")
+        evidence["bytes_written"] = sum(o.get("bytes_written", 0) for o in zero_writes)
+        evidence["bytes_expected"] = sum(
+            o.get("bytes_expected", 0) for o in zero_writes
+        )
+
+        for w in zero_writes:
+            if not w.get("success", False):
+                err = w.get("error", "unspecified serial write error")
+                msg = f"{burst_name}: bridge_write failed on sink '{w.get('sink_type')}': {err}"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            if w.get("bytes_written", 0) < w.get("bytes_expected", 0):
+                msg = (
+                    f"{burst_name}: short write on sink '{w.get('sink_type')}': "
+                    f"{w.get('bytes_written')}/{w.get('bytes_expected')}"
+                )
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            if w.get("bytes_written", 0) == 0:
+                msg = f"{burst_name}: zero bytes written on sink '{w.get('sink_type')}'"
+                evidence["errors"].append(msg)
+                return False, msg, evidence
+            frame_hex = w.get("frame_hex", "")
+            if frame_hex and len(frame_hex) == 54:
+                try:
+                    frame_bytes = bytes.fromhex(frame_hex)
+                    ok, f_motors, f_err = _decode_motor_frame(frame_bytes)
+                    if not ok:
+                        msg = f"{burst_name}: frame decoding failed on sink '{w.get('sink_type')}': {f_err}"
+                        evidence["errors"].append(msg)
+                        return False, msg, evidence
+                    if f_motors and not _is_zero_motors(f_motors):
+                        msg = f"{burst_name}: disarm frame payload is not zero: {f_motors}"
+                        evidence["errors"].append(msg)
+                        return False, msg, evidence
+                except ValueError:
+                    pass
+
+        return (
+            True,
+            f"Verified disarm zero delivery to {evidence['sink_type']} sink ({len(zero_writes)} zero writes)",
+            evidence,
+        )
 
 
 def main(args=None):
