@@ -125,8 +125,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
 
   echo ""
+  echo "--> Running Milestone 10 Web Control Protocol, State Machine, & Lease tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, & 9 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, & 10 tests PASSED successfully!"
   echo "============================================================"
 }
 

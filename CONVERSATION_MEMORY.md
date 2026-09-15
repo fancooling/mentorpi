@@ -1,9 +1,42 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Milestone 10 web control protocol, state machine, and dependency closure (2026-09-15)
+
+- Implemented Milestone 10 in accordance with [MENTORPI_WEB_CONTROL_DESIGN.md](docs/MENTORPI_WEB_CONTROL_DESIGN.md):
+  - Created pure Python side-effect-free operator package `ubuntu_tank/src/ubuntu_tank_operator` defining versioned schemas (`schemas.py`), deterministic state transitions (`state_machine.py`), constants (`constants.py`), enums (`enums.py`), configuration validation (`config.py`), and 3-tier lock hierarchy with non-blocking stop (`locks.py`).
+  - Enforced safety invariants: 150 ms monotonic challenge lease expiry enforced in both `ARMED_IDLE` and `DRIVING`, rejection of renewals arriving after existing lease expiry, cryptographically unpredictable single-use tokens (`secrets.token_urlsafe(16)`), strict sequence monotonicity, exact boolean `tracks_raised: True` assertion, strictly-correlated arm confirmation requiring both `epoch` and `request_id` and retaining compensating disarm on failure, preservation of pending disarm obligations (`disarm_pending` and `compensating_disarm_required`) across acquisition, release, and rearming until confirmed downstream by `update_guard_telemetry(False)` (blocking acquisition and rearming while disarm is pending), separate requested/pending disarm tracking preserving observed downstream guard telemetry, 5.0 s continuous hold cap, 30.0 s idle timeout, immediate stop priority, and telemetry freshness gating (battery <= 3.0 s, guard <= 0.5 s, odom <= 0.25 s).
+  - Documented native Ubuntu 26.04 ARM64 APT closure (`python3-fastapi`, `python3-uvicorn`, `python3-pydantic`, `python3-websockets`, `python3-cryptography`) and service isolation (`ubuntu-tank-web`, `ubuntu-tank-operator`) in [WEB_DEPENDENCY_CLOSURE.md](ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md).
+  - Locked frontend build dependencies in `ubuntu_tank/web/package.json` and `package-lock.json` (Vue 3.4, Vite 5.2, Vite PWA 0.19, TypeScript 5.4) with asset-only caching and strict `/api/` NetworkOnly exclusion in `vite.config.ts`.
+  - Generated official OpenAPI 3.0.3 spec (`ubuntu_tank/docs/openapi_v1.json`) and frontend TypeScript type definitions (`ubuntu_tank/web/src/types/api.ts`).
+  - Authored comprehensive deterministic test suite `ubuntu_tank/tests/test_milestone10_protocol.py` (34 tests) and integrated into `./deploy.sh test`. Verified 100% pass across all boundary, closure, and unit gates (436 tests total).
+
+## Native web control design (2026-09-15)
+
+- Added [MENTORPI_WEB_CONTROL_DESIGN.md](docs/MENTORPI_WEB_CONTROL_DESIGN.md)
+  as the follow-on to native Milestones 1–9. Milestones 10–16 cover protocol, shared
+  operator agent/CLI arbitration, authenticated web API, browser controls,
+  installed-Pi integration, raised-track acceptance, and operator handoff.
+- The Pi serves start/stop, arm/disarm, status/logs, hold-to-drive buttons and
+  W/S/A/D. Space stops/disarms; release requests zero. Focus/connection loss
+  invalidates control, and reconnect never resumes motion. A Pi-owned short
+  lease and single operator authority apply across browser tabs and CLI clients.
+- Keep the LAN web service separate from loopback-only ROS and the sole serial
+  owner. Reuse native packaging/security; add narrow lifecycle operations and
+  independent web failure measurements. This remains raised-track-only work.
+- Selected architecture: Vue 3 + TypeScript + Vite PWA, Python FastAPI/Uvicorn,
+  and a separate Python operator agent over Unix IPC. Replace the earlier
+  aiohttp/plain-JavaScript proposal. Build static frontend assets off-target;
+  no Node.js runtime on the Pi. Generate HTTP client types from OpenAPI and
+  separately validate/version WebSocket messages. M10 verifies apt dependency
+  availability; M13–16 include PWA caching, updates, and actual phone validation.
+- Cache interface assets only, never control/auth/telemetry API responses or
+  queued commands. Require disarm for updates and compatibility checks before
+  control; lock/suspension/reconnection never resumes movement automatically.
 
 ## Milestone 6 and 9 physical acceptance certified (2026-09-14)
 

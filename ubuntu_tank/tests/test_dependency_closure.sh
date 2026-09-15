@@ -88,7 +88,15 @@ DEP_MAP = {
     "setuptools": "python3-setuptools",
 }
 
-internal_pkgs = {"ros_robot_controller", "ros_robot_controller_msgs", "controller", "ubuntu_tank_safety", "ubuntu_tank_supervisor", "ubuntu_tank_teleop"}
+internal_pkgs = {
+    "ros_robot_controller",
+    "ros_robot_controller_msgs",
+    "controller",
+    "ubuntu_tank_safety",
+    "ubuntu_tank_supervisor",
+    "ubuntu_tank_teleop",
+    "ubuntu_tank_operator",
+}
 
 declared_deps = set()
 tags_to_scan = {"depend", "build_depend", "buildtool_depend", "build_export_depend", "buildtool_export_depend", "exec_depend", "test_depend"}

@@ -104,7 +104,9 @@ IMPORT_TO_PKG_MAP = {
 STDLIB = {
     'os', 'sys', 'time', 'math', 'signal', 'threading', 'socket', 'struct',
     'select', 'enum', 'queue', 'termios', 'tty', 'typing', 'unittest', 'glob',
-    'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json'
+    'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json', 'secrets',
+    'uuid', 'fcntl', 'pathlib', 're', 'logging', 'dataclasses', 'contextlib',
+    'ipaddress', 'errno', 'collections'
 }
 
 dep_tags = {'depend', 'build_depend', 'build_export_depend', 'exec_depend', 'test_depend'}
@@ -198,7 +200,7 @@ CONTROLLER_ALLOWLIST = {
     'rclpy', 'std_msgs', 'std_srvs', 'geometry_msgs', 'nav_msgs', 'sensor_msgs',
     'ros_robot_controller_msgs', 'ros_robot_controller', 'controller',
     'ubuntu_tank_safety', 'ubuntu_tank_supervisor', 'ubuntu_tank_teleop',
-    'ubuntu_tank_bringup',
+    'ubuntu_tank_bringup', 'ubuntu_tank_operator',
     # Tooling / generators / test
     'ament_cmake', 'ament_copyright', 'ament_flake8', 'ament_lint_auto',
     'ament_lint_common', 'ament_pep257', 'python3-pytest', 'launch',

@@ -10,6 +10,11 @@ Host: Clean Ubuntu 26.04 LTS installation with network access and sudo
 
 Runtime: Native ROS 2 Lyrical; Docker is not used
 
+Follow-on: [Pi 5 Web Control Design](MENTORPI_WEB_CONTROL_DESIGN.md) proposes
+browser-based service operations and guarded button/keyboard driving in
+Milestones 10–16. Its implementation and physical acceptance are separate from
+this native controller phase.
+
 ## 1. Purpose
 
 This document defines a fresh, controller-only installation for a MentorPi Tank.

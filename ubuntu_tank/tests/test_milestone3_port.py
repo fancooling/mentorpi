@@ -1143,6 +1143,7 @@ class TestBuildWorkspaceScript(unittest.TestCase):
         self.assertTrue(
             "Found 6 workspace packages" in res.stdout
             or "Found 7 workspace packages" in res.stdout
+            or "Found 8 workspace packages" in res.stdout
         )
         self.assertIn("Dry-run complete", res.stdout)
 
