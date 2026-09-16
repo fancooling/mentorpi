@@ -22,6 +22,8 @@ setup(
     description="Shared operator agent, leases, arbitration, and web control schemas",
     license="Apache-2.0",
     entry_points={
-        "console_scripts": [],
+        "console_scripts": [
+            "operator_agent = ubuntu_tank_operator.entrypoint:main",
+        ],
     },
 )

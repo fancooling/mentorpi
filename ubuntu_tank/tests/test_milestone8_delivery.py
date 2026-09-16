@@ -395,7 +395,9 @@ class TestStageSpecificDeliveryObservations(unittest.TestCase):
     """Verify delivery observation schemas and 5-stage correlation (§10.4)."""
 
     def setUp(self):
-        self.bench_client = BenchClientNode(node_name="test_bench_observer")
+        self.bench_client = BenchClientNode(
+            node_name="test_bench_observer", direct_ros=True
+        )
 
     def test_delivery_observation_schema_and_types(self):
         """Every delivery observation JSON must contain required metadata fields."""
@@ -603,7 +605,9 @@ class TestBrokenPipelineAndFailClosed(unittest.TestCase):
     """Verify bench orchestrator fails closed on broken pipeline edges (§10.4)."""
 
     def setUp(self):
-        self.bench_client = BenchClientNode(node_name="test_bench_broken")
+        self.bench_client = BenchClientNode(
+            node_name="test_bench_broken", direct_ros=True
+        )
 
     def _make_base_observations(self, since_mono=100.0):
         motion_motors = [[1, 0.75], [2, 0.75], [3, 0.75], [4, 0.75]]

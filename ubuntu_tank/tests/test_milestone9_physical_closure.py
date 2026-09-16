@@ -813,6 +813,7 @@ class TestMilestone9PhysicalAcceptanceClosure(unittest.TestCase):
         exec_seq = orch.results["motion_tests"]["execution_sequence"]
         self.assertFalse(exec_seq["physical_movement_verified"])
         self.assertEqual(exec_seq["status"], "PHYSICAL_OBSERVATION_FAILED")
+        self.assertIn("confirmation must be boolean true", exec_seq["evidence"])
 
         stm_res = orch.results["stm32_command_loss"]
         self.assertFalse(stm_res["safe_stop_observed"])

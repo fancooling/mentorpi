@@ -11,9 +11,12 @@ from .constants import (
     BATTERY_FRESHNESS_MAX_AGE_SEC,
     CHALLENGE_INTERVAL_NS,
     CHALLENGE_INTERVAL_SEC,
+    DEFAULT_OPERATOR_SOCKET_PATH,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     DELIVERY_OBSERVATION_MAX_AGE_SEC,
+    ENV_OPERATOR_LOCK_PATH,
+    ENV_OPERATOR_SOCKET_PATH,
     FIRST_COMMAND_DEADLINE_NS,
     FIRST_COMMAND_DEADLINE_SEC,
     GUARD_STATE_FRESHNESS_MAX_AGE_SEC,
@@ -31,6 +34,7 @@ from .constants import (
     LOCK_PATH_OPERATOR,
     MAX_CONTINUOUS_HOLD_NS,
     MAX_CONTINUOUS_HOLD_SEC,
+    MAX_IPC_MESSAGE_BYTES,
     MAX_LOG_BYTES_LIMIT,
     MAX_LOG_LINES_LIMIT,
     MAX_PERMISSIBLE_ANGULAR_SPEED,
@@ -49,6 +53,8 @@ from .enums import (
     OperatorState,
     WebControlErrorCode,
 )
+from .ipc_client import OperatorIpcClient
+from .ipc_server import OperatorIpcServer, extract_peer_credentials
 from .locks import (
     LockAcquisitionTimeoutError,
     LockHierarchy,
@@ -80,15 +86,19 @@ from .schemas import (
     WsServerFrame,
 )
 from .state_machine import OperatorStateMachine
+from .agent_node import OperatorAgentNode
 
 __all__ = [
     "API_VERSION",
     "BATTERY_FRESHNESS_MAX_AGE_SEC",
     "CHALLENGE_INTERVAL_NS",
     "CHALLENGE_INTERVAL_SEC",
+    "DEFAULT_OPERATOR_SOCKET_PATH",
     "DEFAULT_WEB_ANGULAR_SPEED",
     "DEFAULT_WEB_LINEAR_SPEED",
     "DELIVERY_OBSERVATION_MAX_AGE_SEC",
+    "ENV_OPERATOR_LOCK_PATH",
+    "ENV_OPERATOR_SOCKET_PATH",
     "FIRST_COMMAND_DEADLINE_NS",
     "FIRST_COMMAND_DEADLINE_SEC",
     "GUARD_STATE_FRESHNESS_MAX_AGE_SEC",
@@ -106,6 +116,7 @@ __all__ = [
     "LOCK_PATH_OPERATOR",
     "MAX_CONTINUOUS_HOLD_NS",
     "MAX_CONTINUOUS_HOLD_SEC",
+    "MAX_IPC_MESSAGE_BYTES",
     "MAX_LOG_BYTES_LIMIT",
     "MAX_LOG_LINES_LIMIT",
     "MAX_PERMISSIBLE_ANGULAR_SPEED",
@@ -139,6 +150,9 @@ __all__ = [
     "LogsResponse",
     "MotionDirection",
     "OperationStatusResponse",
+    "OperatorAgentNode",
+    "OperatorIpcClient",
+    "OperatorIpcServer",
     "OperatorState",
     "OperatorStateMachine",
     "StatusResponse",
@@ -149,4 +163,5 @@ __all__ = [
     "WsClientFrame",
     "WsServerFrame",
     "execute_non_blocking_stop",
+    "extract_peer_credentials",
 ]

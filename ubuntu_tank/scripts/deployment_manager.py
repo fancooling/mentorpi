@@ -489,6 +489,10 @@ class SnapshotManager:
                 "mentorpi-tank.service",
             ),
             (
+                os.path.join(systemd_dir, "mentorpi-tank-operator.service"),
+                "mentorpi-tank-operator.service",
+            ),
+            (
                 os.path.join(systemd_dir, "mentorpi-tank-recover.service"),
                 "mentorpi-tank-recover.service",
             ),
@@ -644,6 +648,9 @@ class SnapshotManager:
             "controller.yaml": os.path.join(etc_dir, "controller.yaml"),
             "mentorpi-tank.env": os.path.join(etc_dir, "mentorpi-tank.env"),
             "mentorpi-tank.service": os.path.join(systemd_dir, "mentorpi-tank.service"),
+            "mentorpi-tank-operator.service": os.path.join(
+                systemd_dir, "mentorpi-tank-operator.service"
+            ),
             "mentorpi-tank-recover.service": os.path.join(
                 systemd_dir, "mentorpi-tank-recover.service"
             ),
@@ -1538,6 +1545,33 @@ class ReleaseManager:
                 subprocess.run(
                     ["usermod", "-aG", "mentorpi-rrc", "ubuntu-tank"], check=False
                 )
+            subprocess.run(
+                ["usermod", "-aG", "ubuntu-tank-operators", "ubuntu-tank"], check=False
+            )
+
+            try:
+                pwd.getpwnam("ubuntu-tank-operator")
+            except KeyError:
+                subprocess.run(
+                    [
+                        "useradd",
+                        "-r",
+                        "-s",
+                        "/usr/sbin/nologin",
+                        "-g",
+                        "ubuntu-tank-operators",
+                        "-d",
+                        "/var/opt/ubuntu_tank",
+                        "-M",
+                        "ubuntu-tank-operator",
+                    ],
+                    check=True,
+                )
+            else:
+                subprocess.run(
+                    ["usermod", "-aG", "ubuntu-tank-operators", "ubuntu-tank-operator"],
+                    check=False,
+                )
         elif require_root:
             raise PermissionError("Identity provisioning requires root privileges.")
 
@@ -1990,11 +2024,27 @@ class ReleaseManager:
             tank_uid = os.geteuid()
             rrc_gid = os.getegid()
 
+        try:
+            operators_gid = grp.getgrnam("ubuntu-tank-operators").gr_gid
+        except (KeyError, AttributeError):
+            operators_gid = rrc_gid
+
+        try:
+            operator_uid = pwd.getpwnam("ubuntu-tank-operator").pw_uid
+        except (KeyError, AttributeError):
+            operator_uid = os.geteuid()
+
         # 3. Create persistent /var directories with proper ownership and modes
         # /var/opt/ubuntu_tank/deployment is mode 0755 so ubuntu-tank service account can read activation-journal
         for p, m, u, g in [
             (self.var_dir, 0o755, 0, 0),
             (os.path.join(self.var_dir, "ros-log"), 0o750, tank_uid, rrc_gid),
+            (
+                os.path.join(self.var_dir, "operator-log"),
+                0o750,
+                operator_uid,
+                operators_gid,
+            ),
             (os.path.join(self.var_dir, "deployment"), 0o755, 0, 0),
             (self.snapshots_dir, 0o700, 0, 0),
         ]:
@@ -2007,10 +2057,11 @@ class ReleaseManager:
             os.chmod(p, m)
 
         # 4. Create runtime /run directories with proper ownership
+        # /run/ubuntu_tank is 0775 tank_uid:operators_gid so operator agent and clients can interact
         # /run/lock/ubuntu_tank is 0775 root:mentorpi-rrc so ubuntu-tank service account can coordinate startup
         lock_dir = os.path.dirname(self.lock_path)
         for p, m, u, g in [
-            (self.run_dir, 0o750, tank_uid, rrc_gid),
+            (self.run_dir, 0o775, tank_uid, operators_gid),
             (lock_dir, 0o775, 0, rrc_gid),
         ]:
             os.makedirs(p, exist_ok=True)
@@ -2613,7 +2664,7 @@ class ReleaseManager:
         self, timeout_sec: float = 10.0, allow_unsupported: bool = False
     ):
         """
-        Stop mentorpi-tank.service and strictly verify inactivity before asset changes.
+        Stop mentorpi-tank-operator.service and mentorpi-tank.service and strictly verify inactivity before asset changes.
         Handles deactivating states by polling until confirmed inactive/failed, and
         rejects empty query responses or ambiguous states.
         """
@@ -2624,71 +2675,82 @@ class ReleaseManager:
                 "systemctl command not available; cannot verify controller is stopped."
             )
 
-        # Check if service is loaded and active
-        res = subprocess.run(
-            ["systemctl", "is-active", "mentorpi-tank.service"],
-            capture_output=True,
-            text=True,
-        )
-        status = res.stdout.strip()
-        if not status:
-            raise RuntimeError(
-                "Failed to query status of mentorpi-tank.service: empty response or query failure."
-            )
-
-        if status in ("inactive", "failed"):
-            return
-
-        if status in ("active", "activating", "reloading"):
-            stop_res = subprocess.run(
-                ["systemctl", "stop", "mentorpi-tank.service"],
+        for unit in ("mentorpi-tank-operator.service", "mentorpi-tank.service"):
+            # Check if service is loaded and active
+            res = subprocess.run(
+                ["systemctl", "is-active", unit],
                 capture_output=True,
                 text=True,
             )
-            if stop_res.returncode != 0:
+            status = res.stdout.strip()
+            if not status:
+                if unit == "mentorpi-tank-operator.service":
+                    continue
                 raise RuntimeError(
-                    f"Failed to execute 'systemctl stop mentorpi-tank.service': {stop_res.stderr.strip()}"
+                    f"Failed to query status of {unit}: empty response or query failure."
                 )
-        elif status == "deactivating":
-            # Already shutting down; proceed to poll until completed
-            pass
-        else:
-            raise RuntimeError(
-                f"Ambiguous or unexpected service status '{status}'; refusing to proceed."
-            )
 
-        start = time.monotonic()
-        while time.monotonic() - start < timeout_sec:
-            poll_res = subprocess.run(
-                ["systemctl", "is-active", "mentorpi-tank.service"],
-                capture_output=True,
-                text=True,
-            )
-            poll_status = poll_res.stdout.strip()
-            if poll_status in ("inactive", "failed"):
-                return
-            if poll_status not in ("active", "activating", "reloading", "deactivating"):
+            if status in ("inactive", "failed", "unknown"):
+                continue
+
+            if status in ("active", "activating", "reloading"):
+                stop_res = subprocess.run(
+                    ["systemctl", "stop", unit],
+                    capture_output=True,
+                    text=True,
+                )
+                if stop_res.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to execute 'systemctl stop {unit}': {stop_res.stderr.strip()}"
+                    )
+            elif status == "deactivating":
+                # Already shutting down; proceed to poll until completed
+                pass
+            else:
                 raise RuntimeError(
-                    f"Ambiguous or unexpected service status '{poll_status}' while waiting for shutdown."
+                    f"Ambiguous or unexpected service status '{status}' for {unit}; refusing to proceed."
                 )
-            time.sleep(0.2)
 
-        # Escalation: send SIGKILL if still active or deactivating
-        subprocess.run(
-            ["systemctl", "kill", "-s", "SIGKILL", "mentorpi-tank.service"], check=False
-        )
-        time.sleep(0.5)
+            start = time.monotonic()
+            stopped = False
+            while time.monotonic() - start < timeout_sec:
+                poll_res = subprocess.run(
+                    ["systemctl", "is-active", unit],
+                    capture_output=True,
+                    text=True,
+                )
+                poll_status = poll_res.stdout.strip()
+                if poll_status in ("inactive", "failed", "unknown"):
+                    stopped = True
+                    break
+                if poll_status not in (
+                    "active",
+                    "activating",
+                    "reloading",
+                    "deactivating",
+                ):
+                    raise RuntimeError(
+                        f"Ambiguous or unexpected service status '{poll_status}' while waiting for {unit} shutdown."
+                    )
+                time.sleep(0.2)
 
-        final_res = subprocess.run(
-            ["systemctl", "is-active", "mentorpi-tank.service"],
-            capture_output=True,
-            text=True,
-        )
-        final_status = final_res.stdout.strip()
-        if final_status not in ("inactive", "failed"):
-            raise RuntimeError(
-                f"Safety violation: mentorpi-tank.service remains active after stop timeout (status '{final_status}'). Failing closed."
-            )
+            if not stopped:
+                # Escalation: send SIGKILL if still active or deactivating
+                subprocess.run(
+                    ["systemctl", "kill", "-s", "SIGKILL", unit], check=False
+                )
+                time.sleep(0.5)
+
+                final_res = subprocess.run(
+                    ["systemctl", "is-active", unit],
+                    capture_output=True,
+                    text=True,
+                )
+                final_status = final_res.stdout.strip()
+                if final_status not in ("inactive", "failed", "unknown"):
+                    raise RuntimeError(
+                        f"Safety violation: {unit} remains active after stop timeout (status '{final_status}'). Failing closed."
+                    )
 
     @staticmethod
     def extract_udev_discriminator(rule_text: str) -> Optional[str]:
@@ -2834,6 +2896,10 @@ class ReleaseManager:
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank.service"),
                 os.path.join(self.systemd_dir, "mentorpi-tank.service"),
+            ),
+            (
+                os.path.join(candidate_dir, "host", "mentorpi-tank-operator.service"),
+                os.path.join(self.systemd_dir, "mentorpi-tank-operator.service"),
             ),
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank-recover.service"),

@@ -13,6 +13,7 @@ Provides:
 
 import json
 import math
+import os
 import struct
 import sys
 import time
@@ -192,13 +193,23 @@ def _decode_motor_frame(
 class BenchClientNode(Node):
     """Client node for executing bounded bench motions and measuring stop latencies."""
 
-    def __init__(self, node_name: str = "operator_client", context=None):
+    def __init__(
+        self,
+        node_name: str = "operator_client",
+        context=None,
+        direct_ros: bool = False,
+        authority_lock_path: Optional[str] = None,
+        max_linear_speed: Optional[float] = None,
+        max_angular_speed: Optional[float] = None,
+    ):
         overrides = []
         if Parameter is not None:
             overrides.append(
                 Parameter("start_type_description_service", Parameter.Type.BOOL, False)
             )
 
+        self.max_linear_speed = max_linear_speed
+        self.max_angular_speed = max_angular_speed
         self.guard_state: Optional[bool] = None
         self.guard_armed: Optional[bool] = None
         self._last_state_time: Optional[float] = None
@@ -207,6 +218,57 @@ class BenchClientNode(Node):
 
         self.observations: List[Dict[str, Any]] = []
         self.sub_obs = None
+
+        self._ipc_client = None
+        self._ipc_epoch = None
+        self._owner_id = None
+        self._authority_lock_fd = None
+        is_direct = False
+
+        if direct_ros:
+            is_direct = True
+        else:
+            try:
+                from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+
+                ipc = OperatorIpcClient()
+                try:
+                    ipc.connect(timeout_sec=0.2)
+                except (ConnectionError, FileNotFoundError, OSError) as exc:
+                    ipc.close()
+                    raise RuntimeError(
+                        "Operator agent is not reachable; pass direct_ros=True only "
+                        "for an explicitly isolated direct ROS session."
+                    ) from exc
+
+                self._owner_id = f"bench_client_{os.getpid()}"
+                ok, epoch, err, msg = ipc.acquire(
+                    self._owner_id,
+                    max_linear_speed=self.max_linear_speed,
+                    max_angular_speed=self.max_angular_speed,
+                    timeout_sec=1.0,
+                )
+                if ok and epoch is not None:
+                    self._ipc_client = ipc
+                    self._ipc_epoch = epoch
+                    is_direct = False
+                else:
+                    ipc.close()
+                    # FAIL CLOSED: agent rejection never creates a direct publisher.
+                    raise RuntimeError(
+                        f"Operator agent denied ownership to bench_client: {msg} ({err})"
+                    )
+            except ImportError as exc:
+                raise RuntimeError(
+                    "ubuntu_tank_operator is required unless direct_ros=True is explicit."
+                ) from exc
+
+        if is_direct and rclpy is not None:
+            from ubuntu_tank_operator.authority_lock import acquire_authority_lock
+
+            self._authority_lock_fd, _ = acquire_authority_lock(
+                lock_path=authority_lock_path
+            )
 
         if rclpy is not None:
             kwargs = {
@@ -229,11 +291,18 @@ class BenchClientNode(Node):
                 except Exception:
                     self._executor = None
 
-            # Arm/disarm service client
-            self.arm_client = self.create_client(SetBool, "/ubuntu_tank_safety/set_arm")
-
-            # Velocity command publisher
-            self.cmd_vel_pub = self.create_publisher(Twist, "/controller/cmd_vel", 1)
+            if is_direct:
+                # Arm/disarm service client
+                self.arm_client = self.create_client(
+                    SetBool, "/ubuntu_tank_safety/set_arm"
+                )
+                # Velocity command publisher
+                self.cmd_vel_pub = self.create_publisher(
+                    Twist, "/controller/cmd_vel", 1
+                )
+            else:
+                self.arm_client = None
+                self.cmd_vel_pub = None
 
             # Delivery observation subscription
             if String is not None:
@@ -270,6 +339,7 @@ class BenchClientNode(Node):
             self.sub_obs = None
 
     def _state_cb(self, msg):
+
         self.guard_state = msg.data
         self._last_state_time = time.monotonic()
 
@@ -310,6 +380,22 @@ class BenchClientNode(Node):
             rclpy.spin_once(self, timeout_sec=timeout_sec)
 
     def destroy_node(self):
+        if self._ipc_client is not None:
+            try:
+                self._ipc_client.stop()
+            except Exception:
+                pass
+            try:
+                if self._ipc_epoch is not None:
+                    self._ipc_client.release(self._ipc_epoch)
+            except Exception:
+                pass
+            try:
+                self._ipc_client.close()
+            except Exception:
+                pass
+            self._ipc_client = None
+            self._ipc_epoch = None
         if self._executor is not None:
             try:
                 self._executor.remove_node(self)
@@ -320,11 +406,98 @@ class BenchClientNode(Node):
             except Exception:
                 pass
             self._executor = None
-        if rclpy is not None and hasattr(super(), "destroy_node"):
-            super().destroy_node()
+        try:
+            if rclpy is not None and hasattr(super(), "destroy_node"):
+                super().destroy_node()
+        finally:
+            # Keep direct authority until its ROS publisher has been destroyed.
+            if self._authority_lock_fd is not None:
+                from ubuntu_tank_operator.authority_lock import release_authority_lock
+
+                release_authority_lock(self._authority_lock_fd)
+                self._authority_lock_fd = None
+
+    @property
+    def is_ipc_mode(self) -> bool:
+        """Return True if connected to operator agent via IPC, False for direct ROS."""
+        return self._ipc_client is not None
+
+    def get_command_speeds(self) -> Tuple[float, float]:
+        """Return (linear_mps, angular_rps) to use for commanded motion.
+
+        When operating under the Operator Agent, queries configured speed caps so
+        requested, commanded, and verified velocities agree.
+        """
+        fallback_lx = (
+            self.max_linear_speed if self.max_linear_speed is not None else 0.20
+        )
+        fallback_az = (
+            self.max_angular_speed if self.max_angular_speed is not None else 0.50
+        )
+        if self._ipc_client is not None:
+            try:
+                st = self._ipc_client.get_status(timeout_sec=1.0)
+                if st:
+                    limits = st.get("limits") or {}
+                    lx = float(limits.get("max_linear_speed", fallback_lx))
+                    az = float(limits.get("max_angular_speed", fallback_az))
+                    return lx, az
+            except Exception:
+                pass
+            return fallback_lx, fallback_az
+        return (
+            fallback_lx,
+            self.max_angular_speed if self.max_angular_speed is not None else 0.80,
+        )
 
     def call_set_arm(self, arm: bool, timeout_sec: float = 5.0) -> Tuple[bool, str]:
         """Send arm/disarm request to guard node and return (success, message)."""
+        if self._ipc_client is not None:
+            if arm:
+                # Refresh control epoch from status or re-acquire if authority was lost
+                try:
+                    st = self._ipc_client.get_status(timeout_sec=timeout_sec)
+                    if (
+                        st
+                        and st.get("active_owner") == self._owner_id
+                        and st.get("current_epoch") is not None
+                    ):
+                        self._ipc_epoch = st["current_epoch"]
+                    elif st and st.get("active_owner") is None and self._owner_id:
+                        ok_acq, ep_acq, _, _ = self._ipc_client.acquire(
+                            self._owner_id, timeout_sec=timeout_sec
+                        )
+                        if ok_acq and ep_acq is not None:
+                            self._ipc_epoch = ep_acq
+                except Exception:
+                    pass
+
+                if self._ipc_epoch is None:
+                    return False, "No active control authority"
+
+                ok, err, msg = self._ipc_client.arm(
+                    self._ipc_epoch, tracks_raised=True, timeout_sec=timeout_sec
+                )
+                if not ok and err == "INVALID_EPOCH":
+                    # Retry once with freshly resolved epoch
+                    try:
+                        st = self._ipc_client.get_status(timeout_sec=timeout_sec)
+                        if st and st.get("current_epoch") is not None:
+                            self._ipc_epoch = st["current_epoch"]
+                            ok, err, msg = self._ipc_client.arm(
+                                self._ipc_epoch,
+                                tracks_raised=True,
+                                timeout_sec=timeout_sec,
+                            )
+                    except Exception:
+                        pass
+                return ok, msg or (err or "")
+            else:
+                ok, msg = self._ipc_client.disarm(
+                    epoch=self._ipc_epoch, timeout_sec=timeout_sec
+                )
+                return ok, msg or ""
+
         if self.arm_client is None:
             return False, "ROS client not initialized"
 
@@ -375,6 +548,11 @@ class BenchClientNode(Node):
 
     def send_stop(self, count: int = 4) -> bool:
         """Send repeated zero velocity commands."""
+        if self._ipc_client is not None:
+            try:
+                self._ipc_client.stop()
+            except Exception:
+                pass
         for _ in range(max(1, count)):
             if not self.publish_cmd_vel(0.0, 0.0):
                 return False
@@ -398,6 +576,76 @@ class BenchClientNode(Node):
             )
         if rate_hz <= 0.0 or rate_hz > 100.0:
             raise ValueError(f"rate_hz must be between 0.0 and 100.0 Hz, got {rate_hz}")
+
+        if self._ipc_client is not None:
+            # Reconcile epoch before starting burst if needed
+            if self._ipc_epoch is None:
+                try:
+                    st = self._ipc_client.get_status(timeout_sec=0.5)
+                    if st and st.get("current_epoch") is not None:
+                        self._ipc_epoch = st["current_epoch"]
+                except Exception:
+                    pass
+
+            if self._ipc_epoch is None:
+                return False
+
+            if linear_x > 1e-3:
+                direction = "forward"
+            elif linear_x < -1e-3:
+                direction = "reverse"
+            elif angular_z > 1e-3:
+                direction = "spin_left"
+            elif angular_z < -1e-3:
+                direction = "spin_right"
+            else:
+                direction = "neutral"
+
+            interval = 1.0 / rate_hz
+            start_time = time.monotonic()
+            seq = 0
+            try:
+                while time.monotonic() - start_time < duration_sec:
+                    c = self._ipc_client.request_challenge(
+                        self._ipc_epoch, timeout_sec=0.5
+                    )
+                    if not c or "token" not in c:
+                        return False
+                    seq += 1
+                    ok, cur_dir, err = self._ipc_client.submit_intent(
+                        c["token"], self._ipc_epoch, seq, direction, timeout_sec=0.5
+                    )
+                    if not ok:
+                        return False
+                    if self._is_ok():
+                        self._spin_once(timeout_sec=interval)
+                    else:
+                        time.sleep(interval)
+            finally:
+                try:
+                    # Submit neutral intent to generate correlated terminating zeros
+                    c = self._ipc_client.request_challenge(
+                        self._ipc_epoch, timeout_sec=0.2
+                    )
+                    if c and "token" in c:
+                        seq += 1
+                        self._ipc_client.submit_intent(
+                            c["token"],
+                            self._ipc_epoch,
+                            seq,
+                            "neutral",
+                            timeout_sec=0.2,
+                        )
+                except Exception:
+                    pass
+                try:
+                    self._ipc_client.stop(timeout_sec=0.5)
+                except Exception:
+                    pass
+                if self._is_ok():
+                    self._spin_once(timeout_sec=0.05)
+
+            return True
 
         interval = 1.0 / rate_hz
         start_time = time.monotonic()
@@ -448,6 +696,17 @@ class BenchClientNode(Node):
     def prepare_discovery(self, timeout_sec: float = 3.0) -> bool:
         """Wait for required services and topics while DISARMED before arming."""
         start = time.monotonic()
+        if self._ipc_client is not None:
+            while time.monotonic() - start < timeout_sec:
+                if not self._is_ok():
+                    return False
+                self._spin_once(timeout_sec=0.05)
+                if self.guard_armed is False:
+                    return True
+                if self.guard_armed is True:
+                    self.call_set_arm(False, timeout_sec=1.0)
+            return self.guard_armed is False
+
         if self.arm_client is None or self.cmd_vel_pub is None:
             return False
 
@@ -474,6 +733,11 @@ class BenchClientNode(Node):
     def reset_observations(self) -> float:
         """Clear recorded delivery observations and return start timestamp."""
         self.observations.clear()
+        if self._ipc_client is not None:
+            try:
+                self._ipc_client.reset_observations(timeout_sec=1.0)
+            except Exception:
+                pass
         return time.monotonic()
 
     def get_observations(self, since_mono: float = 0.0) -> List[Dict[str, Any]]:
@@ -914,7 +1178,8 @@ def main(args=None):
     target_args = sys.argv[1:] if args is None else args
     if not target_args or "-h" in target_args or "--help" in target_args:
         print(
-            "Usage: bench_client [--arm | --disarm | --stop | --motion <forward|reverse|left|right>]"
+            "Usage: bench_client [--direct-ros] [--arm | --disarm | --stop | "
+            "--motion <forward|reverse|left|right>]"
         )
         return 0
 
@@ -923,7 +1188,7 @@ def main(args=None):
         return 1
 
     rclpy.init(args=args)
-    node = BenchClientNode()
+    node = BenchClientNode(direct_ros="--direct-ros" in target_args)
     try:
         if "--arm" in target_args:
             success, msg = node.call_set_arm(True)

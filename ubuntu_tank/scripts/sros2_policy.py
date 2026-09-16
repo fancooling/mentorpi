@@ -504,6 +504,19 @@ def verify_security_invariants(
                 f"Enclave {sub_node} must not be allowed to publish {obs_dds}"
             )
 
+    batt_dds = "rt/ros_robot_controller/battery"
+    for sub_node in ["operator", "status"]:
+        if not matches_any_dds_pattern(
+            batt_dds, dds_perms[sub_node]["subscribe_topics"]
+        ):
+            raise PolicyValidationError(
+                f"Enclave {sub_node} must be allowed to subscribe to {batt_dds}"
+            )
+        if matches_any_dds_pattern(batt_dds, dds_perms[sub_node]["publish_topics"]):
+            raise PolicyValidationError(
+                f"Enclave {sub_node} must not be allowed to publish {batt_dds}"
+            )
+
     # 9. Verify actuator topic access is strictly denied to operator and status
     for restricted_node in ["operator", "status"]:
         for act_topic in [input_dds, guarded_dds]:

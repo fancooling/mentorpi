@@ -106,7 +106,8 @@ STDLIB = {
     'select', 'enum', 'queue', 'termios', 'tty', 'typing', 'unittest', 'glob',
     'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json', 'secrets',
     'uuid', 'fcntl', 'pathlib', 're', 'logging', 'dataclasses', 'contextlib',
-    'ipaddress', 'errno', 'collections'
+    'ipaddress', 'errno', 'collections', '__future__', 'argparse', 'io',
+    'grp', 'pwd', 'stat'
 }
 
 dep_tags = {'depend', 'build_depend', 'build_export_depend', 'exec_depend', 'test_depend'}

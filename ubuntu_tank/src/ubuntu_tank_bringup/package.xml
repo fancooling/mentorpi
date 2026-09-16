@@ -22,7 +22,9 @@ Declare the ubuntu_tank_bringup ROS package metadata and build/runtime dependenc
   <exec_depend>ubuntu_tank_safety</exec_depend>
   <exec_depend>ubuntu_tank_supervisor</exec_depend>
   <exec_depend>ubuntu_tank_teleop</exec_depend>
+  <exec_depend>ubuntu_tank_operator</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

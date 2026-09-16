@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""
+mentorpi-tank-operator - Launcher wrapper for the Operator Agent systemd service.
+
+Invoked by mentorpi-tank-operator.service.
+Applies environment, sets SROS2 enclave to /ubuntu_tank/operator,
+enforces loopback Fast DDS profile, and runs OperatorAgentNode daemon.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+bin_dir = os.path.dirname(os.path.abspath(__file__))
+workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
+
+
+def source_bash_environment(script_paths: list[str]) -> dict[str, str]:
+    """Source bash setup scripts and extract exported environment variables."""
+    existing_scripts = [p for p in script_paths if os.path.isfile(p)]
+    if not existing_scripts:
+        return {}
+    cmd_parts = []
+    for s in existing_scripts:
+        cmd_parts.append(f'. "{s}" >/dev/null 2>&1')
+    cmd_parts.append(
+        "python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'"
+    )
+    full_cmd = " && ".join(cmd_parts)
+    try:
+        out = subprocess.check_output(["bash", "-c", full_cmd], text=True, timeout=10.0)
+        return json.loads(out)
+    except Exception as e:
+        sys.stderr.write(
+            f"[mentorpi-tank-operator] Warning: failed to source bash environments: {e}\n"
+        )
+        return {}
+
+
+# 1. Source ROS and release environments if not already sourced
+if os.environ.get("_MENTORPI_TANK_OPERATOR_SOURCED") != "1":
+    lyrical_setup = os.environ.get("ROS_SETUP", "/opt/ros/lyrical/setup.bash")
+    release_setup = "/opt/ubuntu_tank/current/install/setup.bash"
+    workspace_setup = os.path.join(workspace_root, "install", "setup.bash")
+    scripts_to_source = [lyrical_setup]
+    if os.path.isfile(release_setup):
+        scripts_to_source.append(release_setup)
+    elif os.path.isfile(workspace_setup):
+        scripts_to_source.append(workspace_setup)
+
+    sourced_env = source_bash_environment(scripts_to_source)
+    if sourced_env:
+        sourced_env["_MENTORPI_TANK_OPERATOR_SOURCED"] = "1"
+        os.execve(sys.executable, [sys.executable] + sys.argv, sourced_env)
+
+# The controller log directory belongs to its hardware-owning identity.
+# Keep operator logs separate, including after sourcing the shared environment.
+os.environ["ROS_LOG_DIR"] = os.environ.get(
+    "UBUNTU_TANK_OPERATOR_LOG_DIR", "/var/opt/ubuntu_tank/operator-log"
+)
+
+# Add workspace scripts and packages to path if needed
+for cand in [
+    os.path.join(workspace_root, "scripts"),
+    os.path.join(workspace_root, "src", "ubuntu_tank_operator"),
+]:
+    if os.path.isdir(cand) and cand not in sys.path:
+        sys.path.insert(0, cand)
+
+try:
+    from fastdds_setup import apply_loopback_env
+except ImportError:
+    apply_loopback_env = None
+
+# Set default SROS2 enclave override for operator agent
+os.environ.setdefault("ROS_SECURITY_ENCLAVE_OVERRIDE", "/ubuntu_tank/operator")
+
+if apply_loopback_env is not None:
+    try:
+        apply_loopback_env()
+    except Exception:
+        pass
+
+from ubuntu_tank_operator.entrypoint import main
+
+if __name__ == "__main__":
+    sys.exit(main())

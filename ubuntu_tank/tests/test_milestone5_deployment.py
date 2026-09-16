@@ -698,7 +698,9 @@ class TestSystemdUnitAndConfinementDirectives(unittest.TestCase):
         with open(self.tmpfiles_path, "r") as f:
             content = f.read()
 
-        self.assertIn("/run/ubuntu_tank 0750 ubuntu-tank mentorpi-rrc", content)
+        self.assertIn(
+            "/run/ubuntu_tank 0775 ubuntu-tank ubuntu-tank-operators", content
+        )
         self.assertIn("/run/lock/ubuntu_tank 0755 root root", content)
         self.assertIn("/run/lock/ubuntu_tank/deploy.lock 0644 root root", content)
         self.assertIn(

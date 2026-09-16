@@ -586,7 +586,7 @@ DEP_TO_APT_MAP = {
     "setuptools": "python3-setuptools",
 }
 
-internal_workspace_pkgs = {"ros_robot_controller", "ros_robot_controller_msgs", "controller", "ubuntu_tank_safety", "ubuntu_tank_supervisor", "ubuntu_tank_teleop"}
+internal_workspace_pkgs = {"ros_robot_controller", "ros_robot_controller_msgs", "controller", "ubuntu_tank_safety", "ubuntu_tank_supervisor", "ubuntu_tank_teleop", "ubuntu_tank_operator"}
 
 for dep in sorted(pkg_xml_deps):
     if dep in internal_workspace_pkgs:

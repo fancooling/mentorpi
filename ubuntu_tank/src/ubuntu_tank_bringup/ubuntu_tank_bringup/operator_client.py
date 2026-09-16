@@ -82,25 +82,76 @@ def main(args=None):
     target_args = sys.argv[1:] if args is None else args
     for arg in target_args:
         if arg in ("-h", "--help"):
-            print("Usage: operator_client [--arm | --disarm]")
+            print("Usage: operator_client [--arm | --disarm] [--direct-ros]")
             return 0
 
-    if rclpy is None:
-        sys.stderr.write("ERROR: rclpy is required to run operator_client.\n")
-        return 1
-
     arm = None
+    direct = False
     for arg in target_args:
         if arg in ("--arm", "-a", "true", "True", "1"):
             arm = True
         elif arg in ("--disarm", "-d", "false", "False", "0"):
             arm = False
+        elif arg in ("--direct", "--direct-ros"):
+            direct = True
 
     if arm is None:
         sys.stderr.write("ERROR: Must specify --arm or --disarm.\n")
         return 1
 
     action_str = "arm" if arm else "disarm"
+
+    # Route through shared Operator Agent IPC if not explicitly --direct
+    if not direct:
+        try:
+            from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+
+            client = OperatorIpcClient()
+            try:
+                client.connect(timeout_sec=1.0)
+                if arm:
+                    op_id = f"cli_operator_{os.getpid()}"
+                    acq_ok, epoch, acq_err, acq_msg = client.acquire(
+                        op_id, timeout_sec=2.0
+                    )
+                    if not acq_ok or epoch is None:
+                        sys.stderr.write(
+                            f"FAIL: Guard arm request failed: {acq_msg} ({acq_err})\n"
+                        )
+                        return 1
+                    arm_ok, arm_err, arm_msg = client.arm(
+                        epoch, tracks_raised=True, timeout_sec=3.0
+                    )
+                    if arm_ok:
+                        print(f"PASS: Guard successfully set to armed ({arm_msg}).")
+                        return 0
+                    else:
+                        sys.stderr.write(
+                            f"FAIL: Guard arm request failed: {arm_msg} ({arm_err})\n"
+                        )
+                        return 1
+                else:
+                    client.stop(timeout_sec=2.0)
+                    print(f"PASS: Guard successfully set to disarmed.")
+                    return 0
+            except (ConnectionError, FileNotFoundError, OSError) as exc:
+                sys.stderr.write(
+                    f"ERROR: Operator agent daemon is not reachable: {exc}.\n"
+                    "Use --direct-ros only for an explicitly isolated direct ROS session.\n"
+                )
+                return 1
+            finally:
+                client.close()
+        except ImportError as exc:
+            sys.stderr.write(
+                f"ERROR: Operator Agent IPC client is unavailable: {exc}.\n"
+            )
+            return 1
+
+    if rclpy is None:
+        sys.stderr.write("ERROR: rclpy is required to run direct operator_client.\n")
+        return 1
+
     if "FASTDDS_DEFAULT_PROFILES_FILE" not in os.environ:
         for cand in [
             "/opt/ubuntu_tank/current/config/fastdds/loopback.xml",
@@ -122,9 +173,23 @@ def main(args=None):
                 os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "SYSTEM_DEFAULT")
                 break
 
-    rclpy.init(args=args)
-    node = OperatorClientNode()
+    from ubuntu_tank_operator.authority_lock import (
+        acquire_authority_lock,
+        release_authority_lock,
+    )
+
     try:
+        authority_lock_fd, _ = acquire_authority_lock()
+    except (OSError, RuntimeError) as exc:
+        sys.stderr.write(
+            f"ERROR: Could not acquire exclusive operator authority lock: {exc}.\n"
+        )
+        return 1
+
+    node = None
+    try:
+        rclpy.init(args=args)
+        node = OperatorClientNode()
         success, message = node.call_set_arm(arm)
         if success:
             print(f"PASS: Guard successfully set to {action_str}ed ({message}).")
@@ -133,8 +198,11 @@ def main(args=None):
             sys.stderr.write(f"FAIL: Guard {action_str} request failed: {message}\n")
             return 1
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if node is not None:
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+        release_authority_lock(authority_lock_fd)
 
 
 if __name__ == "__main__":

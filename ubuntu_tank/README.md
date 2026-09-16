@@ -352,6 +352,21 @@ Installation checks the production prefix again. An identical release archive
 may be installed again, but a different payload with the same ID is rejected.
 Use a new release ID for changed software.
 
+The operator agent writes ROS logs under `/var/opt/ubuntu_tank/operator-log`,
+owned by `ubuntu-tank-operator:ubuntu-tank-operators`. Its launcher accepts
+`UBUNTU_TANK_OPERATOR_LOG_DIR` to select another pre-provisioned writable log
+directory; it does not reuse the controller-only `ROS_LOG_DIR`. Installation and
+boot tmpfiles rules grant the operator group access to `/run/ubuntu_tank` and
+pre-create `/run/ubuntu_tank/operator.lock` as
+`ubuntu-tank-operator:ubuntu-tank-operators` mode `0660`.
+
+Teleop, bench, and one-shot operator commands fail closed when the shared agent
+is unavailable. Direct ROS control requires the explicit `--direct-ros` option
+and holds `operator.lock` until its ROS publishers are destroyed, so it cannot
+overlap an agent start or restart. Arming is not reported successful until a
+fresh, complete four-motor zero `bridge_write` observation is received within
+the original 250 ms transaction deadline.
+
 ### Host speed and keyboard settings
 
 `controller.max_linear_speed` and `controller.max_angular_speed` are applied at
@@ -360,7 +375,13 @@ keyboard. Excess velocity is clamped; non-finite velocity becomes a stop.
 `deploy.sh teleop` reads `UBUNTU_TANK_CONFIG`, defaulting to
 `/etc/opt/ubuntu_tank/controller.yaml`, and applies `teleop.linear_speed`,
 `teleop.angular_speed` and `teleop.lease_duration_sec`. Keyboard speeds are capped
-by the controller limits. A missing/invalid configuration prevents teleop startup.
+by the controller limits. IPC additionally negotiates speeds downward to the
+agent caps before acquiring ownership; bench uses the same negotiation, so its
+default 0.8 rad/s request becomes 0.5 rad/s with the default agent. Requested lower
+speeds are never increased. `teleop --speed` and `--angular-speed` override host
+keyboard speeds; the agent caps still apply. IPC keyboard input expires at the
+shorter of the configured lease and 150 ms. A missing/invalid configuration
+prevents teleop startup.
 Restart the controller after changing its limits and restart teleop after changing
 keyboard settings. All commands still pass through the motor guard's RPS bound.
 

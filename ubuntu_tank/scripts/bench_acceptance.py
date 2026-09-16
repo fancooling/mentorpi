@@ -1188,7 +1188,10 @@ class BenchAcceptanceOrchestrator:
                 bench_node = None
                 try:
                     bench_node = BenchClientNode(
-                        node_name="operator_client", context=operator_context
+                        node_name="operator_client",
+                        context=operator_context,
+                        max_linear_speed=self.speed_mps,
+                        max_angular_speed=self.angular_rps,
                     )
                     # Prepare subscriptions and wait for discovery while DISARMED before arming
                     if not bench_node.prepare_discovery(timeout_sec=3.0):
@@ -1206,11 +1209,45 @@ class BenchAcceptanceOrchestrator:
 
                     executed = []
                     burst_delivery = {}
+                    linear_speed = self.speed_mps
+                    angular_speed = self.angular_rps
+                    is_ipc = False
+                    ipc_client = getattr(bench_node, "_ipc_client", None)
+                    if ipc_client is not None:
+                        try:
+                            from ubuntu_tank_operator.ipc_client import (
+                                OperatorIpcClient,
+                            )
+
+                            if isinstance(ipc_client, OperatorIpcClient):
+                                is_ipc = True
+                        except ImportError:
+                            pass
+                        if (
+                            not is_ipc
+                            and getattr(bench_node, "is_ipc_mode", False) is True
+                        ):
+                            is_ipc = True
+
+                    if is_ipc:
+                        if hasattr(bench_node, "get_command_speeds"):
+                            cmd_lx, cmd_az = bench_node.get_command_speeds()
+                            if (
+                                cmd_lx > self.speed_mps + 1e-4
+                                or cmd_az > self.angular_rps + 1e-4
+                            ):
+                                raise RuntimeError(
+                                    f"Operator agent operating speed ({cmd_lx} m/s, {cmd_az} rad/s) "
+                                    f"exceeds requested bench speed ({self.speed_mps} m/s, {self.angular_rps} rad/s)"
+                                )
+                            linear_speed = cmd_lx
+                            angular_speed = cmd_az
+
                     burst_cmds = [
-                        ("forward", self.speed_mps, 0.0),
-                        ("reverse", -self.speed_mps, 0.0),
-                        ("spin_left", 0.0, self.angular_rps),
-                        ("spin_right", 0.0, -self.angular_rps),
+                        ("forward", linear_speed, 0.0),
+                        ("reverse", -linear_speed, 0.0),
+                        ("spin_left", 0.0, angular_speed),
+                        ("spin_right", 0.0, -angular_speed),
                     ]
                     for b_name, b_lx, b_az in burst_cmds:
                         burst_start_mono = bench_node.reset_observations()
@@ -1264,10 +1301,18 @@ class BenchAcceptanceOrchestrator:
                                 f"{b_name}: delivery verification failed: {deliv_msg}"
                             )
 
-                        if not bench_node.wait_for_state(
-                            timeout_sec=0.15, expected_armed=True
-                        ).get("guard_armed"):
-                            raise RuntimeError(f"{b_name}: guard disarmed during burst")
+                        expected_after_burst_armed = not is_ipc
+
+                        post_burst_state = bench_node.wait_for_state(
+                            timeout_sec=0.15, expected_armed=expected_after_burst_armed
+                        )
+                        if (
+                            post_burst_state.get("guard_armed")
+                            != expected_after_burst_armed
+                        ):
+                            raise RuntimeError(
+                                f"{b_name}: guard state mismatch after burst (expected_armed={expected_after_burst_armed}, got={post_burst_state.get('guard_armed')})"
+                            )
 
                         bench_node.reset_state()
                         disarm_start_mono = time.monotonic()
@@ -1362,8 +1407,8 @@ class BenchAcceptanceOrchestrator:
                             live_exec_record["physical_movement_verified"] = False
                             live_exec_record["passed"] = False
                             live_exec_record["status"] = "PHYSICAL_OBSERVATION_FAILED"
-                            errors.extend(phys_errs)
-                            live_exec_record["evidence"] = "; ".join(phys_errs)
+                            errors.extend(mov_errs)
+                            live_exec_record["evidence"] = "; ".join(mov_errs)
                 except Exception as exc:
                     live_exec_record["evidence"] = str(exc)
                     errors.append(f"Live motion execution failed: {exc}")

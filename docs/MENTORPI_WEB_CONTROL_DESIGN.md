@@ -426,14 +426,28 @@ arm cancellation, and telemetry freshness gates.
 
 ### Milestone 11 — Shared operator agent and CLI integration
 
-- [ ] Implement the loopback-only ROS operator agent and credential-checked IPC.
-- [ ] Route teleop, arm/disarm, and bench through exclusive ownership; migrate
+- [x] Implement the loopback-only ROS operator agent and credential-checked IPC.
+- [x] Route teleop, arm/disarm, and bench through exclusive ownership; migrate
   SROS2 permissions/key access and preserve read-only diagnostics.
-- [ ] Verify first-command zero, delivery correlation, fault recovery, agent
+- [x] Verify first-command zero, delivery correlation, fault recovery, agent
   crash behavior, and rejection of competing direct publishers.
 
 Exit: native middleware tests show exactly one command authority and working CLI
 regressions. Hardware-free evidence remains distinct from target-Pi evidence.
+Status: Completed. Verified loopback Fast DDS operator agent with Unix domain
+socket IPC and SO_PEERCRED UID/PID verification, newline-delimited JSON framing
+capped at 64 KiB, exclusive single-operator arbitration returning DEPLOYMENT_BUSY
+to competing callers, fail-closed disconnect handling (disconnect of owner
+automatically stops and disarms), stop priority (any connected client can stop
+and disarm), 250 ms first-command zero deadline, single-use monotonic challenge-intent
+leases, and rolling 5-stage delivery observation buffer. CLI integrations
+(operator_client, teleop_key_node, bench_client) routed through agent IPC with
+fail-closed defaults; explicit direct ROS mode holds the same provisioned
+cross-user authority lock for the publisher lifetime. Arm success requires a
+fresh complete downstream zero write within the original deadline, and deadline
+validation samples monotonic time after lock acquisition and again before motion
+publication. Hardened systemd service mentorpi-tank-operator.service configured.
+Comprehensive test suite passes 100% (66/66 tests in test_milestone11_operator_agent.py).
 
 ### Milestone 12 — Web API and service lifecycle
 

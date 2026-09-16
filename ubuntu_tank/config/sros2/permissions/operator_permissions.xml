@@ -25,6 +25,7 @@ DDS Security permissions XML for operator enclave
             <topic>rr/teleop_key/*Reply</topic>
             <topic>rr/operator_client/*Reply</topic>
             <topic>rr/bench_client/*Reply</topic>
+            <topic>rr/operator_agent/*Reply</topic>
             <topic>rr/_ros2cli_requester_*/*Reply</topic>
           </topics>
         </publish>
@@ -33,12 +34,14 @@ DDS Security permissions XML for operator enclave
             <topic>ros_discovery_info</topic>
             <topic>rt/ubuntu_tank_safety/state</topic>
             <topic>rt/ubuntu_tank_safety/armed</topic>
+            <topic>rt/ros_robot_controller/battery</topic>
             <topic>rt/ubuntu_tank/delivery_observation</topic>
             <topic>rt/parameter_events</topic>
             <topic>rr/ubuntu_tank_safety/set_armReply</topic>
             <topic>rq/teleop_key/*Request</topic>
             <topic>rq/operator_client/*Request</topic>
             <topic>rq/bench_client/*Request</topic>
+            <topic>rq/operator_agent/*Request</topic>
             <topic>rq/_ros2cli_requester_*/*Request</topic>
           </topics>
         </subscribe>

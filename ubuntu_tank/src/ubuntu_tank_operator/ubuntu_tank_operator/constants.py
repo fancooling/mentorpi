@@ -64,3 +64,9 @@ LOCK_PATH_LIFECYCLE: Final[str] = "/run/lock/ubuntu_tank/lifecycle.lock"
 LOCK_LEVEL_DEPLOYMENT: Final[int] = 1
 LOCK_LEVEL_OPERATOR: Final[int] = 2
 LOCK_LEVEL_LIFECYCLE: Final[int] = 3
+
+# IPC socket paths and constraints
+DEFAULT_OPERATOR_SOCKET_PATH: Final[str] = "/run/ubuntu_tank/operator.sock"
+ENV_OPERATOR_SOCKET_PATH: Final[str] = "UBUNTU_TANK_OPERATOR_SOCKET"
+ENV_OPERATOR_LOCK_PATH: Final[str] = "UBUNTU_TANK_OPERATOR_LOCK"
+MAX_IPC_MESSAGE_BYTES: Final[int] = 65536

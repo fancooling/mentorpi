@@ -30,6 +30,7 @@ for pkg in [
     "controller",
     "ros_robot_controller",
     "ubuntu_tank_bringup",
+    "ubuntu_tank_operator",
 ]:
     pkg_path = os.path.join(SRC_DIR, pkg)
     if pkg_path not in sys.path:
@@ -411,7 +412,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
     # 21. BenchClientNode Unit Test
     def test_bench_client_node_operations(self):
         """Test BenchClientNode methods for arm/disarm, cmd_vel, and motion burst."""
-        node = BenchClientNode()
+        node = BenchClientNode(direct_ros=True)
         self.assertIsNone(node.guard_state)
         self.assertIsNone(node.guard_armed)
 
@@ -936,7 +937,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
         self.assertEqual(status_node.context, mock_ctx)
         status_node.destroy_node()
 
-        bench_node = BenchClientNode(context=mock_ctx)
+        bench_node = BenchClientNode(context=mock_ctx, direct_ros=True)
         self.assertTrue(bench_node._is_ok())
         self.assertEqual(bench_node.context, mock_ctx)
         bench_node.destroy_node()
@@ -1038,7 +1039,10 @@ class TestMilestone6Acceptance(unittest.TestCase):
             s_exp.destroy_node()
 
             # 3. BenchClientNode with default context (context=None)
-            b_def = bc.BenchClientNode()
+            b_def = bc.BenchClientNode(
+                direct_ros=True,
+                authority_lock_path=os.path.join(self.tmp_dir, "bench-default.lock"),
+            )
             self.assertEqual(b_def.context, "default_rclpy_context")
             with self.assertRaises(AttributeError):
                 b_def.context = "attempted_reassignment"
@@ -1047,7 +1051,11 @@ class TestMilestone6Acceptance(unittest.TestCase):
             # 4. BenchClientNode with explicit context
             mock_op_ctx = MagicMock()
             mock_op_ctx.ok.return_value = True
-            b_exp = bc.BenchClientNode(context=mock_op_ctx)
+            b_exp = bc.BenchClientNode(
+                context=mock_op_ctx,
+                direct_ros=True,
+                authority_lock_path=os.path.join(self.tmp_dir, "bench-explicit.lock"),
+            )
             self.assertIs(b_exp.context, mock_op_ctx)
             self.assertTrue(b_exp._is_ok())
             with self.assertRaises(AttributeError):
@@ -1070,7 +1078,7 @@ class TestMilestone6Acceptance(unittest.TestCase):
             s_node.context = "tamper"
         s_node.destroy_node()
 
-        b_node = bc.BenchClientNode(context="fallback_op_ctx")
+        b_node = bc.BenchClientNode(context="fallback_op_ctx", direct_ros=True)
         self.assertEqual(b_node.context, "fallback_op_ctx")
         with self.assertRaises(AttributeError):
             b_node.context = "tamper"

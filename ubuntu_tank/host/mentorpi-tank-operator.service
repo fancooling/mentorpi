@@ -1,0 +1,40 @@
+# Hardened systemd service unit for MentorPi Tank Shared Operator Agent
+[Unit]
+Description=MentorPi Tank Shared Operator Agent
+After=network.target mentorpi-tank.service
+Wants=mentorpi-tank.service
+StartLimitIntervalSec=30s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu-tank-operator
+Group=ubuntu-tank-operators
+WorkingDirectory=/opt/ubuntu_tank/current
+EnvironmentFile=/etc/opt/ubuntu_tank/mentorpi-tank.env
+ExecStart=/opt/ubuntu_tank/current/bin/mentorpi-tank-operator
+Restart=always
+RestartSec=2s
+TimeoutStopSec=5s
+
+# Hardened sandboxing constraints
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0002
+IPAddressDeny=any
+IPAddressAllow=localhost
+DevicePolicy=closed
+ReadWritePaths=/var/opt/ubuntu_tank /run/ubuntu_tank
+ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank
+
+[Install]
+WantedBy=multi-user.target

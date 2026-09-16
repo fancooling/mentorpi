@@ -129,8 +129,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
 
   echo ""
+  echo "--> Running Milestone 11 Shared Operator Agent & CLI Integration tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, & 10 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, & 11 tests PASSED successfully!"
   echo "============================================================"
 }
 
@@ -318,6 +322,11 @@ cmd_status() {
       echo "Service: ACTIVE (mentorpi-tank.service)"
     else
       echo "Service: INACTIVE (mentorpi-tank.service)"
+    fi
+    if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
+      echo "Operator: ACTIVE (mentorpi-tank-operator.service)"
+    else
+      echo "Operator: INACTIVE (mentorpi-tank-operator.service)"
     fi
   else
     echo "Service: systemctl not available"
@@ -549,10 +558,27 @@ except Exception:
     echo "ERROR: Failed to start mentorpi-tank.service. Check logs with './deploy.sh logs'." >&2
     exit 1
   fi
+
+  if systemctl list-unit-files mentorpi-tank-operator.service 2>/dev/null | grep -q mentorpi-tank-operator.service; then
+    echo "--> Starting mentorpi-tank-operator.service..."
+    sudo systemctl start mentorpi-tank-operator.service
+    if systemctl is-active --quiet mentorpi-tank-operator.service; then
+      echo "mentorpi-tank-operator.service is ACTIVE."
+    else
+      echo "WARNING: mentorpi-tank-operator.service failed to start. Check logs with './deploy.sh logs mentorpi-tank-operator.service'." >&2
+    fi
+  fi
 }
 
 cmd_stop() {
-  echo "--> Stopping mentorpi-tank.service..."
+  echo "--> Stopping services..."
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-operator.service
+      echo "mentorpi-tank-operator.service is STOPPED."
+    fi
+  fi
+
   if command -v ros2 >/dev/null 2>&1; then
     cmd_disarm 2>/dev/null || true
   fi
@@ -564,9 +590,29 @@ cmd_stop() {
 }
 
 cmd_logs() {
-  local lines="${1:-50}"
+  local target_service="mentorpi-tank.service"
+  local lines="50"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      mentorpi-tank-operator.service | operator)
+        target_service="mentorpi-tank-operator.service"
+        shift
+        ;;
+      mentorpi-tank.service | controller)
+        target_service="mentorpi-tank.service"
+        shift
+        ;;
+      [0-9]*)
+        lines="$1"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
   if command -v journalctl >/dev/null 2>&1; then
-    journalctl -u mentorpi-tank.service -n "${lines}" --no-pager
+    journalctl -u "${target_service}" -n "${lines}" --no-pager
   else
     echo "journalctl not available."
   fi

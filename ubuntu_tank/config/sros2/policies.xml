@@ -101,6 +101,7 @@ status enclaves
           <topics subscribe="ALLOW">
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
             <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
@@ -126,6 +127,7 @@ status enclaves
           <topics subscribe="ALLOW">
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
             <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
@@ -142,11 +144,38 @@ status enclaves
           <topics subscribe="ALLOW">
             <topic>/ubuntu_tank_safety/state</topic>
             <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
             <topic>/ubuntu_tank/delivery_observation</topic>
             <topic>/parameter_events</topic>
           </topics>
           <services request="ALLOW">
             <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+        </profile>
+        <profile ns="/" node="operator_agent">
+          <topics publish="ALLOW">
+            <topic>/controller/cmd_vel</topic>
+            <topic>/rosout</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <topics subscribe="ALLOW">
+            <topic>/ubuntu_tank_safety/state</topic>
+            <topic>/ubuntu_tank_safety/armed</topic>
+            <topic>/ros_robot_controller/battery</topic>
+            <topic>/ubuntu_tank/delivery_observation</topic>
+            <topic>/parameter_events</topic>
+          </topics>
+          <services request="ALLOW">
+            <service>/ubuntu_tank_safety/set_arm</service>
+          </services>
+          <services reply="ALLOW">
+            <service>/operator_agent/describe_parameters</service>
+            <service>/operator_agent/get_parameters</service>
+            <service>/operator_agent/get_parameter_types</service>
+            <service>/operator_agent/list_parameters</service>
+            <service>/operator_agent/set_parameters</service>
+            <service>/operator_agent/set_parameters_atomically</service>
+            <service>/operator_agent/get_type_description</service>
           </services>
         </profile>
         <profile ns="/" node="*">
