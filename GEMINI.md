@@ -129,6 +129,9 @@ safety acknowledgment is valid.
 
 ## Git versions and review revisions
 
+- Never commit or push any change until the user explicitly directs you to do so.
+  Do not assume implementation tasks, review remediations, or milestone
+  completions imply permission to commit or push.
 - Create a new Git version (commit) only for a new feature or milestone.
 - Fold revisions addressing code review comments into the existing commit for
   that feature or milestone by amending or squashing them; do not leave separate
