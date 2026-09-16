@@ -2,7 +2,7 @@
 [Unit]
 Description=MentorPi Tank Shared Operator Agent
 After=network.target mentorpi-tank.service
-Wants=mentorpi-tank.service
+PartOf=mentorpi-tank-stack.target
 StartLimitIntervalSec=30s
 StartLimitBurst=5
 

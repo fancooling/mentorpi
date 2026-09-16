@@ -32,8 +32,8 @@ Target Operations (Milestone 5):
   install <archive>              Install versioned release under /opt/ubuntu_tank/releases/
   activate <release-id>          Atomically switch /opt/ubuntu_tank/current to release
   rollback                       Roll back to previously recorded working release
-  start                          Start mentorpi-tank.service (starts disarmed)
-  stop                           Disarm and stop mentorpi-tank.service
+  start                          Start the controller and operator stack (starts disarmed)
+  stop                           Stop the controller and operator stack
   status                         Display service health, ROS graph, and guard state
   logs                           Show recent systemd journal logs for mentorpi-tank.service
 
@@ -328,6 +328,11 @@ cmd_status() {
     else
       echo "Operator: INACTIVE (mentorpi-tank-operator.service)"
     fi
+    if systemctl is-active --quiet mentorpi-tank-stack.target 2>/dev/null; then
+      echo "Stack: ACTIVE (mentorpi-tank-stack.target)"
+    else
+      echo "Stack: INACTIVE (mentorpi-tank-stack.target)"
+    fi
   else
     echo "Service: systemctl not available"
   fi
@@ -549,44 +554,73 @@ except Exception:
     exit 1
   fi
 
-  echo "--> Starting mentorpi-tank.service..."
-  sudo systemctl start mentorpi-tank.service
-  if systemctl is-active --quiet mentorpi-tank.service; then
-    echo "mentorpi-tank.service is ACTIVE."
-    echo "NOTE: Controller starts in DISARMED state. Use './deploy.sh arm --ack-tracks-raised' to arm motors."
-  else
-    echo "ERROR: Failed to start mentorpi-tank.service. Check logs with './deploy.sh logs'." >&2
+  if ! systemctl cat mentorpi-tank-stack.target >/dev/null 2>&1; then
+    echo "ERROR: mentorpi-tank-stack.target is not installed. Activate a release containing the stack target before startup." >&2
     exit 1
   fi
 
-  if systemctl list-unit-files mentorpi-tank-operator.service 2>/dev/null | grep -q mentorpi-tank-operator.service; then
-    echo "--> Starting mentorpi-tank-operator.service..."
-    sudo systemctl start mentorpi-tank-operator.service
-    if systemctl is-active --quiet mentorpi-tank-operator.service; then
-      echo "mentorpi-tank-operator.service is ACTIVE."
-    else
-      echo "WARNING: mentorpi-tank-operator.service failed to start. Check logs with './deploy.sh logs mentorpi-tank-operator.service'." >&2
-    fi
+  echo "--> Starting mentorpi-tank-stack.target..."
+  if systemctl is-active --quiet mentorpi-tank-stack.target 2>/dev/null &&
+    { ! systemctl is-active --quiet mentorpi-tank.service 2>/dev/null ||
+      ! systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; }; then
+    # A member may have been stopped independently while the passive target
+    # remained active. Restart the target to re-evaluate its Wants= members.
+    sudo systemctl restart mentorpi-tank-stack.target
+  else
+    sudo systemctl start mentorpi-tank-stack.target
   fi
+  if ! systemctl is-active --quiet mentorpi-tank.service; then
+    echo "ERROR: mentorpi-tank.service failed to start. Check logs with './deploy.sh logs'." >&2
+    sudo systemctl stop mentorpi-tank-stack.target || true
+    exit 1
+  fi
+  if ! systemctl is-active --quiet mentorpi-tank-operator.service; then
+    echo "ERROR: mentorpi-tank-operator.service failed to start. Check logs with './deploy.sh logs operator'." >&2
+    sudo systemctl stop mentorpi-tank-stack.target || true
+    exit 1
+  fi
+  echo "mentorpi-tank-stack.target is ACTIVE (controller and operator active)."
+  echo "NOTE: Controller starts in DISARMED state. Use './deploy.sh arm --ack-tracks-raised' to arm motors."
 }
 
 cmd_stop() {
-  echo "--> Stopping services..."
-  if command -v systemctl >/dev/null 2>&1; then
+  echo "--> Stopping MentorPi Tank stack..."
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "ERROR: systemctl not found on this system." >&2
+    exit 1
+  fi
+
+  if systemctl cat mentorpi-tank-stack.target >/dev/null 2>&1; then
+    sudo systemctl stop mentorpi-tank-stack.target
+    # Compatibility for services enabled or started independently before the
+    # stack target was introduced. Normal target-managed operation stops both
+    # through PartOf= without these fallback calls.
     if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
       sudo systemctl stop mentorpi-tank-operator.service
-      echo "mentorpi-tank-operator.service is STOPPED."
     fi
-  fi
-
-  if command -v ros2 >/dev/null 2>&1; then
-    cmd_disarm 2>/dev/null || true
-  fi
-
-  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet mentorpi-tank.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank.service
+    fi
+  else
+    echo "NOTE: Stack target is not installed; using legacy per-service shutdown."
+    if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-operator.service
+    fi
+    if command -v ros2 >/dev/null 2>&1; then
+      cmd_disarm 2>/dev/null || true
+    fi
     sudo systemctl stop mentorpi-tank.service
-    echo "mentorpi-tank.service is STOPPED."
   fi
+
+  if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
+    echo "ERROR: mentorpi-tank-operator.service remains active after stack shutdown." >&2
+    exit 1
+  fi
+  if systemctl is-active --quiet mentorpi-tank.service 2>/dev/null; then
+    echo "ERROR: mentorpi-tank.service remains active after stack shutdown." >&2
+    exit 1
+  fi
+  echo "mentorpi-tank-stack.target is STOPPED (controller and operator inactive)."
 }
 
 cmd_logs() {

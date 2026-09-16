@@ -247,6 +247,7 @@ class TestPackagingAndReleaseManifest(BaseDeploymentTestCase):
         self.assertIn("bin/mentorpi-tank-run", files)
         self.assertIn("config/controller.yaml", files)
         self.assertIn("host/mentorpi-tank.service", files)
+        self.assertIn("host/mentorpi-tank-stack.target", files)
         self.assertIn("host/mentorpi-tank-recover.service", files)
 
         # Check all file checksums match
@@ -406,6 +407,9 @@ class TestAtomicActivationAndRollback(BaseDeploymentTestCase):
         # Verify host assets staged
         self.assertTrue(
             os.path.isfile(os.path.join(self.systemd_dir, "mentorpi-tank.service"))
+        )
+        self.assertTrue(
+            os.path.isfile(os.path.join(self.systemd_dir, "mentorpi-tank-stack.target"))
         )
         self.assertTrue(
             os.path.isfile(

@@ -1222,6 +1222,66 @@ class TestServiceAndLauncherSecurity(unittest.TestCase):
         self.assertIn("ROS_SECURITY_ENCLAVE_OVERRIDE", content)
         self.assertIn("/ubuntu_tank/operator", content)
 
+    def test_stack_units_form_a_valid_systemd_job(self):
+        """Systemd accepts the stack target and both isolated service jobs."""
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        systemd_analyze = shutil.which("systemd-analyze")
+        if not systemd_analyze:
+            self.skipTest("systemd-analyze unavailable")
+
+        host_dir = Path(UBUNTU_TANK_DIR, "host")
+        unit_names = (
+            "mentorpi-tank-stack.target",
+            "mentorpi-tank.service",
+            "mentorpi-tank-operator.service",
+            "mentorpi-tank-recover.service",
+        )
+        base_targets = (
+            "network.target",
+            "multi-user.target",
+            "sysinit.target",
+            "basic.target",
+        )
+        system_unit_dir = Path("/usr/lib/systemd/system")
+
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir)
+            staged_units = root / "etc/systemd/system"
+            staged_units.mkdir(parents=True)
+            for unit_name in unit_names:
+                shutil.copy2(host_dir / unit_name, staged_units / unit_name)
+            for target_name in base_targets:
+                source = system_unit_dir / target_name
+                if not source.is_file():
+                    self.skipTest(f"systemd base target unavailable: {target_name}")
+                shutil.copy2(source, staged_units / target_name)
+
+            executable_paths = (
+                root / "opt/ubuntu_tank/current/bin/mentorpi-tank-run",
+                root / "opt/ubuntu_tank/current/bin/mentorpi-tank-operator",
+                root / "opt/ubuntu_tank/libexec/recover-activation",
+            )
+            for executable in executable_paths:
+                executable.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2("/bin/true", executable)
+
+            result = subprocess.run(
+                [
+                    systemd_analyze,
+                    f"--root={root}",
+                    "verify",
+                    *unit_names,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class TestGuardLivenessFreshness(unittest.TestCase):
     """Verify periodic observed guard liveness matching actual production publications (Finding 1)."""
@@ -2104,6 +2164,9 @@ class TestDeploymentProvisioningAndLifecycle(unittest.TestCase):
             op_unit = os.path.join(systemd_dir, "mentorpi-tank-operator.service")
             with open(op_unit, "w") as f:
                 f.write("[Unit]\nDescription=Test\n")
+            stack_target = os.path.join(systemd_dir, "mentorpi-tank-stack.target")
+            with open(stack_target, "w") as f:
+                f.write("[Unit]\nDescription=Test Stack\n")
 
             sm = SnapshotManager(snapshots_dir)
             snap_path = sm.create_snapshot(
@@ -2113,12 +2176,16 @@ class TestDeploymentProvisioningAndLifecycle(unittest.TestCase):
             with open(meta_file, "r", encoding="utf-8") as f:
                 meta = json.load(f)
             self.assertIn("mentorpi-tank-operator.service", meta["backed_up_files"])
+            self.assertIn("mentorpi-tank-stack.target", meta["backed_up_files"])
 
             os.unlink(op_unit)
+            os.unlink(stack_target)
             self.assertFalse(os.path.exists(op_unit))
+            self.assertFalse(os.path.exists(stack_target))
 
             sm.restore_snapshot(snap_path, etc_dir, systemd_dir, udev_dir)
             self.assertTrue(os.path.exists(op_unit))
+            self.assertTrue(os.path.exists(stack_target))
 
 
 if __name__ == "__main__":

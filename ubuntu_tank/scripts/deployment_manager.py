@@ -493,6 +493,10 @@ class SnapshotManager:
                 "mentorpi-tank-operator.service",
             ),
             (
+                os.path.join(systemd_dir, "mentorpi-tank-stack.target"),
+                "mentorpi-tank-stack.target",
+            ),
+            (
                 os.path.join(systemd_dir, "mentorpi-tank-recover.service"),
                 "mentorpi-tank-recover.service",
             ),
@@ -650,6 +654,9 @@ class SnapshotManager:
             "mentorpi-tank.service": os.path.join(systemd_dir, "mentorpi-tank.service"),
             "mentorpi-tank-operator.service": os.path.join(
                 systemd_dir, "mentorpi-tank-operator.service"
+            ),
+            "mentorpi-tank-stack.target": os.path.join(
+                systemd_dir, "mentorpi-tank-stack.target"
             ),
             "mentorpi-tank-recover.service": os.path.join(
                 systemd_dir, "mentorpi-tank-recover.service"
@@ -2664,7 +2671,9 @@ class ReleaseManager:
         self, timeout_sec: float = 10.0, allow_unsupported: bool = False
     ):
         """
-        Stop mentorpi-tank-operator.service and mentorpi-tank.service and strictly verify inactivity before asset changes.
+        Stop the stack target, operator, and controller and strictly verify
+        inactivity before asset changes. The target is optional for rollback
+        compatibility with releases that predate grouped lifecycle management.
         Handles deactivating states by polling until confirmed inactive/failed, and
         rejects empty query responses or ambiguous states.
         """
@@ -2675,7 +2684,15 @@ class ReleaseManager:
                 "systemctl command not available; cannot verify controller is stopped."
             )
 
-        for unit in ("mentorpi-tank-operator.service", "mentorpi-tank.service"):
+        optional_units = {
+            "mentorpi-tank-stack.target",
+            "mentorpi-tank-operator.service",
+        }
+        for unit in (
+            "mentorpi-tank-stack.target",
+            "mentorpi-tank-operator.service",
+            "mentorpi-tank.service",
+        ):
             # Check if service is loaded and active
             res = subprocess.run(
                 ["systemctl", "is-active", unit],
@@ -2684,7 +2701,7 @@ class ReleaseManager:
             )
             status = res.stdout.strip()
             if not status:
-                if unit == "mentorpi-tank-operator.service":
+                if unit in optional_units:
                     continue
                 raise RuntimeError(
                     f"Failed to query status of {unit}: empty response or query failure."
@@ -2900,6 +2917,10 @@ class ReleaseManager:
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank-operator.service"),
                 os.path.join(self.systemd_dir, "mentorpi-tank-operator.service"),
+            ),
+            (
+                os.path.join(candidate_dir, "host", "mentorpi-tank-stack.target"),
+                os.path.join(self.systemd_dir, "mentorpi-tank-stack.target"),
             ),
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank-recover.service"),

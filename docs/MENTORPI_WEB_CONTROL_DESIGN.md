@@ -206,6 +206,13 @@ the page. Starting any new service leaves ownership empty and motion disabled.
 Lifecycle operation completion means observed systemd state, not subprocess
 launch success. Report stop failure as unconfirmed, never as physical rest.
 
+Administrative boot and maintenance may group `mentorpi-tank.service` and
+`mentorpi-tank-operator.service` under `mentorpi-tank-stack.target` for a single
+start/stop command. This grouping does not merge process identities or replace
+independent service control: web lifecycle operations still start and stop only
+the motion service, allowing the operator and web status paths to remain up while
+the controller is unavailable.
+
 ### 3.4 Vue frontend and PWA lifecycle
 
 Use Vue 3 single-file components, TypeScript, Vite, and `vite-plugin-pwa`.

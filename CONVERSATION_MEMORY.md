@@ -5,6 +5,27 @@ Last updated: 2026-09-16
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Unified systemd stack lifecycle (2026-09-16)
+
+- Added `mentorpi-tank-stack.target` as the administrative boot/start/stop group
+  for `mentorpi-tank.service` and `mentorpi-tank-operator.service`; the two
+  services remain separate processes with distinct users, device permissions,
+  logs, and restart behavior.
+- Both services declare `PartOf=mentorpi-tank-stack.target`, while the target
+  declares `Wants=` for both. The operator service no longer directly wants the
+  controller, so it can remain available while motion is intentionally stopped.
+- `deploy.sh start` now starts the stack target and verifies both members;
+  `deploy.sh stop` stops the target, verifies both members are inactive, and
+  retains compatibility shutdown for releases or independently started services
+  predating the target.
+- Release packaging, activation, snapshot, rollback, and recovery now carry the
+  target as a host asset. The aggregate `./ubuntu_tank/deploy.sh test` suite
+  passed through Milestones 1-11; focused Milestone 11 (67 tests), Milestone 5
+  deployment (60 tests, one expected native-DDS skip), and install workflow (36
+  tests) also passed, along with source-boundary, Ruff, shfmt, ShellCheck, and
+  whitespace checks. No target-Pi service, reboot, DDS, serial, or
+  physical-motion validation was performed.
+
 ## Milestone 11 shared operator agent and CLI integration (2026-09-15)
 
 - Implemented Milestone 11 in accordance with [MENTORPI_WEB_CONTROL_DESIGN.md](docs/MENTORPI_WEB_CONTROL_DESIGN.md):

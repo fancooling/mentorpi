@@ -141,6 +141,8 @@ ubuntu_tank/
 ├── host/
 │   ├── 99-mentorpi-rrc.rules         # Restricted and verified udev serial symlink template
 │   ├── mentorpi-tank.service         # Hardened native systemd unit template
+│   ├── mentorpi-tank-operator.service # Shared operator authority service
+│   ├── mentorpi-tank-stack.target     # One-command controller/operator lifecycle group
 │   └── mentorpi-tank.env             # Non-secret runtime environment defaults
 ├── scripts/
 │   ├── install_ros2.sh               # Ubuntu and ROS repository/package setup script (Milestone 2)
@@ -366,6 +368,20 @@ and holds `operator.lock` until its ROS publishers are destroyed, so it cannot
 overlap an agent start or restart. Arming is not reported successful until a
 fresh, complete four-motor zero `bridge_write` observation is received within
 the original 250 ms transaction deadline.
+
+Administrative lifecycle commands use `mentorpi-tank-stack.target` to start or
+stop the controller and operator agent together while retaining their separate
+users, device permissions, logs, and restart policies. Both services declare
+`PartOf=mentorpi-tank-stack.target`, so target stop/restart operations propagate
+to each service. The target is the boot and `deploy.sh` grouping surface; the
+services remain independently addressable so the operator and future web status
+path can remain available while the motion controller is intentionally stopped.
+
+```bash
+sudo systemctl enable mentorpi-tank-stack.target
+sudo systemctl start mentorpi-tank-stack.target
+sudo systemctl stop mentorpi-tank-stack.target
+```
 
 ### Host speed and keyboard settings
 

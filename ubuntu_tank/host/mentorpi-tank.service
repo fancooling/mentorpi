@@ -4,6 +4,7 @@ Description=MentorPi Tank Native Motion Controller
 After=network.target mentorpi-tank-recover.service
 Wants=network.target
 Requires=mentorpi-tank-recover.service
+PartOf=mentorpi-tank-stack.target
 StartLimitIntervalSec=30s
 StartLimitBurst=5
 
