@@ -73,7 +73,7 @@ Values above are illustrative, not live readings.
 | Right / D | Hold for negative angular velocity (spin right), zero linear velocity. |
 | Direction release | Immediately request zero. Remain armed only while the active control session is healthy and within its idle limit. |
 | Stop motion / Space / Disarm | Request zero and disarm; clear all held input and require a new explicit Arm before moving again. No confirmation dialog. |
-| Release control / Logout | Stop, disarm, invalidate the session, and relinquish ownership. |
+| Release control | Stop, disarm, invalidate the control lease, and relinquish ownership. |
 
 On-screen movement uses press-and-hold: a quick click produces only a brief
 request between press and release, possibly no visible movement. It never
@@ -140,7 +140,7 @@ enums, and rejection of unexpected fields. Publish versioned OpenAPI for HTTP
 routes and generate the frontend HTTP client/types from it. WebSocket messages
 need explicit runtime validation and separate versioned JSON schemas and
 TypeScript types; they are not automatically described by HTTP OpenAPI.
-Serve API documentation assets locally behind authentication, or disable the
+Serve API documentation assets locally, or disable the
 interactive docs in production; no runtime CDN dependency.
 
 The web process has no ROS credentials, serial access, general sudo permission,
@@ -179,7 +179,7 @@ Root/owner intervention remains trusted, as in the native controller design.
 
 One connection holds control, including across browsers, tabs, CLI teleop, and
 bench. No silent takeover. Handoff requires stop/disarm confirmation or service
-stop before granting another owner. Any authenticated owner session may request
+stop before granting another owner. Any connected client may request
 Stop/Disarm even if another tab owns driving. Stop invalidates the old motion
 generation before replying so subsequent queued commands cannot restart it.
 
@@ -220,10 +220,10 @@ Build on the workstation or build host and package the static output with the
 backend. The Pi serves those files without a Node.js server or frontend build
 tools at runtime. A web app manifest defines the name, icons, start URL, scope,
 and standalone display. Use the same stable HTTPS origin for installation,
-authentication, API calls, and WSS; document certificate trust on phones.
+API calls and WSS; document certificate trust on phones.
 
 The service worker caches only versioned interface assets. Exclude `/api/`,
-authentication, telemetry, and control requests from caching and background
+telemetry and control requests from caching and background
 sync; never persist or replay commands. The interface can open while the Pi is
 unreachable, but must show disconnected status with driving disabled and no
 cached battery/armed state presented as live. Internet access is unnecessary
@@ -250,7 +250,7 @@ devices; desktop emulation alone does not establish mobile acceptance.
 
 Application states are `NO_OWNER`, `OWNED_DISARMED`, `ARMING`, `ARMED_IDLE`,
 `DRIVING`, and `FAULT`. Service state and telemetry freshness are separate fields.
-Only `ARMED_IDLE`/`DRIVING` accept nonzero intent. Any fault, session expiry,
+Only `ARMED_IDLE`/`DRIVING` accept nonzero intent. Any fault, control-lease expiry,
 service restart, agent restart, or changed release invalidates the control epoch
 and requires explicit acquisition/arming as appropriate.
 
@@ -302,33 +302,38 @@ measured. Space is a software stop, not a replacement for the physical disconnec
 
 ## 5. Network access and API
 
-Default deployment is HTTPS on a configured LAN address, port 8443; advertise
-the actual configured URL in CLI status. Installation must provision an
-owner-trusted certificate and an owner login secret before LAN access is enabled.
-No default password, credentials in URLs, public port forwarding, or cloud service.
-Serve all assets locally for operation without Internet access.
+This is a personal, single-owner tank on a trusted local network. The web UI
+and API require no user authentication: no login/logout, passwords, accounts,
+API keys, bearer tokens, authentication cookies, or login-session store.
+Any client that can reach the configured interface can view status and request
+control. Take control selects one active connection; it does not identify a user.
 
-Authenticate with an owner secret provisioned locally, store only a salted
-password hash, and issue short-lived random server-side sessions in Secure,
-HttpOnly, SameSite=Strict cookies. Require CSRF protection for mutations and
-validate the exact Host/Origin on HTTP and WebSocket handshakes. No wildcard
-CORS, missing-Origin browser controls, or query-string WebSocket credentials.
-Logout/expiry revokes control immediately. Use a restrictive same-origin CSP,
-deny framing, and render logs as text. Bound login attempts, connections, input
-sizes, and log responses; control expiry runs independently of request load.
+Default deployment is HTTPS on a configured LAN address, port 8443; advertise
+the actual configured URL in CLI status. Provision an owner-trusted server
+certificate for browser/PWA support; no client certificate is required. Serve
+all assets locally for operation without Internet access.
+
+Validate the exact Host/Origin on HTTP and WebSocket browser requests; reject
+cross-origin mutations and missing-Origin browser controls. Use a restrictive
+same-origin CSP, deny framing, and render logs as text. Bound connections,
+input sizes, and log responses; control expiry runs independently of request
+load. These browser safeguards do not authenticate users. Control ownership,
+challenge tokens, epochs, explicit arming, and stop deadlines remain motion
+safety mechanisms, with immediate invalidation on connection loss or lease expiry.
+Existing native SROS2 and local process-identity checks remain internal controller
+safeguards; they add no web login or user-authentication workflow.
 
 | Proposed API | Input, result, and side effect |
 | --- | --- |
-| `POST /api/v1/login`, `/logout` | Secret establishes a session; logout invalidates it and stops its control. |
-| `GET /api/v1/status` | Authenticated service/agent/guard status, freshness, battery, owner, limits, release ID, and last fault; never arms. |
+| `GET /api/v1/status` | Service/agent/guard status, freshness, battery, owner, limits, release ID, and last fault; never arms. |
 | `GET /api/v1/version` | Network-only protocol compatibility and release identity; no robot state or credentials. Used before control and to recover incompatible cached clients. |
-| `GET /api/v1/logs?limit=N` | Authenticated recent controller/web/agent logs, maximum 200 lines and 64 KiB; no arbitrary journal filters. |
+| `GET /api/v1/logs?limit=N` | Recent controller/web/agent logs, maximum 200 lines and 64 KiB; no arbitrary journal filters. |
 | `POST /api/v1/controller/start`, `/stop` | Request ID; return operation ID and pending/completed/error state. Stop invalidates driving first. |
 | `POST /api/v1/control/acquire`, `/release` | Connection-bound ownership; acquisition returns epoch or busy, release stops/disarms. |
 | `POST /api/v1/control/arm` | Epoch, request ID, exact boolean `tracks_raised: true`; returns pending then confirmed or failed. |
-| `POST /api/v1/control/stop` | Authenticated stop independent of ownership; immediate invalidation and asynchronous zero/disarm confirmation. |
+| `POST /api/v1/control/stop` | Stop independent of ownership; immediate invalidation and asynchronous zero/disarm confirmation. |
 | `GET /api/v1/operations/{id}` | Status of a bounded retained operation; timeouts/errors explicit. |
-| `WSS /api/v1/control` | Authenticated connection binding, agent challenges, enumerated direction/neutral intent, stop, acknowledgments, and live state. |
+| `WSS /api/v1/control` | Control connection binding, agent challenges, enumerated direction/neutral intent, stop, acknowledgments, and live state. |
 
 All mutation requests are bounded JSON with schema version and request ID.
 Directions are enums, not arbitrary velocities, ROS topics, or service names.
@@ -367,17 +372,17 @@ ubuntu_tank/
 ```
 
 Install code with the same immutable release under `/opt/ubuntu_tank`;
-configuration and credentials below `/etc/opt/ubuntu_tank/web`, ephemeral sockets
+configuration and TLS material below `/etc/opt/ubuntu_tank/web`, ephemeral sockets
 and sessions below `/run/ubuntu_tank-web`, and bounded persistent diagnostics
 below `/var/opt/ubuntu_tank/web`. Split file ownership so only the web service
-reads its TLS/login material and only the agent reads operator ROS keys.
+reads its TLS material and only the agent reads operator ROS keys.
 Neither new non-root account joins the serial-access group.
 
 Document `listen_address`, `port`, certificate/key paths, allowed origin,
-credential-file path, session timeout, web speed caps, lease/publication periods,
+web speed caps, lease/publication periods,
 idle timeout, and maximum hold duration. Reject inconsistent configurations at
 startup; browser requests cannot override timing or speed limits. Bind safely
-to loopback until LAN address, TLS, and credentials are configured.
+to loopback until LAN address and TLS are configured.
 
 Extend existing package/install/activate/rollback transactions to include new
 units, schemas, credentials permissions, and SROS2 migration. Activation stops
@@ -430,18 +435,23 @@ arm cancellation, and telemetry freshness gates.
 Exit: native middleware tests show exactly one command authority and working CLI
 regressions. Hardware-free evidence remains distinct from target-Pi evidence.
 
-### Milestone 12 — Authenticated web API and service lifecycle
+### Milestone 12 — Web API and service lifecycle
 
-- [ ] Implement login, TLS provisioning, same-origin controls, bounded HTTP/WSS,
+- [ ] Remove M10 login/logout schemas and exports, authentication error codes,
+  credential-file/login-session configuration, and matching OpenAPI generator,
+  generated specification, and TypeScript types. Retain connection identifiers,
+  motion challenges, and leases for control arbitration; they are not login sessions.
+- [ ] Implement TLS provisioning, same-origin controls, bounded HTTP/WSS,
   agent challenge relay, status, logs, and operation results.
 - [ ] Implement FastAPI strict models, OpenAPI export, WebSocket validation,
   compatibility/version endpoint, and the single-worker Uvicorn systemd service.
 - [ ] Implement the narrow lifecycle helper and start/stop deployment interlocks.
-- [ ] Test unauthorized requests, hostile origins, oversized messages, request
+- [ ] Test cross-origin requests, oversized messages, request
   floods, frozen web process, and Stop when the agent or ROS is unavailable.
 
-Exit: the page can manage a mocked service without root web privileges or any
-unauthenticated motion path; queue congestion cannot prolong an agent lease.
+Exit: the page manages a mocked service without login or root web privileges;
+only the active control owner can arm/drive, any client can stop, and queue
+congestion cannot prolong an agent lease.
 
 ### Milestone 13 — Vue browser and PWA driving interface
 
@@ -496,7 +506,7 @@ acknowledgments, and serial writes alone cannot mark physical acceptance passed.
 
 ### Milestone 16 — Operator handoff and release
 
-- [ ] Document first login/certificate setup, normal start/arm/drive/stop flow,
+- [ ] Document certificate setup and direct page access, normal start/arm/drive/stop flow,
   input limitations, loss-of-connection recovery, CLI handoff, and rollback.
 - [ ] Document phone installation, tested browser/OS versions, offline behavior,
   update/recovery workflow, API schemas, and frontend build commands.

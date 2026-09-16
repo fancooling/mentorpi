@@ -14,7 +14,6 @@ The web control and operator subsystems run natively on Ubuntu 26.04 ARM64 witho
 | `python3-uvicorn` | `0.27.1-1` / `0.29.0+` | Single-worker ASGI production server | `mentorpi-tank-web.service` |
 | `python3-pydantic` | `1.10.14-1` / `2.6.0+` | Data parsing & input validation models | Shared schemas |
 | `python3-websockets` | `12.0-1build1` / `13.0+` | High-throughput async WebSocket streaming | `mentorpi-tank-web.service` |
-| `python3-cryptography` | `41.0.7-1ubuntu0.1` / `42.0+` | Password hashing (PBKDF2/scrypt) & TLS cert check | `mentorpi-tank-web.service` |
 | `python3-yaml` | `6.0.3-1build1` | Controller & web configuration parsing | `mentorpi-tank-operator.service` |
 
 ### Service Isolation & Confinement
@@ -61,6 +60,13 @@ The workstation build dependencies are pinned and locked in `ubuntu_tank/web/pac
 
 ## 3. Protocol & API Compatibility Specification
 
+The web UI/API has no user authentication or login. HTTPS supports the PWA;
+connection ownership and short motion leases arbitrate control. The current M10
+schemas, generated API artifacts, and configuration still contain login/logout
+scaffolding; remove those obsolete surfaces during M12 before publishing the API.
+No password-hashing dependency is required by this revised design. Existing
+native SROS2 credentials and process-identity safeguards remain unchanged.
+
 - **Protocol Version**: `1.0.0`
 - **API Version**: `v1`
 - **Schema Version**: `1`
@@ -103,7 +109,7 @@ The operator state machine enforces strict mathematical guarantees:
 
 5. **Stop Priority**:
    - Space key, Stop UI button, or `POST /api/v1/control/stop` immediately invalidates the control epoch, sets requested velocity to zero, cancels outstanding challenges, and initiates disarm.
-   - Stop is unprivileged and can be triggered by any authenticated user even if another tab owns driving.
+   - Stop is unprivileged and can be triggered by any connected client even if another tab owns driving.
    - Stop does not block on ROS service response.
 
 6. **Compensating Disarm on Arming Timeout**:

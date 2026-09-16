@@ -5,6 +5,19 @@ Last updated: 2026-09-15
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Web authentication removed from design (2026-09-15)
+
+- Owner requested no web-user authentication for this personal tank on a trusted
+  LAN. The web design now omits login/logout, passwords, accounts, API keys,
+  authentication cookies, and login-session storage. Keep HTTPS for PWA support,
+  browser-origin checks, exclusive connection ownership, arming, and motion leases.
+- Native ROS security and local process-identity safeguards remain in scope.
+- Inspection found only M10 authentication scaffolding: schemas/exports, error
+  codes, credential/session settings, OpenAPI definitions/generator, and generated
+  TypeScript types. No login handler, password verification, session middleware,
+  or login UI exists. M12 now explicitly includes removing this scaffolding.
+- This change updates design documents only; implementation remains unchanged.
+
 ## Milestone 10 web control protocol, state machine, and dependency closure (2026-09-15)
 
 - Implemented Milestone 10 in accordance with [MENTORPI_WEB_CONTROL_DESIGN.md](docs/MENTORPI_WEB_CONTROL_DESIGN.md):
@@ -19,7 +32,7 @@ current architecture and safety constraints; use `README.md` for commands.
 
 - Added [MENTORPI_WEB_CONTROL_DESIGN.md](docs/MENTORPI_WEB_CONTROL_DESIGN.md)
   as the follow-on to native Milestones 1–9. Milestones 10–16 cover protocol, shared
-  operator agent/CLI arbitration, authenticated web API, browser controls,
+  operator agent/CLI arbitration, web API, browser controls,
   installed-Pi integration, raised-track acceptance, and operator handoff.
 - The Pi serves start/stop, arm/disarm, status/logs, hold-to-drive buttons and
   W/S/A/D. Space stops/disarms; release requests zero. Focus/connection loss
@@ -34,7 +47,7 @@ current architecture and safety constraints; use `README.md` for commands.
   no Node.js runtime on the Pi. Generate HTTP client types from OpenAPI and
   separately validate/version WebSocket messages. M10 verifies apt dependency
   availability; M13–16 include PWA caching, updates, and actual phone validation.
-- Cache interface assets only, never control/auth/telemetry API responses or
+- Cache interface assets only, never control/telemetry API responses or
   queued commands. Require disarm for updates and compatibility checks before
   control; lock/suspension/reconnection never resumes movement automatically.
 
