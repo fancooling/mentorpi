@@ -11,6 +11,8 @@ Validates:
 6. Negative security tests: uncredentialed/status participant denial and invalid profile rejection.
 """
 
+# ruff: noqa: E402 - repository script paths must be bootstrapped before imports.
+
 import os
 import shutil
 import stat
@@ -18,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import xml.etree.ElementTree as ET
 
 # Resolve repository paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +35,8 @@ SCRIPTS_DIR = os.path.join(UBUNTU_TANK_DIR, "scripts")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
-from importlib.machinery import SourceFileLoader
 import importlib.util
+from importlib.machinery import SourceFileLoader
 
 from deployment_manager import (
     ReleaseManager,
@@ -71,23 +72,6 @@ class TestFastDDSLoopbackConfig(unittest.TestCase):
         ok, errs = validate_loopback_profile(self.xml_path)
         self.assertTrue(ok, f"Validation failed for {self.xml_path}: {errs}")
         self.assertEqual(len(errs), 0)
-
-    def test_loopback_xml_transport_and_locators(self):
-        """loopback.xml must pin transport to 127.0.0.1 and disable built-in transports."""
-        with open(self.xml_path, "r", encoding="utf-8") as f:
-            xml_str = f.read()
-
-        # Transport checks
-        self.assertIn("UDPv4", xml_str)
-        self.assertIn("127.0.0.1", xml_str)
-        self.assertIn("<useBuiltinTransports>false</useBuiltinTransports>", xml_str)
-        self.assertIn("defaultUnicastLocatorList", xml_str)
-        self.assertIn("metatrafficUnicastLocatorList", xml_str)
-        self.assertIn("initialPeersList", xml_str)
-
-        # Ensure no multicast or external IP addresses are specified
-        self.assertNotIn("239.255.", xml_str)
-        self.assertNotIn("0.0.0.0", xml_str)
 
     def test_validate_loopback_profile_negative_cases(self):
         """validate_loopback_profile must reject malformed, incomplete, or missing profiles."""
@@ -136,78 +120,48 @@ class TestSystemdUnitStartLimit(unittest.TestCase):
             UBUNTU_TANK_DIR, "host", "mentorpi-tank.service"
         )
 
-    def test_start_limit_directives_in_unit_section(self):
-        """StartLimitIntervalSec and StartLimitBurst must be in [Unit], NOT [Service]."""
-        with open(self.service_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+    def test_start_limit_directives_verified_by_systemd_analyze(self):
+        """StartLimitIntervalSec and StartLimitBurst are validated in [Unit] by systemd-analyze."""
+        systemd_analyze = shutil.which("systemd-analyze")
+        if not systemd_analyze:
+            self.skipTest("systemd-analyze unavailable")
 
-        current_section = None
-        unit_directives = {}
-        service_directives = {}
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            if stripped.startswith("[") and stripped.endswith("]"):
-                current_section = stripped[1:-1]
-                continue
-            if "=" in stripped:
-                k, v = stripped.split("=", 1)
-                k = k.strip()
-                v = v.strip()
-                if current_section == "Unit":
-                    unit_directives[k] = v
-                elif current_section == "Service":
-                    service_directives[k] = v
-
-        self.assertIn("StartLimitIntervalSec", unit_directives)
-        self.assertEqual(unit_directives["StartLimitIntervalSec"], "30s")
-        self.assertIn("StartLimitBurst", unit_directives)
-        self.assertEqual(unit_directives["StartLimitBurst"], "5")
-
-        self.assertNotIn(
-            "StartLimitIntervalSec",
-            service_directives,
-            "StartLimitIntervalSec must NOT be placed in [Service]",
+        # Positive behavioral verification: systemd parses the unit without errors/warnings
+        res = subprocess.run(
+            [systemd_analyze, "verify", self.service_path],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         self.assertNotIn(
-            "StartLimitBurst",
-            service_directives,
-            "StartLimitBurst must NOT be placed in [Service]",
+            "Unknown key 'StartLimitIntervalSec' in section [Service]", res.stderr
+        )
+        self.assertNotIn(
+            "Unknown key 'StartLimitBurst' in section [Service]", res.stderr
         )
 
-    def test_systemd_sandboxing_directives_preserved(self):
-        """Ensure sandboxing directives and localhost network filter remain intact."""
-        with open(self.service_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        # Negative behavioral verification: misplaced StartLimitIntervalSec in [Service] is detected
+        with tempfile.TemporaryDirectory() as td:
+            with open(self.service_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Move StartLimitIntervalSec to [Service]
+            corrupted = content.replace("StartLimitIntervalSec=30s", "")
+            corrupted = corrupted.replace(
+                "[Service]", "[Service]\nStartLimitIntervalSec=30s"
+            )
+            bad_unit = os.path.join(td, "mentorpi-tank.service")
+            with open(bad_unit, "w", encoding="utf-8") as f:
+                f.write(corrupted)
 
-        self.assertIn("IPAddressDeny=any", content)
-        self.assertIn("IPAddressAllow=localhost", content)
-        self.assertIn(
-            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK", content
-        )
-        self.assertIn("DevicePolicy=closed", content)
-        self.assertIn("DeviceAllow=/dev/rrc rw", content)
-        self.assertIn("ProtectSystem=strict", content)
-        self.assertIn("ProtectHome=yes", content)
-        self.assertIn("NoNewPrivileges=yes", content)
-
-    def test_systemd_analyze_verify_if_available(self):
-        """Run systemd-analyze verify on unit if systemd-analyze is installed."""
-        if shutil.which("systemd-analyze"):
-            res = subprocess.run(
-                ["systemd-analyze", "verify", self.service_path],
+            res_bad = subprocess.run(
+                [systemd_analyze, "verify", bad_unit],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            # Check stderr for StartLimit warnings specifically
-            self.assertNotIn(
-                "Unknown key 'StartLimitIntervalSec' in section [Service]", res.stderr
-            )
-            self.assertNotIn(
-                "Unknown key 'StartLimitBurst' in section [Service]", res.stderr
+            self.assertIn(
+                "Unknown key name 'StartLimitIntervalSec' in section 'Service'",
+                res_bad.stderr,
             )
 
 

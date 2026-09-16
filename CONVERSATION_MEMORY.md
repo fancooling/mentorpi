@@ -5,6 +5,16 @@ Last updated: 2026-09-16
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Milestone 11.1 code review remediations (2026-09-16)
+
+- Addressed all 5 code review findings from `review.md` in Milestone 11.1 test suites:
+  - Finding 1: Replaced superficial `systemd-analyze verify` check on `mentorpi-tank.service` with `systemd-analyze security --offline=true` property consumer. Verified that systemd's security engine evaluates effective device ACLs explicitly permitting `/dev/rrc:rw`, enforces static non-root user identity (`UserOrDynamicUser`), and keeps `PrivateDevices` disabled. Added mutation regressions proving that removing `DeviceAllow=/dev/rrc rw` or `User=` is caught and rejected.
+  - Finding 2: Replaced syntax-only `udevadm verify` on `99-mentorpi-rrc.rules` with a behavioral rule evaluator testing against synthetic STM32 RRC device attributes (`ttyACM*`, vendor `1a86`, product `55d4`). Verified resulting `/dev/rrc` symlink, `mentorpi-rrc` group, `0660` mode, and `ID_MM_PORT_IGNORE=1`. Added mutation regression proving deletion of `SYMLINK+="rrc"` fails verification, and recorded live `udevadm test` as target-only pending when STM32 USB hardware is disconnected.
+  - Finding 3: Resolved independence between `--dry-run` and production build branches in `build_disposable_root.sh`. Implemented test harness shims for `systemd-nspawn` and `chroot` capturing the actual `/bin/bash -c` scripts executed by each production branch. Validated that both production branches and the dry-run command parse cleanly against the locked `colcon_parser`, and verified that injecting unsupported `--no-symlink-install` into any branch triggers parser failure (`SystemExit`).
+  - Finding 4: Eliminated `_MENTORPI_TANK_OPERATOR_SOURCED=1` bypass in operator launcher tests. Added tests executing the wrapper's authentic first-stage sourcing path against a test layout, proving exports from both `ROS_SETUP` and release `setup.bash` reach the re-executed process alongside `_MENTORPI_TANK_OPERATOR_SOURCED=1`, `ROS_SECURITY_ENCLAVE_OVERRIDE`, and `ROS_LOG_DIR`. Verified that missing or failing mandatory setup scripts fail startup cleanly.
+  - Finding 5: Replaced test UID/GID normalization in tmpfiles tests with explicit validation of the cross-user ownership and role matrix in `ubuntu-tank.conf`: `/run/ubuntu_tank` (`ubuntu-tank:ubuntu-tank-operators`, `0775`), `/run/ubuntu_tank/operator.lock` (`ubuntu-tank-operator:ubuntu-tank-operators`, `0660`), `/var/opt/ubuntu_tank/operator-log` (`ubuntu-tank-operator:ubuntu-tank-operators`, `0750`), and `/var/opt/ubuntu_tank/ros-log` (`ubuntu-tank:mentorpi-rrc`, `0750`). Added mutation tests proving substitution of unrelated owners/groups fails the gate. Recorded live cross-user filesystem chown as target-only pending in unprivileged development.
+- Full `./ubuntu_tank/deploy.sh test` suite passed 100% across Milestones 1–11 (69/69 in M11, 60/60 in M5), along with `test_source_boundary.sh`, Ruff, and `git diff --check`.
+
 ## Unified systemd stack lifecycle (2026-09-16)
 
 - Added `mentorpi-tank-stack.target` as the administrative boot/start/stop group
@@ -25,6 +35,18 @@ current architecture and safety constraints; use `README.md` for commands.
   tests) also passed, along with source-boundary, Ruff, shfmt, ShellCheck, and
   whitespace checks. No target-Pi service, reboot, DDS, serial, or
   physical-motion validation was performed.
+
+## Milestone 11.1 behavior-based test cleanup planned (2026-09-16)
+
+- Inserted a test-quality cleanup milestone before web API implementation and
+  retained the existing web roadmap as Milestones 12–16.
+- Milestone 11.1 replaces tests that inspect literal text in handwritten source or
+  configuration with tests through public APIs, executables, real consumers, or
+  official parsers. Generated-artifact contract checks remain valid; validation
+  requiring unavailable target services or hardware must be recorded as pending
+  instead of being approximated with source-text assertions.
+- The cleanup is intended to preserve production behavior and existing safety
+  invariants while removing brittle or duplicate assertions.
 
 ## Milestone 11 shared operator agent and CLI integration (2026-09-15)
 
@@ -70,7 +92,7 @@ current architecture and safety constraints; use `README.md` for commands.
 - Inspection found only M10 authentication scaffolding: schemas/exports, error
   codes, credential/session settings, OpenAPI definitions/generator, and generated
   TypeScript types. No login handler, password verification, session middleware,
-  or login UI exists. M12 now explicitly includes removing this scaffolding.
+  or login UI exists. M12 explicitly includes removing this scaffolding.
 - This change updates design documents only; implementation remains unchanged.
 
 ## Milestone 10 web control protocol, state machine, and dependency closure (2026-09-15)

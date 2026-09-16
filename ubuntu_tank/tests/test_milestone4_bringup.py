@@ -13,10 +13,8 @@ Verifies:
 9. Verification that every tested exit path publishes repeated four-motor zero commands.
 """
 
-import ast
 import os
 import signal
-import socket
 import sys
 import tempfile
 import time
@@ -296,10 +294,26 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
     """Verify guarded bringup launch file and topic routing architecture."""
 
     def setUp(self):
+        import importlib.util
+
         self.tank_launch_path = os.path.join(BRINGUP_DIR, "launch", "tank.launch.py")
         self.teleop_launch_path = os.path.join(
             BRINGUP_DIR, "launch", "teleop.launch.py"
         )
+
+        spec = importlib.util.spec_from_file_location(
+            "tank_launch", self.tank_launch_path
+        )
+        self.tank_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.tank_mod)
+        self.tank_ld = self.tank_mod.generate_launch_description()
+
+        spec2 = importlib.util.spec_from_file_location(
+            "teleop_launch", self.teleop_launch_path
+        )
+        self.teleop_mod = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(self.teleop_mod)
+        self.teleop_ld = self.teleop_mod.generate_launch_description()
 
     def test_launch_files_exist(self):
         """tank.launch.py and teleop.launch.py must exist in ubuntu_tank_bringup."""
@@ -312,93 +326,71 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
 
     def test_guarded_topic_pipeline_routing(self):
         """Verify tank.launch.py strictly routes commands through motor_guard with no bypasses."""
-        with open(self.tank_launch_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        nodes = {
+            e.name: e for e in self.tank_ld.entities if isinstance(e, MockLaunchNode)
+        }
 
         # Controller must subscribe to /controller/cmd_vel and publish to /ubuntu_tank_safety/motor_input
-        self.assertTrue(
-            "'/controller/cmd_vel'" in content or '"/controller/cmd_vel"' in content
-        )
-        self.assertTrue(
-            "'/ubuntu_tank_safety/motor_input'" in content
-            or '"/ubuntu_tank_safety/motor_input"' in content
+        controller = nodes.get("controller")
+        self.assertIsNotNone(controller)
+        c_params = controller.parameters[0] if controller.parameters else {}
+        self.assertEqual(c_params.get("cmd_vel_topic"), "/controller/cmd_vel")
+        self.assertEqual(
+            c_params.get("motor_output_topic"), "/ubuntu_tank_safety/motor_input"
         )
 
         # Bridge must subscribe to guarded output topic
-        self.assertTrue(
-            "'/ros_robot_controller/set_motor_guarded'" in content
-            or '"/ros_robot_controller/set_motor_guarded"' in content
+        bridge = nodes.get("ros_robot_controller")
+        self.assertIsNotNone(bridge)
+        b_params = bridge.parameters[0] if bridge.parameters else {}
+        self.assertEqual(
+            b_params.get("motor_topic"),
+            "/ros_robot_controller/set_motor_guarded",
         )
-
-        # Confirm explicit remapping of bridge set_motor to guarded topic
-        self.assertTrue(
-            "('~/set_motor', '/ros_robot_controller/set_motor_guarded')" in content
-            or '("~/set_motor", "/ros_robot_controller/set_motor_guarded")' in content
+        self.assertIn(
+            ("~/set_motor", "/ros_robot_controller/set_motor_guarded"),
+            bridge.remappings,
         )
 
         # Controller must NEVER publish directly to bridge set_motor
-        self.assertNotIn(
-            "('motor_output_topic', '/ros_robot_controller/set_motor')", content
-        )
-        self.assertNotIn(
-            '("motor_output_topic", "/ros_robot_controller/set_motor")', content
-        )
-        self.assertNotIn(
-            "('motor_output_topic', 'ros_robot_controller/set_motor')", content
-        )
-        self.assertNotIn(
-            '("motor_output_topic", "ros_robot_controller/set_motor")', content
+        self.assertNotEqual(
+            c_params.get("motor_output_topic"),
+            "/ros_robot_controller/set_motor",
         )
 
     def test_fail_closed_shutdown_handlers(self):
         """tank.launch.py must register OnProcessExit handlers to shut down graph if any node exits."""
-        with open(self.tank_launch_path, "r", encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-
-        found_handlers = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = getattr(node, "func", None)
-                if isinstance(func, ast.Name) and func.id == "OnProcessExit":
-                    for kw in node.keywords:
-                        if kw.arg == "target_action" and isinstance(kw.value, ast.Name):
-                            found_handlers.append(kw.value.id)
+        handlers = [
+            e.event_handler.target_action.name
+            for e in self.tank_ld.entities
+            if isinstance(e, MockRegisterEventHandler)
+            and isinstance(e.event_handler, MockOnProcessExit)
+            and hasattr(e.event_handler.target_action, "name")
+        ]
 
         self.assertIn(
-            "motor_guard_node",
-            found_handlers,
+            "motor_guard",
+            handlers,
             "Missing fail-closed exit handler for motor_guard",
         )
         self.assertIn(
-            "bridge_node",
-            found_handlers,
+            "ros_robot_controller",
+            handlers,
             "Missing fail-closed exit handler for ros_robot_controller",
         )
         self.assertIn(
-            "controller_node",
-            found_handlers,
+            "controller",
+            handlers,
             "Missing fail-closed exit handler for controller",
         )
 
     def test_launch_arguments_and_safe_defaults(self):
         """Verify launch arguments configure disarmed startup, 250 ms timeout, and <= 2.0 max_rps."""
-        with open(self.tank_launch_path, "r", encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-
-        declared_args = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = getattr(node, "func", None)
-                if isinstance(func, ast.Name) and func.id == "DeclareLaunchArgument":
-                    arg_name = node.args[0].value if node.args else None
-                    default_val = None
-                    for kw in node.keywords:
-                        if kw.arg == "default_value" and isinstance(
-                            kw.value, ast.Constant
-                        ):
-                            default_val = kw.value.value
-                    if arg_name:
-                        declared_args[arg_name] = default_val
+        declared_args = {
+            e.name: e.default_value
+            for e in self.tank_ld.entities
+            if isinstance(e, MockLaunchArgument)
+        }
 
         self.assertEqual(declared_args.get("controller_only"), "true")
         self.assertEqual(declared_args.get("guard_timeout_sec"), "0.250")
@@ -407,46 +399,40 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
 
     def test_teleop_launch_parameters(self):
         """teleop.launch.py must declare renewable lease < 0.250s."""
-        with open(self.teleop_launch_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        teleop_args = {
+            e.name: e.default_value
+            for e in self.teleop_ld.entities
+            if isinstance(e, MockLaunchArgument)
+        }
+        self.assertEqual(teleop_args.get("lease_duration_sec"), "0.150")
 
-        self.assertTrue(
-            "default_value='0.150'" in content or 'default_value="0.150"' in content,
-            "Teleop lease duration must default to 150 ms",
-        )
-        self.assertIn("teleop_key", content)
+        teleop_nodes = [
+            e.name for e in self.teleop_ld.entities if isinstance(e, MockLaunchNode)
+        ]
+        self.assertIn("teleop_key", teleop_nodes)
 
     def test_launch_enclave_declarations(self):
         """tank.launch.py and teleop.launch.py must declare explicit SROS2 enclaves via ros_arguments."""
-        with open(self.tank_launch_path, "r", encoding="utf-8") as f:
-            tank_content = f.read()
-        # Enclaves must be passed via ros_arguments=['--enclave', ...], NOT enclave=...
-        self.assertNotIn("enclave='/ubuntu_tank/", tank_content)
-        self.assertNotIn('enclave="/ubuntu_tank/', tank_content)
-        self.assertTrue(
-            "'/ubuntu_tank/controller'" in tank_content
-            or '"/ubuntu_tank/controller"' in tank_content
+        nodes = {
+            e.name: e for e in self.tank_ld.entities if isinstance(e, MockLaunchNode)
+        }
+        self.assertEqual(
+            nodes["controller"].ros_arguments, ["--enclave", "/ubuntu_tank/controller"]
         )
-        self.assertTrue(
-            "'/ubuntu_tank/guard'" in tank_content
-            or '"/ubuntu_tank/guard"' in tank_content
+        self.assertEqual(
+            nodes["motor_guard"].ros_arguments, ["--enclave", "/ubuntu_tank/guard"]
         )
-        self.assertTrue(
-            "'/ubuntu_tank/bridge'" in tank_content
-            or '"/ubuntu_tank/bridge"' in tank_content
+        self.assertEqual(
+            nodes["ros_robot_controller"].ros_arguments,
+            ["--enclave", "/ubuntu_tank/bridge"],
         )
-        self.assertTrue("'--enclave'" in tank_content or '"--enclave"' in tank_content)
 
-        with open(self.teleop_launch_path, "r", encoding="utf-8") as f:
-            teleop_content = f.read()
-        self.assertNotIn("enclave='/ubuntu_tank/", teleop_content)
-        self.assertNotIn('enclave="/ubuntu_tank/', teleop_content)
-        self.assertTrue(
-            "'/ubuntu_tank/operator'" in teleop_content
-            or '"/ubuntu_tank/operator"' in teleop_content
-        )
-        self.assertTrue(
-            "'--enclave'" in teleop_content or '"--enclave"' in teleop_content
+        teleop_nodes = [
+            e for e in self.teleop_ld.entities if isinstance(e, MockLaunchNode)
+        ]
+        self.assertEqual(len(teleop_nodes), 1)
+        self.assertEqual(
+            teleop_nodes[0].ros_arguments, ["--enclave", "/ubuntu_tank/operator"]
         )
 
     def test_launch_descriptions_instantiation_without_typeerror(self):
@@ -565,6 +551,7 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
         ]
 
         self.assertGreaterEqual(len(all_nodes), 4)
+        import runpy
 
         for node in all_nodes:
             pkg_setup = os.path.join(SRC_DIR, node.package, "setup.py")
@@ -572,24 +559,17 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
                 os.path.isfile(pkg_setup),
                 f"setup.py not found for package {node.package}",
             )
-            with open(pkg_setup, "r", encoding="utf-8") as f:
-                setup_content = f.read()
-            tree = ast.parse(setup_content)
-            console_scripts = []
-            for ast_node in ast.walk(tree):
-                if isinstance(ast_node, ast.Dict):
-                    for k, v in zip(ast_node.keys, ast_node.values):
-                        if (
-                            isinstance(k, ast.Constant)
-                            and k.value == "console_scripts"
-                            and isinstance(v, ast.List)
-                        ):
-                            for item in v.elts:
-                                if isinstance(item, ast.Constant) and isinstance(
-                                    item.value, str
-                                ):
-                                    script_name = item.value.split("=")[0].strip()
-                                    console_scripts.append(script_name)
+            captured = {}
+
+            def mock_setup(**kwargs):
+                captured.update(kwargs)
+
+            with patch("setuptools.setup", side_effect=mock_setup):
+                runpy.run_path(pkg_setup)
+            entry_points = captured.get("entry_points", {})
+            console_scripts = [
+                s.split("=")[0].strip() for s in entry_points.get("console_scripts", [])
+            ]
             self.assertIn(
                 node.executable,
                 console_scripts,
@@ -605,6 +585,7 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
     def test_launch_executable_resolution_from_clean_install_tree(self):
         """Simulate clean install tree layout and verify executable resolution succeeds for all launch nodes."""
         import importlib.util
+        import runpy
 
         spec = importlib.util.spec_from_file_location(
             "tank_launch_tree", self.tank_launch_path
@@ -623,27 +604,20 @@ class TestBringupLaunchAndTopicGraph(unittest.TestCase):
                 )
                 os.makedirs(pkg_install_lib, exist_ok=True)
                 pkg_setup = os.path.join(SRC_DIR, node.package, "setup.py")
-                with open(pkg_setup, "r", encoding="utf-8") as f:
-                    tree = ast.parse(f.read())
-                for ast_node in ast.walk(tree):
-                    if isinstance(ast_node, ast.Dict):
-                        for k, v in zip(ast_node.keys, ast_node.values):
-                            if (
-                                isinstance(k, ast.Constant)
-                                and k.value == "console_scripts"
-                                and isinstance(v, ast.List)
-                            ):
-                                for item in v.elts:
-                                    if isinstance(item, ast.Constant) and isinstance(
-                                        item.value, str
-                                    ):
-                                        script_name = item.value.split("=")[0].strip()
-                                        script_path = os.path.join(
-                                            pkg_install_lib, script_name
-                                        )
-                                        with open(script_path, "w") as sf:
-                                            sf.write("#!/bin/sh\nexit 0\n")
-                                        os.chmod(script_path, 0o755)
+                captured = {}
+
+                def mock_setup(**kwargs):
+                    captured.update(kwargs)
+
+                with patch("setuptools.setup", side_effect=mock_setup):
+                    runpy.run_path(pkg_setup)
+                entry_points = captured.get("entry_points", {})
+                for script_spec in entry_points.get("console_scripts", []):
+                    script_name = script_spec.split("=")[0].strip()
+                    script_path = os.path.join(pkg_install_lib, script_name)
+                    with open(script_path, "w") as sf:
+                        sf.write("#!/bin/sh\nexit 0\n")
+                    os.chmod(script_path, 0o755)
 
             # Check that every launch node executable resolves in the install tree
             for node in nodes:
@@ -1027,6 +1001,7 @@ class TestTeleopRenewableLease(unittest.TestCase):
         """Interactive key characters sent via pseudo-terminal must be processed by TeleopLeaseManager."""
         import pty
         import tty
+
         from ubuntu_tank_teleop.lease import TeleopLeaseManager
 
         master_fd, slave_fd = pty.openpty()
@@ -1342,6 +1317,7 @@ class TestSROS2SecurityAccessControl(unittest.TestCase):
     def test_sros2_policy_rejects_broad_wildcard_mutation(self):
         """Bridge permissions mutated to include broad rt/* wildcard must be rejected by invariant checker."""
         import shutil
+
         import sros2_policy
 
         with tempfile.TemporaryDirectory() as td:
@@ -1362,8 +1338,9 @@ class TestSROS2SecurityAccessControl(unittest.TestCase):
 
     def test_sros2_policy_ubuntu_2604_libxml2_16_abi_validation(self):
         """On Ubuntu 26.04 where only libxml2.so.16 exists, schema validation must succeed for valid and fail for malformed XML."""
-        import sros2_policy
         import ctypes.util
+
+        import sros2_policy
 
         real_lib = None
         for cand in ["libxml2.so.2", "libxml2.so", "libxml2.so.16"]:
@@ -1719,6 +1696,8 @@ exit 0
         """OperatorClientNode must disable unneeded parameter/type services and timeout cleanly."""
         from ubuntu_tank_bringup.operator_client import (
             OperatorClientNode,
+        )
+        from ubuntu_tank_bringup.operator_client import (
             main as op_main,
         )
 
@@ -1731,7 +1710,7 @@ exit 0
 
     def test_status_client_disabled_services_and_timeout(self):
         """StatusClientNode must disable unneeded parameter/type services, be read-only, and timeout cleanly."""
-        from ubuntu_tank_bringup.status_client import StatusClientNode, main as st_main
+        from ubuntu_tank_bringup.status_client import StatusClientNode
 
         node = StatusClientNode()
         res = node.collect_status(timeout_sec=0.05)
@@ -1741,9 +1720,9 @@ exit 0
 
     def test_status_client_initialization_with_msg_stubs(self):
         """StatusClientNode must initialize with std_msgs.msg.UInt16 and read telemetry correctly."""
-        import types
         import importlib
         import io
+        import types
         from contextlib import redirect_stdout
 
         fake_rclpy = types.ModuleType("rclpy")
@@ -1960,6 +1939,11 @@ exit 0
                 setattr(fake_rrc_msgs_msg, m, type(m, (), {}))
         fake_rrc_msgs.msg = fake_rrc_msgs_msg
 
+        def import_missing_battery_state():
+            from ros_robot_controller_msgs.msg import BatteryState
+
+            return BatteryState
+
         with patch.dict(
             sys.modules,
             {
@@ -1968,7 +1952,7 @@ exit 0
             },
         ):
             with self.assertRaises(ImportError):
-                from ros_robot_controller_msgs.msg import BatteryState
+                import_missing_battery_state()
 
     def test_verify_runtime_fails_on_insecure_or_failed_checks(self):
         """verify_runtime.sh must fail closed if security env is missing or queries fail."""

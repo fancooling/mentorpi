@@ -39,17 +39,15 @@ Validates:
      for software/mock/PTY runs.
 """
 
+# ruff: noqa: E402 - workspace package paths must be bootstrapped before imports.
+
 import json
-import math
 import os
 import shutil
 import struct
-import subprocess
 import sys
 import tempfile
-import time
 import unittest
-import xml.etree.ElementTree as ET
 
 # Resolve repository paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,13 +71,13 @@ for pkg in [
     if pkg_path not in sys.path:
         sys.path.insert(0, pkg_path)
 
+import scripts.sros2_policy as sros2_policy_mod
 from ros_robot_controller.ros_robot_controller_sdk import (
     Board,
     PacketFunction,
     checksum_crc8,
 )
 from scripts.bench_acceptance import BenchAcceptanceOrchestrator
-import scripts.sros2_policy as sros2_policy_mod
 from ubuntu_tank_bringup.bench_client import BenchClientNode
 from ubuntu_tank_safety.motor_guard import MotorGuard
 
@@ -1240,78 +1238,66 @@ class TestSROS2DeliveryPolicyPermissions(unittest.TestCase):
         )
         self.perm_dir = os.path.join(UBUNTU_TANK_DIR, "config", "sros2", "permissions")
 
-    def test_policies_xml_contains_delivery_observation_grants(self):
-        """policies.xml must specify publish/subscribe rules for delivery_observation."""
-        tree = ET.parse(self.policies_xml)
-        root = tree.getroot()
-
-        enclaves = {
-            e.get("path"): e
-            for e in root.findall(".//enclave")
-            if e.get("path") is not None
-        }
-
+    def test_delivery_observation_grants_evaluated_by_sros2_access_simulation(self):
+        """Producer enclaves can publish and consumer enclaves can subscribe to delivery_observation."""
         obs_topic = "/ubuntu_tank/delivery_observation"
 
         # controller, guard, bridge must have publish allow
         for p_name in ("controller", "guard", "bridge"):
-            enc = enclaves.get(f"/ubuntu_tank/{p_name}")
-            self.assertIsNotNone(enc, f"Enclave '/ubuntu_tank/{p_name}' missing")
-            pub_topics = [
-                t.text.strip() for t in enc.findall(".//topics[@publish='ALLOW']/topic")
-            ]
-            self.assertIn(
-                obs_topic,
-                pub_topics,
-                f"Enclave '/ubuntu_tank/{p_name}' missing publish grant for '{obs_topic}'",
+            self.assertTrue(
+                sros2_policy_mod.simulate_participant_access(
+                    f"/ubuntu_tank/{p_name}",
+                    "publish_topic",
+                    obs_topic,
+                ),
+                f"Enclave '/ubuntu_tank/{p_name}' denied publish for '{obs_topic}'",
             )
 
         # operator, status must have subscribe allow
         for p_name in ("operator", "status"):
-            enc = enclaves.get(f"/ubuntu_tank/{p_name}")
-            self.assertIsNotNone(enc, f"Enclave '/ubuntu_tank/{p_name}' missing")
-            sub_topics = [
-                t.text.strip()
-                for t in enc.findall(".//topics[@subscribe='ALLOW']/topic")
-            ]
-            self.assertIn(
-                obs_topic,
-                sub_topics,
-                f"Enclave '/ubuntu_tank/{p_name}' missing subscribe grant for '{obs_topic}'",
+            self.assertTrue(
+                sros2_policy_mod.simulate_participant_access(
+                    f"/ubuntu_tank/{p_name}",
+                    "subscribe_topic",
+                    obs_topic,
+                ),
+                f"Enclave '/ubuntu_tank/{p_name}' denied subscribe for '{obs_topic}'",
             )
 
-    def test_permissions_xml_contains_delivery_observation_rules(self):
-        """All permission XML documents must include rt/ubuntu_tank/delivery_observation."""
-        obs_rule = "rt/ubuntu_tank/delivery_observation"
-
-        for p_name in ("controller", "guard", "bridge"):
-            xml_file = os.path.join(self.perm_dir, f"{p_name}_permissions.xml")
-            with open(xml_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertIn(obs_rule, content)
-            self.assertIn("publish", content)
-
-        for p_name in ("operator", "status"):
-            xml_file = os.path.join(self.perm_dir, f"{p_name}_permissions.xml")
-            with open(xml_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertIn(obs_rule, content)
-            self.assertIn("subscribe", content)
-
     def test_operator_and_status_denied_actuator_topics(self):
-        """Operator and status enclaves are strictly forbidden from actuator control topics."""
+        """Operator and status enclaves are strictly denied actuator and motion topics."""
         for p_name in ("operator", "status"):
-            xml_file = os.path.join(self.perm_dir, f"{p_name}_permissions.xml")
-            with open(xml_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertNotIn("rt/ubuntu_tank_safety/motor_input", content)
-            self.assertNotIn("rt/ros_robot_controller/set_motor_guarded", content)
+            for actuator_topic in (
+                "/ubuntu_tank_safety/motor_input",
+                "/ros_robot_controller/set_motor_guarded",
+            ):
+                self.assertFalse(
+                    sros2_policy_mod.simulate_participant_access(
+                        f"/ubuntu_tank/{p_name}",
+                        "publish_topic",
+                        actuator_topic,
+                    ),
+                    f"Enclave '/ubuntu_tank/{p_name}' unexpectedly allowed to publish '{actuator_topic}'",
+                )
 
         # Status must also NOT be able to publish cmd_vel
-        status_file = os.path.join(self.perm_dir, "status_permissions.xml")
-        with open(status_file, "r", encoding="utf-8") as f:
-            status_content = f.read()
-        self.assertNotIn("rt/controller/cmd_vel", status_content)
+        self.assertFalse(
+            sros2_policy_mod.simulate_participant_access(
+                "/ubuntu_tank/status",
+                "publish_topic",
+                "/controller/cmd_vel",
+            )
+        )
+
+        # Operator and status cannot publish to delivery_observation
+        for p_name in ("operator", "status"):
+            self.assertFalse(
+                sros2_policy_mod.simulate_participant_access(
+                    f"/ubuntu_tank/{p_name}",
+                    "publish_topic",
+                    "/ubuntu_tank/delivery_observation",
+                )
+            )
 
     def test_sros2_policy_verification_passes(self):
         """sros2_policy.py verify must pass with zero schema or policy errors."""

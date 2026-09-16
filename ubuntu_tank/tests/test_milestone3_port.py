@@ -13,10 +13,7 @@ Verifies:
 9. build_workspace.sh CLI behavior, dry-run safety, and legacy env var rejection
 """
 
-import ast
 import os
-import signal
-import socket
 import subprocess
 import sys
 import tempfile
@@ -405,10 +402,11 @@ class TestRosRobotControllerSDK(unittest.TestCase):
 
     def test_board_concurrent_motor_write_and_zero_motors_serialization(self):
         """Board _write_lock must serialize concurrent motor writes with zero_motors and close."""
-        from ros_robot_controller.ros_robot_controller_sdk import Board
         import struct
         import threading
         import time
+
+        from ros_robot_controller.ros_robot_controller_sdk import Board
 
         board = Board(device="mock")
         board.is_mock = False
@@ -524,8 +522,9 @@ class TestRosRobotControllerNode(unittest.TestCase):
 
     def test_bridge_freshness_watchdog_zeroes_on_timeout(self):
         """Watchdog must send zero motors and enter fatal shutdown on freshness timeout."""
-        from ros_robot_controller import ros_robot_controller_node
         import select
+
+        from ros_robot_controller import ros_robot_controller_node
 
         mock_board = MagicMock(is_mock=True)
         mock_board.fatal_error = None
@@ -655,8 +654,9 @@ class TestRosRobotControllerNode(unittest.TestCase):
 
     def test_serial_write_failure_marks_fatal_fault_and_suppresses_heartbeat(self):
         """Serial write failure must mark fatal fault, drop command, and suppress heartbeats."""
-        from ros_robot_controller import ros_robot_controller_node
         import select
+
+        from ros_robot_controller import ros_robot_controller_node
 
         mock_board = MagicMock(is_mock=True)
         mock_board.fatal_error = None
@@ -711,8 +711,9 @@ class TestRosRobotControllerNode(unittest.TestCase):
 
     def test_serial_read_failure_suppresses_heartbeat_and_stops_graph(self):
         """A receive-thread fault must be fatal before another heartbeat is sent."""
-        from ros_robot_controller import ros_robot_controller_node
         import select
+
+        from ros_robot_controller import ros_robot_controller_node
 
         mock_board = MagicMock(is_mock=True)
         mock_board.fatal_error = RuntimeError("Serial read error: USB disconnected")
@@ -734,11 +735,12 @@ class TestRosRobotControllerNode(unittest.TestCase):
 
     def test_rx_fault_during_inflight_command_serializes_stop_sequence(self):
         """Serialize RX-fault shutdown with in-flight motor writes; assert no nonzero frame follows stop zeros."""
-        from ros_robot_controller import ros_robot_controller_node
-        from ros_robot_controller.ros_robot_controller_sdk import Board
         import struct
         import threading
         import time
+
+        from ros_robot_controller import ros_robot_controller_node
+        from ros_robot_controller.ros_robot_controller_sdk import Board
 
         # Construct actual RosRobotController with actual Board in mock mode
         ros_robot_controller_node.Board = lambda *args, **kwargs: Board(
@@ -915,8 +917,9 @@ class TestOdomPublisherNode(unittest.TestCase):
 
     def test_host_velocity_caps_enforced_before_motor_publication(self):
         """Non-teleop commands cannot exceed lower host caps; invalid input stops."""
-        from controller import odom_publisher_node
         from types import SimpleNamespace
+
+        from controller import odom_publisher_node
 
         node = odom_publisher_node.Controller("test_controller")
         node.max_linear_speed = 0.05
@@ -992,26 +995,27 @@ class TestOdomPublisherNode(unittest.TestCase):
             if os.path.exists(temp_yaml):
                 os.unlink(temp_yaml)
 
-    def test_dead_reckoning_docstring(self):
-        """Module docstring must explicitly state odom_raw is command integration, not measured odometry."""
-        from controller import odom_publisher_node
-
-        self.assertIsNotNone(odom_publisher_node.__doc__)
-        self.assertIn("command integration", odom_publisher_node.__doc__.lower())
-        self.assertIn("dead reckoning", odom_publisher_node.__doc__.lower())
-
     def test_angular_correction_applied_to_odometry(self):
         """Command-integrated yaw and twist must apply angular_correction_factor."""
-        source_path = os.path.join(
-            SRC_DIR, "controller", "controller", "odom_publisher_node.py"
-        )
-        with open(source_path, "r", encoding="utf-8") as source_file:
-            source = source_file.read()
-        self.assertIn(
-            "corrected_angular_z = self.angular_z * self.angular_factor", source
-        )
-        self.assertIn("delta_yaw = corrected_angular_z * self.dt", source)
-        self.assertIn("self.odom.twist.twist.angular.z = corrected_angular_z", source)
+        from controller import odom_publisher_node
+
+        node = odom_publisher_node.Controller("test_odom_controller")
+        node.angular_factor = 1.25
+        node.angular_z = 0.8
+        node.last_time = 100.0
+        with (
+            patch("time.time", return_value=100.1),
+            patch("time.sleep", side_effect=StopIteration),
+        ):
+            try:
+                node.cal_odom_fun()
+            except StopIteration:
+                pass
+
+        # 0.8 rad/s * 1.25 factor = 1.0 rad/s
+        self.assertAlmostEqual(node.odom.twist.twist.angular.z, 1.0)
+        # delta_yaw = 1.0 rad/s * 0.1 s = 0.1 rad
+        self.assertAlmostEqual(node.pose_yaw, 0.1)
 
 
 class TestSupervisorIndependentDeadlines(unittest.TestCase):
@@ -1089,19 +1093,45 @@ class TestConsoleScriptsAndLaunch(unittest.TestCase):
 
     def test_launch_file_declares_parameters(self):
         """Verify ros_robot_controller.launch.py declares required arguments."""
+        import runpy
+
+        class MockLaunchDescription:
+            def __init__(self, entities=None):
+                self.entities = entities or []
+
+        class MockLaunchArgument:
+            def __init__(self, name, default_value=None, description=""):
+                self.name = name
+                self.default_value = default_value
+                self.description = description
+
+        mock_launch = MagicMock()
+        mock_launch.LaunchDescription = MockLaunchDescription
+        mock_launch.actions.DeclareLaunchArgument = MockLaunchArgument
+        mock_launch.substitutions.LaunchConfiguration = MagicMock()
+        mock_launch_ros = MagicMock()
+
         launch_path = os.path.join(
             SRC_DIR, "ros_robot_controller", "launch", "ros_robot_controller.launch.py"
         )
         self.assertTrue(os.path.isfile(launch_path))
-        with open(launch_path, "r", encoding="utf-8") as f:
-            tree = ast.parse(f.read(), filename=launch_path)
 
-        declared_args = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if getattr(node.func, "id", None) == "DeclareLaunchArgument":
-                    if node.args and isinstance(node.args[0], ast.Constant):
-                        declared_args.add(node.args[0].value)
+        with patch.dict(
+            sys.modules,
+            {
+                "launch": mock_launch,
+                "launch.actions": mock_launch.actions,
+                "launch.substitutions": mock_launch.substitutions,
+                "launch_ros": mock_launch_ros,
+                "launch_ros.actions": mock_launch_ros.actions,
+            },
+        ):
+            mod = runpy.run_path(launch_path)
+            ld = mod["generate_launch_description"]()
+
+        declared_args = {
+            e.name for e in ld.entities if isinstance(e, MockLaunchArgument)
+        }
 
         expected = {
             "imu_frame",
@@ -1220,21 +1250,6 @@ class TestBuildWorkspaceScript(unittest.TestCase):
 class TestPackageMetadataSynchronization(unittest.TestCase):
     """Verify package.xml and setup.py metadata synchronization."""
 
-    def _assert_setup_metadata(self, content, **expected):
-        """Compare literal setup metadata independently of Python quote style."""
-        calls = [
-            node
-            for node in ast.walk(ast.parse(content))
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "setup"
-        ]
-        self.assertEqual(len(calls), 1)
-        keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
-        for name, value in expected.items():
-            self.assertIn(name, keywords)
-            self.assertEqual(ast.literal_eval(keywords[name]), value)
-
     def test_controller_metadata_sync(self):
         """controller package.xml and setup.py metadata must match."""
         import xml.etree.ElementTree as ET
@@ -1243,16 +1258,16 @@ class TestPackageMetadataSynchronization(unittest.TestCase):
         tree = ET.parse(pkg_xml)
         root = tree.getroot()
         xml_ver = root.findtext("version")
-        xml_lic = root.findtext("license")
-        xml_maint = root.findtext("maintainer")
 
         setup_py = os.path.join(SRC_DIR, "controller", "setup.py")
-        with open(setup_py, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        self._assert_setup_metadata(
-            content, version=xml_ver, license=xml_lic, maintainer=xml_maint
+        res = subprocess.run(
+            [sys.executable, setup_py, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
         )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), xml_ver)
 
     def test_ros_robot_controller_metadata_sync(self):
         """ros_robot_controller package.xml and setup.py metadata must match."""
@@ -1262,16 +1277,16 @@ class TestPackageMetadataSynchronization(unittest.TestCase):
         tree = ET.parse(pkg_xml)
         root = tree.getroot()
         xml_ver = root.findtext("version")
-        xml_lic = root.findtext("license")
-        xml_maint = root.findtext("maintainer")
 
         setup_py = os.path.join(SRC_DIR, "ros_robot_controller", "setup.py")
-        with open(setup_py, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        self._assert_setup_metadata(
-            content, version=xml_ver, license=xml_lic, maintainer=xml_maint
+        res = subprocess.run(
+            [sys.executable, setup_py, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
         )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), xml_ver)
 
 
 class TestInstallRos2ClosureManifest(unittest.TestCase):

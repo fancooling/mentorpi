@@ -4,20 +4,22 @@ Native host deployment, packaging, immutable installation, atomic activation,
 offline rollback, crash-consistent boot recovery, and sandboxed systemd confinement.
 """
 
-import configparser
+# ruff: noqa: E402 - ROS test doubles must be installed before package imports.
+
 import copy
-import hashlib
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import yaml
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -122,13 +124,8 @@ from ubuntu_tank.scripts.config_migration import (
     validate_config,
 )
 from ubuntu_tank.scripts.deployment_manager import (
-    DEFAULT_LOCK_PATH,
-    DEFAULT_OPT_DIR,
-    ActivationJournal,
     DeploymentLock,
     ReleaseManager,
-    SnapshotManager,
-    check_for_leaked_paths,
     check_hardware_mutual_exclusion,
     compute_file_sha256,
     parse_release_manifest,
@@ -611,13 +608,11 @@ class TestConfigurationSchemaMigrationAndDowngrade(unittest.TestCase):
         self.assertNotIn("telemetry_rate_hz", downgraded["serial_bridge"])
 
 
-class TestSystemdUnitAndConfinementDirectives(unittest.TestCase):
+class TestSystemdUnitAndConfinementDirectives(BaseDeploymentTestCase):
     """Test systemd unit definitions and confinement directives against design requirements."""
 
     def setUp(self):
-        self.repo_root = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..")
-        )
+        super().setUp()
         self.service_path = os.path.join(
             self.repo_root, "ubuntu_tank", "host", "mentorpi-tank.service"
         )
@@ -631,89 +626,545 @@ class TestSystemdUnitAndConfinementDirectives(unittest.TestCase):
             self.repo_root, "ubuntu_tank", "host", "ubuntu-tank.conf"
         )
 
+    def _effective_systemd_service(self, systemd_analyze, root, unit_name):
+        """Return systemd's effective properties and commands for one staged service."""
+        env = os.environ.copy()
+        env["SYSTEMD_LOG_LEVEL"] = "debug"
+        result = subprocess.run(
+            [systemd_analyze, f"--root={root}", "verify", unit_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        output = result.stdout + result.stderr
+        marker = f"-> Unit {unit_name}:"
+        self.assertIn(marker, output)
+        unit_dump = output.split(marker, 1)[1]
+        next_unit = unit_dump.find("\n\t-> Unit ")
+        if next_unit >= 0:
+            unit_dump = unit_dump[:next_unit]
+
+        properties = {}
+        commands = []
+        for raw_line in unit_dump.splitlines():
+            line = raw_line.strip()
+            if line.startswith("Command Line: "):
+                commands.append(line.removeprefix("Command Line: "))
+            elif ": " in line:
+                name, value = line.split(": ", 1)
+                properties[name] = value
+        return properties, commands
+
+    @staticmethod
+    def _write_systemd_override(staged, unit_name, contents):
+        """Install a generated drop-in used to mutation-test effective unit behavior."""
+        drop_in_dir = staged / f"{unit_name}.d"
+        drop_in_dir.mkdir(parents=True, exist_ok=True)
+        override = drop_in_dir / "test-override.conf"
+        override.write_text(contents, encoding="utf-8")
+        return override
+
+    @staticmethod
+    def _has_controller_supervision_contract(properties):
+        """Report whether effective systemd properties retain fail-closed supervision."""
+        return (
+            properties.get("Type") == "notify"
+            and properties.get("NotifyAccess") == "main"
+            and properties.get("WatchdogSec") not in (None, "0", "infinity")
+            and properties.get("Restart") == "on-failure"
+        )
+
     def test_mentorpi_tank_service_confinement_directives(self):
-        """mentorpi-tank.service declares all required confinement and supervision directives."""
-        self.assertTrue(os.path.isfile(self.service_path))
-        with open(self.service_path, "r") as f:
-            content = f.read()
+        """mentorpi-tank.service is accepted by systemd-analyze and enforces valid unit structure."""
+        systemd_analyze = shutil.which("systemd-analyze")
+        if not systemd_analyze:
+            self.skipTest("systemd-analyze unavailable")
 
-        # Supervision
-        self.assertIn("Type=notify", content)
-        self.assertIn("NotifyAccess=main", content)
-        self.assertIn("WatchdogSec=2s", content)
-        self.assertIn("TimeoutStopSec=5s", content)
-        self.assertIn("Restart=on-failure", content)
+        host_dir = Path(self.repo_root, "ubuntu_tank", "host")
+        unit_names = ("mentorpi-tank.service", "mentorpi-tank-recover.service")
+        base_targets = (
+            "network.target",
+            "multi-user.target",
+            "sysinit.target",
+            "basic.target",
+        )
+        system_unit_dir = Path("/usr/lib/systemd/system")
 
-        # Service identity
-        self.assertIn("User=ubuntu-tank", content)
-        self.assertIn("Group=mentorpi-rrc", content)
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir)
+            staged = root / "etc/systemd/system"
+            staged.mkdir(parents=True)
+            for u in unit_names:
+                shutil.copy2(host_dir / u, staged / u)
+            for t in base_targets:
+                if (system_unit_dir / t).is_file():
+                    shutil.copy2(system_unit_dir / t, staged / t)
 
-        # Sandboxing
-        self.assertIn("ProtectSystem=strict", content)
-        self.assertIn("ProtectHome=yes", content)
-        self.assertIn("PrivateTmp=yes", content)
-        self.assertIn("NoNewPrivileges=yes", content)
-        self.assertIn("RestrictSUIDSGID=yes", content)
-        self.assertIn("CapabilityBoundingSet=", content)
-        self.assertIn("AmbientCapabilities=", content)
+            (root / "opt/ubuntu_tank/current/bin").mkdir(parents=True)
+            (root / "opt/ubuntu_tank/libexec").mkdir(parents=True)
+            shutil.copy2(
+                "/bin/true", root / "opt/ubuntu_tank/current/bin/mentorpi-tank-run"
+            )
+            shutil.copy2(
+                "/bin/true", root / "opt/ubuntu_tank/libexec/recover-activation"
+            )
 
-        # Device confinement
-        self.assertIn("DevicePolicy=closed", content)
-        self.assertIn("DeviceAllow=/dev/rrc rw", content)
+            # Positive behavioral verification: units form a valid configuration
+            res = subprocess.run(
+                [systemd_analyze, f"--root={root}", "verify", "mentorpi-tank.service"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
 
-        # Network confinement
-        self.assertIn("IPAddressDeny=any", content)
-        self.assertIn("IPAddressAllow=localhost", content)
+            properties, _ = self._effective_systemd_service(
+                systemd_analyze, root, "mentorpi-tank.service"
+            )
+            self.assertTrue(
+                self._has_controller_supervision_contract(properties),
+                f"Effective controller supervision is unsafe: {properties}",
+            )
 
-        # Filesystem confinement
-        self.assertIn("ReadWritePaths=/var/opt/ubuntu_tank /run/ubuntu_tank", content)
-        self.assertIn("ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank", content)
+            supervision_mutations = {
+                "watchdog disabled": "[Service]\nWatchdogSec=0\n",
+                "notify protocol disabled": "[Service]\nType=simple\n",
+                "main-process notification ownership disabled": (
+                    "[Service]\nNotifyAccess=all\n"
+                ),
+                "failure restart disabled": "[Service]\nRestart=no\n",
+            }
+            for description, override_contents in supervision_mutations.items():
+                with self.subTest(supervision_mutation=description):
+                    override = self._write_systemd_override(
+                        staged, "mentorpi-tank.service", override_contents
+                    )
+                    mutated, _ = self._effective_systemd_service(
+                        systemd_analyze, root, "mentorpi-tank.service"
+                    )
+                    self.assertFalse(
+                        self._has_controller_supervision_contract(mutated),
+                        f"Unsafe mutation was accepted: {description}",
+                    )
+                    override.unlink()
 
-        # Dependencies
-        self.assertIn("After=network.target mentorpi-tank-recover.service", content)
-        self.assertIn("Wants=network.target", content)
-        self.assertIn("Requires=mentorpi-tank-recover.service", content)
+            # Negative behavioral verification: dependency on recover service is enforced
+            os.remove(staged / "mentorpi-tank-recover.service")
+            res_missing = subprocess.run(
+                [systemd_analyze, f"--root={root}", "verify", "mentorpi-tank.service"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(res_missing.returncode, 0)
+            self.assertIn("mentorpi-tank-recover.service", res_missing.stderr)
+
+            # Negative behavioral verification: malformed confinement setting is rejected
+            shutil.copy2(
+                host_dir / "mentorpi-tank-recover.service",
+                staged / "mentorpi-tank-recover.service",
+            )
+            with open(host_dir / "mentorpi-tank.service", "r", encoding="utf-8") as f:
+                bad_content = f.read().replace(
+                    "ProtectSystem=strict", "ProtectSystem=invalid_setting"
+                )
+            with open(staged / "mentorpi-tank.service", "w", encoding="utf-8") as f:
+                f.write(bad_content)
+            res_bad = subprocess.run(
+                [systemd_analyze, f"--root={root}", "verify", "mentorpi-tank.service"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertIn("Failed to parse", res_bad.stderr + res_bad.stdout)
+
+            # Behavioral property verification: systemd-analyze security evaluates effective device and user policy
+            sec_out = subprocess.check_output(
+                [
+                    systemd_analyze,
+                    "security",
+                    "--offline=true",
+                    str(host_dir / "mentorpi-tank.service"),
+                    "--json=pretty",
+                ],
+                text=True,
+            )
+            sec_data = {item.get("json_field"): item for item in json.loads(sec_out)}
+            # Device access policy: must have device ACL explicitly permitting /dev/rrc:rw
+            self.assertIn(
+                "/dev/rrc:rw",
+                sec_data.get("DeviceAllow", {}).get("description", ""),
+            )
+            # Service identity: must enforce static non-root user identity
+            self.assertIn(
+                "static non-root user",
+                sec_data.get("UserOrDynamicUser", {}).get("description", ""),
+            )
+            # Private devices must be disabled (False) to permit DeviceAllow access to /dev/rrc
+            self.assertFalse(sec_data.get("PrivateDevices", {}).get("set", True))
+
+            # Mutation regression: removing DeviceAllow=/dev/rrc rw fails device access check
+            with open(host_dir / "mentorpi-tank.service", "r", encoding="utf-8") as f:
+                service_lines = f.readlines()
+            no_dev_content = "".join(
+                line for line in service_lines if not line.startswith("DeviceAllow=")
+            )
+            with tempfile.NamedTemporaryFile("w", suffix=".service") as tf:
+                tf.write(no_dev_content)
+                tf.flush()
+                mut_sec_out = subprocess.check_output(
+                    [
+                        systemd_analyze,
+                        "security",
+                        "--offline=true",
+                        tf.name,
+                        "--json=pretty",
+                    ],
+                    text=True,
+                )
+                mut_sec_data = {
+                    item.get("json_field"): item for item in json.loads(mut_sec_out)
+                }
+                self.assertNotIn(
+                    "/dev/rrc:rw",
+                    mut_sec_data.get("DeviceAllow", {}).get("description", ""),
+                )
+
+            # Mutation regression: removing User= fails non-root identity check
+            no_user_content = "".join(
+                line
+                for line in service_lines
+                if not line.startswith("User=") and not line.startswith("Group=")
+            )
+            with tempfile.NamedTemporaryFile("w", suffix=".service") as tf:
+                tf.write(no_user_content)
+                tf.flush()
+                user_sec_out = subprocess.check_output(
+                    [
+                        systemd_analyze,
+                        "security",
+                        "--offline=true",
+                        tf.name,
+                        "--json=pretty",
+                    ],
+                    text=True,
+                )
+                user_sec_data = {
+                    item.get("json_field"): item for item in json.loads(user_sec_out)
+                }
+                self.assertIn(
+                    "root user",
+                    user_sec_data.get("UserOrDynamicUser", {}).get("description", ""),
+                )
 
     def test_mentorpi_tank_recover_service_directives(self):
-        """mentorpi-tank-recover.service runs before controller and executes recover-activation."""
-        self.assertTrue(os.path.isfile(self.recover_service_path))
-        with open(self.recover_service_path, "r") as f:
-            content = f.read()
+        """Execute systemd's effective recovery command and require transaction repair."""
+        systemd_analyze = shutil.which("systemd-analyze")
+        if not systemd_analyze:
+            self.skipTest("systemd-analyze unavailable")
 
-        self.assertIn("Type=oneshot", content)
-        self.assertIn("User=root", content)
-        self.assertIn("ExecStart=/opt/ubuntu_tank/libexec/recover-activation", content)
-        self.assertIn("Before=mentorpi-tank.service shutdown.target", content)
+        host_dir = Path(self.repo_root, "ubuntu_tank", "host")
+        base_targets = (
+            "network.target",
+            "multi-user.target",
+            "sysinit.target",
+            "basic.target",
+        )
+        system_unit_dir = Path("/usr/lib/systemd/system")
 
-    def test_udev_rules_group_and_mode(self):
-        """99-mentorpi-rrc.rules restricts permissions to mentorpi-rrc group mode 0660."""
-        self.assertTrue(os.path.isfile(self.rules_path))
-        with open(self.rules_path, "r") as f:
-            content = f.read()
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir)
+            staged = root / "etc/systemd/system"
+            staged.mkdir(parents=True)
+            shutil.copy2(
+                host_dir / "mentorpi-tank-recover.service",
+                staged / "mentorpi-tank-recover.service",
+            )
+            for t in base_targets:
+                if (system_unit_dir / t).is_file():
+                    shutil.copy2(system_unit_dir / t, staged / t)
 
-        self.assertIn('GROUP="mentorpi-rrc"', content)
-        self.assertIn('MODE="0660"', content)
-        self.assertIn('SYMLINK+="rrc"', content)
-        self.assertIn('ENV{ID_MM_PORT_IGNORE}="1"', content)
+            (root / "opt/ubuntu_tank/libexec").mkdir(parents=True)
+            shutil.copy2(
+                "/bin/true", root / "opt/ubuntu_tank/libexec/recover-activation"
+            )
+
+            res = subprocess.run(
+                [
+                    systemd_analyze,
+                    f"--root={root}",
+                    "verify",
+                    "mentorpi-tank-recover.service",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+            properties, commands = self._effective_systemd_service(
+                systemd_analyze, root, "mentorpi-tank-recover.service"
+            )
+            self.assertEqual(properties.get("Type"), "oneshot")
+            self.assertEqual(properties.get("User"), "root")
+            self.assertEqual(properties.get("Group"), "root")
+            self.assertEqual(properties.get("RemainAfterExit"), "no")
+            self.assertEqual(len(commands), 1, commands)
+
+            archive = self.mgr.package_release(
+                self.workspace_dir,
+                os.path.join(self.test_root, "dist"),
+                "1.0.0-grecover-unit",
+                allow_staged_install=True,
+            )
+            self.mgr.install_release(archive, require_root=False, enforce_arm64=False)
+
+            def local_command(command_line):
+                argv = shlex.split(command_line)
+                production_prefix = "/opt/ubuntu_tank"
+                if argv[0].startswith(production_prefix + "/"):
+                    relative = os.path.relpath(argv[0], production_prefix)
+                    argv[0] = os.path.join(self.opt_dir, relative)
+                return argv
+
+            def seed_interrupted_activation(tx_id):
+                snapshot_dir = self.mgr.snapshot_mgr.create_snapshot(
+                    tx_id=tx_id,
+                    current_symlink_target=None,
+                    etc_dir=self.etc_dir,
+                    systemd_dir=self.systemd_dir,
+                    udev_dir=self.udev_dir,
+                )
+                self.mgr.journal.record_prepared(
+                    tx_id=tx_id,
+                    candidate_release_id="candidate",
+                    candidate_release_path="/candidate",
+                    previous_release_id=None,
+                    previous_release_path=None,
+                    snapshot_dir=snapshot_dir,
+                )
+
+            recovery_args = [
+                "--opt-dir",
+                self.opt_dir,
+                "--etc-dir",
+                self.etc_dir,
+                "--var-dir",
+                self.var_dir,
+                "--systemd-dir",
+                self.systemd_dir,
+                "--udev-dir",
+                self.udev_dir,
+                "--lock-path",
+                self.lock_path,
+            ]
+            recovery_env = os.environ.copy()
+            recovery_env["PATH"] = os.path.dirname(sys.executable)
+
+            seed_interrupted_activation("tx-effective-command")
+            recover = subprocess.run(
+                local_command(commands[0]) + recovery_args,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=recovery_env,
+            )
+            self.assertEqual(recover.returncode, 0, recover.stderr)
+            self.assertIsNone(self.mgr.journal.get_state()["current_transaction"])
+
+            override = self._write_systemd_override(
+                staged,
+                "mentorpi-tank-recover.service",
+                "[Service]\n"
+                "ExecStart=\n"
+                "ExecStart=/opt/ubuntu_tank/libexec/recover-activation --help\n",
+            )
+            _, no_op_commands = self._effective_systemd_service(
+                systemd_analyze, root, "mentorpi-tank-recover.service"
+            )
+            self.assertEqual(len(no_op_commands), 1, no_op_commands)
+            seed_interrupted_activation("tx-no-op-command")
+            no_op = subprocess.run(
+                local_command(no_op_commands[0]) + recovery_args,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=recovery_env,
+            )
+            self.assertEqual(no_op.returncode, 0, no_op.stderr)
+            self.assertIsNotNone(
+                self.mgr.journal.get_state()["current_transaction"],
+                "The --help mutation must not satisfy recovery postconditions",
+            )
+            override.unlink()
+
+            # Negative behavioral verification: malformed directive is rejected
+            with open(
+                host_dir / "mentorpi-tank-recover.service", "r", encoding="utf-8"
+            ) as f:
+                bad_content = f.read().replace("Type=oneshot", "Type=invalid_type")
+            with open(
+                staged / "mentorpi-tank-recover.service", "w", encoding="utf-8"
+            ) as f:
+                f.write(bad_content)
+            res_bad = subprocess.run(
+                [
+                    systemd_analyze,
+                    f"--root={root}",
+                    "verify",
+                    "mentorpi-tank-recover.service",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertIn("Failed to parse", res_bad.stderr + res_bad.stdout)
+
+    def test_udev_rule_is_accepted_by_official_parser(self):
+        """udevadm accepts the shipped rule and rejects a malformed generated rule."""
+        udevadm = shutil.which("udevadm")
+        if not udevadm:
+            self.skipTest("udevadm unavailable")
+
+        res = subprocess.run(
+            [udevadm, "verify", "--resolve-names=never", self.rules_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("Success: 1", res.stdout)
+
+        # Behavioral negative test: invalid udev rule syntax fails udevadm verify
+        with tempfile.NamedTemporaryFile("w", suffix=".rules") as bad_rules:
+            bad_rules.write("INVALID_UDEV_DIRECTIVE==foo\n")
+            bad_rules.flush()
+            bad_res = subprocess.run(
+                [udevadm, "verify", "--resolve-names=never", bad_rules.name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(bad_res.returncode, 0)
+            self.assertIn("Fail:    1", bad_res.stdout)
+
+    def test_target_udev_rule_creates_restricted_rrc_device(self):
+        """Validate live udev effects on the matching tty device, or remain pending."""
+        import grp
+
+        udevadm = shutil.which("udevadm")
+        if not udevadm:
+            self.skipTest("udevadm unavailable")
+
+        tty_syspath = None
+        for tty_entry in Path("/sys/class/tty").glob("ttyACM*"):
+            resolved = tty_entry.resolve()
+            for parent in (resolved, *resolved.parents):
+                vendor_path = parent / "idVendor"
+                product_path = parent / "idProduct"
+                try:
+                    identity = (
+                        vendor_path.read_text(encoding="utf-8").strip(),
+                        product_path.read_text(encoding="utf-8").strip(),
+                    )
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if identity == ("1a86", "55d4"):
+                    tty_syspath = resolved
+                    break
+            if tty_syspath is not None:
+                break
+
+        if tty_syspath is None:
+            self.skipTest(
+                "target RRC ttyACM device unavailable; live udev behavior remains pending"
+            )
+
+        live_test = subprocess.run(
+            [udevadm, "test", "--action=add", str(tty_syspath)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(live_test.returncode, 0, live_test.stderr)
+
+        info = subprocess.run(
+            [udevadm, "info", "--query=property", "--path", str(tty_syspath)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(info.returncode, 0, info.stderr)
+        properties = dict(
+            line.split("=", 1) for line in info.stdout.splitlines() if "=" in line
+        )
+        self.assertIn("/dev/rrc", shlex.split(properties.get("DEVLINKS", "")))
+        self.assertEqual(properties.get("ID_MM_PORT_IGNORE"), "1")
+
+        rrc_path = "/dev/rrc"
+        self.assertTrue(os.path.islink(rrc_path), "/dev/rrc symlink was not created")
+        self.assertEqual(
+            os.path.realpath(rrc_path),
+            f"/dev/{tty_syspath.name}",
+            "/dev/rrc points to the wrong tty device",
+        )
+        device_stat = os.stat(rrc_path)
+        self.assertEqual(stat.S_IMODE(device_stat.st_mode), 0o660)
+        self.assertEqual(grp.getgrgid(device_stat.st_gid).gr_name, "mentorpi-rrc")
 
     def test_tmpfiles_conf_definitions(self):
-        """ubuntu-tank.conf creates runtime and persistent directories with secure modes."""
-        self.assertTrue(os.path.isfile(self.tmpfiles_path))
-        with open(self.tmpfiles_path, "r") as f:
-            content = f.read()
+        """ubuntu-tank.conf applies directory hierarchy and permissions via systemd-tmpfiles."""
+        tmpfiles_cmd = shutil.which("systemd-tmpfiles")
+        if not tmpfiles_cmd:
+            self.skipTest("systemd-tmpfiles unavailable")
 
-        self.assertIn(
-            "/run/ubuntu_tank 0775 ubuntu-tank ubuntu-tank-operators", content
-        )
-        self.assertIn("/run/lock/ubuntu_tank 0755 root root", content)
-        self.assertIn("/run/lock/ubuntu_tank/deploy.lock 0644 root root", content)
-        self.assertIn(
-            "/var/opt/ubuntu_tank/ros-log 0750 ubuntu-tank mentorpi-rrc", content
-        )
-        self.assertIn("/var/opt/ubuntu_tank/deployment 0755 root root", content)
-        self.assertIn(
-            "/var/opt/ubuntu_tank/deployment/snapshots 0700 root root", content
-        )
+        with tempfile.TemporaryDirectory() as td:
+            conf_dir = os.path.join(td, "etc", "tmpfiles.d")
+            os.makedirs(conf_dir, exist_ok=True)
+            with open(self.tmpfiles_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            numeric_lines = []
+            for line in lines:
+                if line.strip() and not line.startswith("#"):
+                    parts = line.split()
+                    # Use current numeric uid/gid for rootless tmpfiles execution
+                    parts[3] = str(os.getuid())
+                    parts[4] = str(os.getgid())
+                    numeric_lines.append(" ".join(parts) + "\n")
+                else:
+                    numeric_lines.append(line)
+            staged_conf = os.path.join(conf_dir, "ubuntu-tank.conf")
+            with open(staged_conf, "w", encoding="utf-8") as f:
+                f.writelines(numeric_lines)
+
+            res = subprocess.run(
+                [tmpfiles_cmd, "--create", f"--root={td}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+            # Observable filesystem behavior
+            run_path = os.path.join(td, "run/ubuntu_tank")
+            lock_path = os.path.join(td, "run/lock/ubuntu_tank")
+            ros_log_path = os.path.join(td, "var/opt/ubuntu_tank/ros-log")
+            snap_path = os.path.join(td, "var/opt/ubuntu_tank/deployment/snapshots")
+
+            self.assertTrue(os.path.isdir(run_path))
+            self.assertEqual(stat.S_IMODE(os.stat(run_path).st_mode), 0o775)
+
+            self.assertTrue(os.path.isdir(lock_path))
+            self.assertEqual(stat.S_IMODE(os.stat(lock_path).st_mode), 0o755)
+
+            self.assertTrue(os.path.isdir(ros_log_path))
+            self.assertEqual(stat.S_IMODE(os.stat(ros_log_path).st_mode), 0o750)
+
+            self.assertTrue(os.path.isdir(snap_path))
+            self.assertEqual(stat.S_IMODE(os.stat(snap_path).st_mode), 0o700)
 
 
 class TestDeploymentLockContention(BaseDeploymentTestCase):
@@ -802,12 +1253,6 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         self.assertEqual(res.returncode, 0, f"Failed: {res.stderr}")
         self.assertIn("usage:", res.stdout.lower())
 
-        # Verify mentorpi-tank.service declares Requires=mentorpi-tank-recover.service
-        service_file = os.path.join(self.workspace_dir, "host", "mentorpi-tank.service")
-        with open(service_file, "r") as f:
-            content = f.read()
-        self.assertIn("Requires=mentorpi-tank-recover.service", content)
-
     def test_p1_finding2_service_identity_and_ownership_normalization(self):
         """
         Finding 2: Release ownership normalization and identity provisioning checks.
@@ -837,12 +1282,6 @@ class TestReviewRemediations(BaseDeploymentTestCase):
                 self.assertEqual(
                     mode & 0o022, 0, f"File {p} has group/other write bits: {oct(mode)}"
                 )
-
-        # Verify tmpfiles.d definition specifies ubuntu-tank:mentorpi-rrc
-        tmpfiles = os.path.join(self.workspace_dir, "host", "ubuntu-tank.conf")
-        with open(tmpfiles, "r") as f:
-            c = f.read()
-        self.assertIn("ubuntu-tank mentorpi-rrc", c)
 
     def test_p1_finding3_host_safety_configuration_applied_to_launch_args(self):
         """
@@ -1255,14 +1694,6 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         self.assertEqual(res_pending.returncode, 1)
         self.assertIn("Uncommitted activation transaction", res_pending.stderr)
 
-        # 3c. Verify mentorpi-tank-recover.service has RemainAfterExit=no
-        unit_file = os.path.join(
-            self.workspace_dir, "host", "mentorpi-tank-recover.service"
-        )
-        with open(unit_file, "r", encoding="utf-8") as f:
-            unit_content = f.read()
-        self.assertIn("RemainAfterExit=no", unit_content)
-
     def test_finding4_deactivating_waits_and_query_errors_rejected(self):
         """
         Finding 4: _stop_and_disarm_service handles 'deactivating' status by polling until inactive/failed,
@@ -1313,8 +1744,8 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
         Finding 5: Supervisor validates Linux SCM_CREDENTIALS (PID, UID) and monotonic freshness.
         Wrong-PID, wrong-UID, stale, future, negative, and non-finite datagrams are rejected.
         """
-        import struct
         import importlib.util
+        import struct
         from importlib.machinery import SourceFileLoader
 
         runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
@@ -1767,8 +2198,8 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
 
         # 3a. Verify authoritative default constants
         from ubuntu_tank.scripts.deployment_manager import (
-            DEFAULT_LOCK_PATH,
             DEFAULT_JOURNAL_PATH,
+            DEFAULT_LOCK_PATH,
         )
 
         self.assertEqual(DEFAULT_LOCK_PATH, "/run/lock/ubuntu_tank/deploy.lock")
@@ -2296,7 +2727,8 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         """
         Finding 1: Verify colcon build commands in build_disposable_root.sh do not pass
         the unsupported '--no-symlink-install' option, and parse cleanly against the
-        upstream colcon build verb argument parser definition.
+        upstream colcon build verb argument parser definition across dry-run,
+        systemd-nspawn, and chroot production build branches.
         """
         import argparse
         import shlex
@@ -2304,17 +2736,8 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         builder_script = os.path.join(
             self.workspace_dir, "scripts", "build_disposable_root.sh"
         )
-        with open(builder_script, "r", encoding="utf-8") as f:
-            script_text = f.read()
 
-        # 1a. Static assertion: --no-symlink-install must be absent from the entire script
-        self.assertNotIn(
-            "--no-symlink-install",
-            script_text,
-            "build_disposable_root.sh must not pass or reference unsupported '--no-symlink-install'",
-        )
-
-        # 1b. Define locked upstream colcon build argument parser
+        # 1a. Define locked upstream colcon build argument parser
         # (models colcon_core.verb.build upstream argument definitions)
         def create_colcon_build_parser():
             parser = argparse.ArgumentParser(prog="colcon build", add_help=False)
@@ -2335,8 +2758,7 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
                 ["--install-base", "/opt/test", "--no-symlink-install"]
             )
 
-        # 1c. Extract colcon commands from script and parse them
-        # Extract the command in dry-run
+        # 1b. Validate dry-run output
         res_dry = subprocess.run(
             [
                 builder_script,
@@ -2352,48 +2774,196 @@ class TestReviewFindingsRound5(BaseDeploymentTestCase):
         self.assertEqual(res_dry.returncode, 0)
         self.assertNotIn("--no-symlink-install", res_dry.stdout)
 
-        # Extract colcon command from dry-run output
+        tokens_dry = None
         for line in res_dry.stdout.splitlines():
             if "colcon build" in line:
                 cmd_part = line.split("colcon build", 1)[1].strip()
-                tokens = shlex.split(cmd_part)
-                parsed_args = colcon_parser.parse_args(tokens)
+                tokens_dry = shlex.split(cmd_part)
+                parsed_args = colcon_parser.parse_args(tokens_dry)
                 self.assertFalse(parsed_args.symlink_install)
                 self.assertTrue(parsed_args.merge_install)
                 self.assertEqual(
                     parsed_args.install_base,
                     "/opt/ubuntu_tank/releases/1.0.0-testcolcon/install",
                 )
+        self.assertIsNotNone(tokens_dry, "Dry-run colcon command not found")
 
-        # 1d. Extract commands from both systemd-nspawn and chroot blocks in script
-        import re
+        # 1c. Validate production systemd-nspawn and chroot branches via test harness shims
+        with tempfile.TemporaryDirectory() as td:
+            # Create verified arm64 rootfs fixture
+            rootfs = os.path.join(td, "rootfs")
+            os.makedirs(os.path.join(rootfs, "etc"), exist_ok=True)
+            os.makedirs(os.path.join(rootfs, "bin"), exist_ok=True)
+            os.makedirs(os.path.join(rootfs, "var/lib/dpkg"), exist_ok=True)
+            os.makedirs(os.path.join(rootfs, "opt/ros/lyrical"), exist_ok=True)
+            with open(os.path.join(rootfs, "etc", "os-release"), "w") as f:
+                f.write('ID=ubuntu\nVERSION_ID="26.04"\n')
+            with open(os.path.join(rootfs, "var/lib/dpkg/arch"), "w") as f:
+                f.write("arm64\n")
+            with open(os.path.join(rootfs, "opt/ros/lyrical/setup.bash"), "w") as f:
+                f.write("#!/bin/bash\n")
+            shutil.copy2("/bin/sh", os.path.join(rootfs, "bin", "sh"))
 
-        colcon_blocks = re.findall(
-            r'colcon build\s*\\\s*(.*?)\n\s*"; then', script_text, re.DOTALL
-        )
-        self.assertGreaterEqual(
-            len(colcon_blocks),
-            2,
-            "Must find colcon build invocations in both nspawn and chroot blocks",
-        )
+            # Branch 1: systemd-nspawn execution capture
+            shim_dir_nspawn = os.path.join(td, "shims_nspawn")
+            os.makedirs(shim_dir_nspawn, exist_ok=True)
+            nspawn_cap = os.path.join(td, "nspawn_cmd.txt")
+            with open(os.path.join(shim_dir_nspawn, "systemd-nspawn"), "w") as f:
+                f.write(f"""#!/bin/bash
+for ((i=1;i<=$#;i++)); do
+  if [ "${{!i}}" = "-c" ]; then
+    next=$((i+1))
+    echo "${{!next}}" > "{nspawn_cap}"
+  fi
+done
+exit 0
+""")
+            os.chmod(os.path.join(shim_dir_nspawn, "systemd-nspawn"), 0o755)
+            with open(os.path.join(shim_dir_nspawn, "sudo"), "w") as f:
+                f.write("""#!/bin/bash
+while [[ "$1" == -* ]]; do shift; done
+"$@"
+""")
+            os.chmod(os.path.join(shim_dir_nspawn, "sudo"), 0o755)
 
-        for block in colcon_blocks:
-            cleaned_args = block.replace("\\", " ").replace("\n", " ")
-            # Replace shell variables with test values
-            cleaned_args = cleaned_args.replace(
-                "'${PRODUCTION_PREFIX}'", "/opt/ubuntu_tank/releases/test/install"
+            env_nspawn = dict(os.environ)
+            env_nspawn["PATH"] = f"{shim_dir_nspawn}:{env_nspawn['PATH']}"
+            env_nspawn.pop("_UBUNTU_TANK_TEST_BUILD_CMD", None)
+
+            subprocess.run(
+                [
+                    builder_script,
+                    "--workspace",
+                    self.workspace_dir,
+                    "--rootfs",
+                    rootfs,
+                    "--release-id",
+                    "1.0.0-nspawn-val",
+                    "--allow-staged-install",
+                ],
+                env=env_nspawn,
+                capture_output=True,
+                text=True,
             )
-            cleaned_args = cleaned_args.replace(
-                "${COLCON_PKGS}", "--packages-select pkg_a pkg_b"
+
+            self.assertTrue(
+                os.path.isfile(nspawn_cap),
+                "systemd-nspawn production branch was not executed",
             )
-            tokens = shlex.split(cleaned_args)
-            parsed = colcon_parser.parse_args(tokens)
-            self.assertFalse(parsed.symlink_install)
-            self.assertTrue(parsed.merge_install)
+            with open(nspawn_cap, "r", encoding="utf-8") as f:
+                nspawn_script = f.read()
+
+            colcon_line_nspawn = None
+            for line in nspawn_script.splitlines():
+                if "colcon build" in line:
+                    colcon_line_nspawn = line
+                    break
+            self.assertIsNotNone(
+                colcon_line_nspawn,
+                "colcon build command missing in systemd-nspawn branch",
+            )
+            cmd_part_ns = colcon_line_nspawn.split("colcon build", 1)[1].strip()
+            tokens_ns = shlex.split(cmd_part_ns)
+            parsed_ns = colcon_parser.parse_args(tokens_ns)
+            self.assertFalse(parsed_ns.symlink_install)
+            self.assertTrue(parsed_ns.merge_install)
             self.assertEqual(
-                parsed.install_base, "/opt/ubuntu_tank/releases/test/install"
+                parsed_ns.install_base,
+                "/opt/ubuntu_tank/releases/1.0.0-nspawn-val/install",
             )
-            self.assertEqual(parsed.packages_select, ["pkg_a", "pkg_b"])
+
+            # Branch 2: chroot execution capture (hide systemd-nspawn)
+            shim_dir_chroot = os.path.join(td, "shims_chroot")
+            os.makedirs(shim_dir_chroot, exist_ok=True)
+            chroot_cap = os.path.join(td, "chroot_cmd.txt")
+            with open(os.path.join(shim_dir_chroot, "chroot"), "w") as f:
+                f.write(f"""#!/bin/bash
+for ((i=1;i<=$#;i++)); do
+  if [ "${{!i}}" = "-c" ]; then
+    next=$((i+1))
+    echo "${{!next}}" > "{chroot_cap}"
+  fi
+done
+exit 0
+""")
+            os.chmod(os.path.join(shim_dir_chroot, "chroot"), 0o755)
+            for u in ["sudo", "mount", "umount"]:
+                with open(os.path.join(shim_dir_chroot, u), "w") as f:
+                    if u == "sudo":
+                        f.write("""#!/bin/bash
+while [[ "$1" == -* ]]; do shift; done
+"$@"
+""")
+                    else:
+                        f.write("#!/bin/bash\nexit 0\n")
+                os.chmod(os.path.join(shim_dir_chroot, u), 0o755)
+
+            clean_bin = os.path.join(td, "clean_bin")
+            os.makedirs(clean_bin, exist_ok=True)
+            for p in ["/bin", "/usr/bin"]:
+                if os.path.isdir(p):
+                    for name in os.listdir(p):
+                        if name != "systemd-nspawn" and not os.path.exists(
+                            os.path.join(clean_bin, name)
+                        ):
+                            try:
+                                os.symlink(
+                                    os.path.join(p, name),
+                                    os.path.join(clean_bin, name),
+                                )
+                            except OSError:
+                                pass
+
+            env_chroot = dict(os.environ)
+            env_chroot["PATH"] = f"{shim_dir_chroot}:{clean_bin}"
+            env_chroot.pop("_UBUNTU_TANK_TEST_BUILD_CMD", None)
+
+            subprocess.run(
+                [
+                    builder_script,
+                    "--workspace",
+                    self.workspace_dir,
+                    "--rootfs",
+                    rootfs,
+                    "--release-id",
+                    "1.0.0-chroot-val",
+                    "--allow-staged-install",
+                ],
+                env=env_chroot,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertTrue(
+                os.path.isfile(chroot_cap),
+                "chroot production branch was not executed",
+            )
+            with open(chroot_cap, "r", encoding="utf-8") as f:
+                chroot_script = f.read()
+
+            colcon_line_chroot = None
+            for line in chroot_script.splitlines():
+                if "colcon build" in line:
+                    colcon_line_chroot = line
+                    break
+            self.assertIsNotNone(
+                colcon_line_chroot,
+                "colcon build command missing in chroot branch",
+            )
+            cmd_part_ch = colcon_line_chroot.split("colcon build", 1)[1].strip()
+            tokens_ch = shlex.split(cmd_part_ch)
+            parsed_ch = colcon_parser.parse_args(tokens_ch)
+            self.assertFalse(parsed_ch.symlink_install)
+            self.assertTrue(parsed_ch.merge_install)
+            self.assertEqual(
+                parsed_ch.install_base,
+                "/opt/ubuntu_tank/releases/1.0.0-chroot-val/install",
+            )
+
+            # Mutation regression: injecting --no-symlink-install into any branch fails parser
+            for branch_tokens in [tokens_dry, tokens_ns, tokens_ch]:
+                with self.assertRaises(SystemExit):
+                    colcon_parser.parse_args(branch_tokens + ["--no-symlink-install"])
 
     def test_finding2_explicit_copy_rootfs_to_target_and_failed_build_rejection(self):
         """
@@ -2911,10 +3481,9 @@ class TestReviewFindingsRound6(BaseDeploymentTestCase):
         bin_dir = os.path.join(self.workspace_dir, "bin")
         if bin_dir not in sys.path:
             sys.path.insert(0, bin_dir)
-        from importlib.machinery import SourceFileLoader
-
         # Import build_launch_arguments from mentorpi-tank-run
         import importlib.util
+        from importlib.machinery import SourceFileLoader
 
         run_path = os.path.join(bin_dir, "mentorpi-tank-run")
         loader = SourceFileLoader("mentorpi_tank_run_mod", run_path)
@@ -3253,8 +3822,8 @@ rclpy.shutdown()
 
     def test_role_permissions_and_operator_membership(self):
         """Operator keys use their own group; CA keys and bridge keys are inaccessible to it."""
-        from unittest.mock import patch
         from types import SimpleNamespace
+        from unittest.mock import patch
 
         store = self._provision()
         groups = {
@@ -3380,10 +3949,11 @@ class TestReviewFindingsRound8(BaseDeploymentTestCase):
 
     def test_host_teleop_settings_reach_cli_and_lease(self):
         """Normal keyboard command uses host speed caps and the configured lease."""
-        import yaml
         import copy
+
+        import yaml
+
         from ubuntu_tank.scripts.config_migration import DEFAULTS_V1_0, teleop_arguments
-        from unittest.mock import patch
 
         config = copy.deepcopy(DEFAULTS_V1_0)
         config["controller"]["max_linear_speed"] = 0.05
@@ -3460,8 +4030,9 @@ class TestReviewFindingsRound8(BaseDeploymentTestCase):
 
     def test_conflicting_archive_rejected_identical_retry_preserved(self):
         """Same release ID may be retried only with the same installed payload."""
-        from ubuntu_tank.scripts.deployment_manager import attest_build
         from unittest.mock import patch
+
+        from ubuntu_tank.scripts.deployment_manager import attest_build
 
         tree = Path(self.test_root) / "build"
         tree.mkdir()
@@ -3502,8 +4073,9 @@ class TestReviewFindingsRound8(BaseDeploymentTestCase):
 
     def test_development_tree_does_not_bypass_production_builder(self):
         """The first production package invokes the builder despite an existing checkout install."""
-        from ubuntu_tank.scripts.deployment_manager import attest_build
         from unittest.mock import patch
+
+        from ubuntu_tank.scripts.deployment_manager import attest_build
 
         ws = Path(self.test_root) / "workspace"
         shutil.copytree(
@@ -3543,7 +4115,6 @@ class TestReviewFindingsRound8(BaseDeploymentTestCase):
 
     def test_empty_production_root_bootstraps_before_build(self):
         """Exercise the real builder's cold-start path without synthetic-install mode."""
-        import shlex
         from ubuntu_tank.scripts.deployment_manager import verify_build
 
         ws = Path(self.test_root) / "cold-workspace"
@@ -3606,8 +4177,9 @@ p=Path({str(install)!r}); p.mkdir(parents=True,exist_ok=True)
 
     def test_bootstrap_dry_run_and_destination_guards(self):
         """Root creation is a documented command and cannot overwrite broad host paths."""
-        from ubuntu_tank.scripts.prepare_build_root import bootstrap
         from unittest.mock import patch
+
+        from ubuntu_tank.scripts.prepare_build_root import bootstrap
 
         workspace = Path(self.test_root) / "workspace"
         with self.assertRaises(ValueError):

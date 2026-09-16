@@ -1,8 +1,8 @@
 # MentorPi Pi 5 Web Control Design
 
-Status: Milestone 10 completed; Milestones 11–16 pending implementation.
+Status: Milestones 10–11 completed; Milestones 11.1–16 pending implementation.
 
-Date: 2026-09-15
+Date: 2026-09-16
 
 Target: Native Ubuntu 26.04 ARM64 / ROS 2 Lyrical on the MentorPi Tank Pi 5.
 
@@ -412,9 +412,9 @@ and deployment flags are proposed until implemented and documented in README.
 
 ## 7. Trackable implementation milestones
 
-Continue numbering after native Milestone 9. All boxes below are initially open.
-Implement M10 through M16 in order; M12 and M13 can proceed independently after
-M11's protocol is stable, with M14 integrating both.
+Continue numbering after native Milestone 9. Unchecked boxes identify pending
+work. Complete M11.1 before continuing with M12; M12 and M13 can then proceed
+independently, with M14 integrating both.
 
 ### Milestone 10 — Protocol, state machine, and dependency closure
 
@@ -455,6 +455,35 @@ fresh complete downstream zero write within the original deadline, and deadline
 validation samples monotonic time after lock acquisition and again before motion
 publication. Hardened systemd service mentorpi-tank-operator.service configured.
 Comprehensive test suite passes 100% (66/66 tests in test_milestone11_operator_agent.py).
+
+### Milestone 11.1 — Behavior-based test cleanup
+
+Scope: change tests and test-only fixtures or harnesses only. Do not modify
+production source, handwritten runtime configuration, packaging, service units,
+deployment commands, or installed behavior. If authentic behavioral validation
+would require a production change, record that validation as pending instead.
+
+- [x] Inventory Python and shell tests that read handwritten source, systemd,
+  udev, tmpfiles, YAML, XML, JSON, TOML, or other static configuration merely to
+  assert literal strings, syntax fragments, or repeated parsed values.
+- [x] Replace source-code introspection with tests through the affected public
+  API, executable, or process boundary, asserting observable behavior and failure
+  handling rather than implementation text.
+- [x] Exercise handwritten configuration through its real consumer or an official
+  parser, including systemd, tmpfiles, ROS launch/security, and application
+  configuration surfaces. Assert the resulting behavior, permissions, lifecycle,
+  or rejection instead of restating file contents.
+- [x] Retain content-level assertions only when code under test generates the
+  artifact and its generated content is the behavioral contract. Remove obsolete
+  or duplicate assertions without weakening the safety invariant they represented.
+- [x] Record target-only validation as pending when the authentic consumer is not
+  available hardware-free; do not replace unavailable runtime evidence with a
+  source-text assertion. Run the full hardware-free suite and boundary gates after
+  the cleanup, with no intended production behavior change.
+
+Exit: no test treats literal text in handwritten source or configuration as a
+substitute for behavior. Every retained safety claim is exercised through a real
+consumer or explicitly recorded as pending, and all hardware-free gates pass.
 
 ### Milestone 12 — Web API and service lifecycle
 
@@ -547,5 +576,6 @@ disarmed updates, and cached-client compatibility/recovery pass their gates;
 start/stop, arm/disarm, mouse/touch buttons, W/S/A/D, and Space work as specified.
 Only one operator controls motion, loss of input or connectivity cannot latch
 movement, reconnection never resumes it, and production DDS/security confinement
-remains effective. M10–M16 evidence is complete and distinguishable from native
-M1–M9 evidence. Raised-track completion still does not authorize on-ground use.
+remains effective. M10–M16 evidence, including M11.1, is complete and
+distinguishable from native M1–M9 evidence. Raised-track completion still does
+not authorize on-ground use.
