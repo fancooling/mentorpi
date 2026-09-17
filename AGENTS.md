@@ -8,6 +8,14 @@ Before making changes in this repository:
 
 Keep `CONVERSATION_MEMORY.md` concise and update it after material project decisions or completed deployment work. Record durable outcomes and reproducible commands, not raw chat transcripts, credentials, tokens, host addresses, or other secrets.
 
+## Communication
+
+- Use plain language in user-facing updates and handoffs. Name the concrete
+  system, hardware, and action, such as "real robot," "Pi 5 board," or "tests
+  that can move the motors or use connected hardware." Avoid vague jargon such
+  as "physical-acceptance-related suites." When a technical term is necessary,
+  explain it immediately in plain language.
+
 ## Git versions and review revisions
 
 - Never commit or push any change until the user explicitly directs you to do so.
