@@ -1,9 +1,22 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Milestone 12 authentication scaffolding removal (2026-09-17)
+
+- Removed obsolete Milestone 10 login/logout scaffolding in accordance with the single-owner trusted network design:
+  - Removed `LoginRequest`, `LoginResponse`, and `LogoutResponse` dataclasses from `ubuntu_tank_operator/schemas.py` and their exports in `__init__.py`.
+  - Removed `credentials_file` and `session_timeout_sec` fields and validation from `WebControlConfig` in `ubuntu_tank_operator/config.py`.
+  - Removed `/login` and `/logout` endpoints and schemas from `ubuntu_tank_operator/openapi_generator.py`, and regenerated `ubuntu_tank/docs/openapi_v1.json` and `ubuntu_tank/web/src/types/api.ts`.
+  - Updated `ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md` and `docs/MENTORPI_WEB_CONTROL_DESIGN.md` reflecting the completion of scaffolding removal.
+- Validation:
+  - `test_milestone10_protocol.py` passed all 34 tests.
+  - `test_milestone11_operator_agent.py` passed all 69 tests.
+  - `test_source_boundary.sh` and `test_dependency_closure.sh` passed 100%.
+  - Ruff format and lint passed with 0 errors; `git diff --check` reported 0 whitespace errors.
 
 ## Milestone 11.1 code review remediations (2026-09-16)
 

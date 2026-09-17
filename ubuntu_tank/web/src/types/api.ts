@@ -52,21 +52,6 @@ export interface VersionResponse {
   supported_protocols: string[];
 }
 
-export interface LoginRequest {
-  password: string;
-}
-
-export interface LoginResponse {
-  success: boolean;
-  session_id: string | null;
-  expires_in_sec: number;
-  error?: WebControlErrorCode | null;
-}
-
-export interface LogoutResponse {
-  success: boolean;
-}
-
 export interface StatusResponse {
   service_state: ControllerServiceState;
   operator_state: OperatorState;

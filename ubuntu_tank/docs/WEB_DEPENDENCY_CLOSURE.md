@@ -61,11 +61,10 @@ The workstation build dependencies are pinned and locked in `ubuntu_tank/web/pac
 ## 3. Protocol & API Compatibility Specification
 
 The web UI/API has no user authentication or login. HTTPS supports the PWA;
-connection ownership and short motion leases arbitrate control. The current M10
-schemas, generated API artifacts, and configuration still contain login/logout
-scaffolding; remove those obsolete surfaces during M12 before publishing the API.
-No password-hashing dependency is required by this revised design. Existing
-native SROS2 credentials and process-identity safeguards remain unchanged.
+connection ownership and short motion leases arbitrate control. Obsolete M10
+login/logout schemas, generated API artifacts, and credential configurations were
+removed in Milestone 12. No password-hashing dependency is required by this design.
+Existing native SROS2 credentials and process-identity safeguards remain unchanged.
 
 - **Protocol Version**: `1.0.0`
 - **API Version**: `v1`

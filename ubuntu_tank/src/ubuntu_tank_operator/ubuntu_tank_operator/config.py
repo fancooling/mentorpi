@@ -35,8 +35,6 @@ class WebControlConfig:
             "https://localhost:8443",
         ]
     )
-    credentials_file: str = "/etc/opt/ubuntu_tank/web/credentials.json"
-    session_timeout_sec: int = 3600
     linear_speed_cap: float = DEFAULT_WEB_LINEAR_SPEED
     angular_speed_cap: float = DEFAULT_WEB_ANGULAR_SPEED
     lease_duration_sec: float = LEASE_DURATION_SEC
@@ -116,11 +114,6 @@ class WebControlConfig:
                 f"max_hold_duration_sec {self.max_hold_duration_sec} outside valid"
                 " range (0.5 to 10.0 s)"
             )
-        if self.session_timeout_sec < 60 or self.session_timeout_sec > 86400:
-            raise ValueError(
-                f"session_timeout_sec {self.session_timeout_sec} outside valid range"
-                " (60 to 86400 s)"
-            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WebControlConfig":
@@ -139,10 +132,6 @@ class WebControlConfig:
                     ["https://127.0.0.1:8443", "https://localhost:8443"],
                 )
             ),
-            credentials_file=data.get(
-                "credentials_file", "/etc/opt/ubuntu_tank/web/credentials.json"
-            ),
-            session_timeout_sec=data.get("session_timeout_sec", 3600),
             linear_speed_cap=data.get("linear_speed_cap", DEFAULT_WEB_LINEAR_SPEED),
             angular_speed_cap=data.get("angular_speed_cap", DEFAULT_WEB_ANGULAR_SPEED),
             lease_duration_sec=data.get("lease_duration_sec", LEASE_DURATION_SEC),

@@ -487,7 +487,7 @@ consumer or explicitly recorded as pending, and all hardware-free gates pass.
 
 ### Milestone 12 — Web API and service lifecycle
 
-- [ ] Remove M10 login/logout schemas and exports, authentication error codes,
+- [x] Remove M10 login/logout schemas and exports, authentication error codes,
   credential-file/login-session configuration, and matching OpenAPI generator,
   generated specification, and TypeScript types. Retain connection identifiers,
   motion challenges, and leases for control arbitration; they are not login sessions.

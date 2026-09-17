@@ -5,6 +5,7 @@ Exposes constants, schemas, state machine, configuration, and lock management
 for the MentorPi Tank operator authority and web control protocol.
 """
 
+from .agent_node import OperatorAgentNode
 from .config import WebControlConfig
 from .constants import (
     API_VERSION,
@@ -73,9 +74,6 @@ from .schemas import (
     ControlReleaseResponse,
     ControlStopRequest,
     ControlStopResponse,
-    LoginRequest,
-    LoginResponse,
-    LogoutResponse,
     LogsRequest,
     LogsResponse,
     OperationStatusResponse,
@@ -86,7 +84,6 @@ from .schemas import (
     WsServerFrame,
 )
 from .state_machine import OperatorStateMachine
-from .agent_node import OperatorAgentNode
 
 __all__ = [
     "API_VERSION",
@@ -143,9 +140,6 @@ __all__ = [
     "LockAcquisitionTimeoutError",
     "LockHierarchy",
     "LockOrderViolationError",
-    "LoginRequest",
-    "LoginResponse",
-    "LogoutResponse",
     "LogsRequest",
     "LogsResponse",
     "MotionDirection",

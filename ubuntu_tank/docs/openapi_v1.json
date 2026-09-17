@@ -29,53 +29,6 @@
         }
       }
     },
-    "/login": {
-      "post": {
-        "summary": "Authenticate operator secret",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Session established",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid credentials"
-          }
-        }
-      }
-    },
-    "/logout": {
-      "post": {
-        "summary": "Invalidate session and relinquish control",
-        "responses": {
-          "200": {
-            "description": "Session terminated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogoutResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/status": {
       "get": {
         "summary": "Live controller and operator status",
@@ -397,50 +350,6 @@
             "items": {
               "type": "string"
             }
-          }
-        }
-      },
-      "LoginRequest": {
-        "type": "object",
-        "required": [
-          "password"
-        ],
-        "properties": {
-          "password": {
-            "type": "string"
-          }
-        }
-      },
-      "LoginResponse": {
-        "type": "object",
-        "required": [
-          "success"
-        ],
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "session_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "expires_in_sec": {
-            "type": "integer"
-          },
-          "error": {
-            "$ref": "#/components/schemas/WebControlErrorCode",
-            "nullable": true
-          }
-        }
-      },
-      "LogoutResponse": {
-        "type": "object",
-        "required": [
-          "success"
-        ],
-        "properties": {
-          "success": {
-            "type": "boolean"
           }
         }
       },

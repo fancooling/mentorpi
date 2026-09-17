@@ -77,54 +77,6 @@ class VersionResponse:
 
 
 @dataclass(frozen=True)
-class LoginRequest:
-    """Operator session authentication request."""
-
-    password: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "LoginRequest":
-        _check_no_extra_fields(data, {"password"}, "LoginRequest")
-        pwd = data.get("password")
-        if not isinstance(pwd, str) or not pwd:
-            raise ValueError(
-                "Validation error in LoginRequest: password must be a non-empty string"
-            )
-        return cls(password=pwd)
-
-
-@dataclass(frozen=True)
-class LoginResponse:
-    """Authentication response."""
-
-    success: bool
-    session_id: str | None = None
-    expires_in_sec: int = 3600
-    error: WebControlErrorCode | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "success": self.success,
-            "session_id": self.session_id,
-            "expires_in_sec": self.expires_in_sec,
-            "error": self.error.value if self.error else None,
-        }
-
-
-@dataclass(frozen=True)
-class LogoutResponse:
-    """Session invalidation response."""
-
-    success: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True)
 class StatusResponse:
     """Live controller, safety, battery, and operator status."""
 

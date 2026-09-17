@@ -69,49 +69,6 @@ def generate_openapi_spec() -> dict[str, Any]:
                     },
                 }
             },
-            "/login": {
-                "post": {
-                    "summary": "Authenticate operator secret",
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/LoginRequest"}
-                            }
-                        },
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Session established",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": ("#/components/schemas/LoginResponse")
-                                    }
-                                }
-                            },
-                        },
-                        "401": {"description": "Invalid credentials"},
-                    },
-                }
-            },
-            "/logout": {
-                "post": {
-                    "summary": "Invalidate session and relinquish control",
-                    "responses": {
-                        "200": {
-                            "description": "Session terminated",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": ("#/components/schemas/LogoutResponse")
-                                    }
-                                }
-                            },
-                        }
-                    },
-                }
-            },
             "/status": {
                 "get": {
                     "summary": "Live controller and operator status",
@@ -410,29 +367,6 @@ def generate_openapi_spec() -> dict[str, Any]:
                         },
                     },
                 },
-                "LoginRequest": {
-                    "type": "object",
-                    "required": ["password"],
-                    "properties": {"password": {"type": "string"}},
-                },
-                "LoginResponse": {
-                    "type": "object",
-                    "required": ["success"],
-                    "properties": {
-                        "success": {"type": "boolean"},
-                        "session_id": {"type": "string", "nullable": True},
-                        "expires_in_sec": {"type": "integer"},
-                        "error": {
-                            "$ref": "#/components/schemas/WebControlErrorCode",
-                            "nullable": True,
-                        },
-                    },
-                },
-                "LogoutResponse": {
-                    "type": "object",
-                    "required": ["success"],
-                    "properties": {"success": {"type": "boolean"}},
-                },
                 "StatusResponse": {
                     "type": "object",
                     "required": [
@@ -671,21 +605,6 @@ export interface VersionResponse {{
   schema_version: number;
   release_id: string;
   supported_protocols: string[];
-}}
-
-export interface LoginRequest {{
-  password: string;
-}}
-
-export interface LoginResponse {{
-  success: boolean;
-  session_id: string | null;
-  expires_in_sec: number;
-  error?: WebControlErrorCode | null;
-}}
-
-export interface LogoutResponse {{
-  success: boolean;
 }}
 
 export interface StatusResponse {{
