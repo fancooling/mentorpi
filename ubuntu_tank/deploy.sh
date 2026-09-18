@@ -56,6 +56,11 @@ cmd_test() {
   echo "Running Hardware-Free Test Suite"
   echo "============================================================"
 
+  local py_bin="python3"
+  if [ -x "${WORKSPACE_ROOT}/.venv/bin/python" ]; then
+    py_bin="${WORKSPACE_ROOT}/.venv/bin/python"
+  fi
+
   # 1. Source boundary gate
   echo ""
   echo "--> Running Source Boundary Gate..."
@@ -74,67 +79,71 @@ cmd_test() {
   # 4. Python module unit tests
   echo ""
   echo "--> Running ubuntu_tank_safety unit tests..."
-  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_safety" python3 -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_safety/test" -p "test_*.py" -v
+  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_safety" "${py_bin}" -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_safety/test" -p "test_*.py" -v
 
   echo ""
   echo "--> Running ubuntu_tank_supervisor unit tests..."
-  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_supervisor" python3 -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_supervisor/test" -p "test_*.py" -v
+  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_supervisor/test" -p "test_*.py" -v
 
   echo ""
   echo "--> Running ubuntu_tank_teleop unit tests..."
-  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_teleop" python3 -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_teleop/test" -p "test_*.py" -v
+  PYTHONPATH="${SCRIPT_DIR}/src/ubuntu_tank_teleop" "${py_bin}" -m unittest discover -s "${SCRIPT_DIR}/src/ubuntu_tank_teleop/test" -p "test_*.py" -v
 
   echo ""
   echo "--> Running Milestone 2 installation workflow unit tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_install_workflow.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_install_workflow.py" -v
 
   echo ""
   echo "--> Running Milestone 3 Lyrical port and dependency closure unit tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
 
   echo ""
   echo "--> Running Milestone 4 Guarded bringup and safe teleop tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone4_bringup.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone4_bringup.py" -v
 
   echo ""
   echo "--> Running Milestone 4 Hardware-Free RMW & Runtime Integration tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_rmw_integration.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_rmw_integration.py" -v
 
   echo ""
   echo "--> Verifying SROS2 Security Policies..."
-  python3 "${SCRIPT_DIR}/scripts/sros2_policy.py"
+  "${py_bin}" "${SCRIPT_DIR}/scripts/sros2_policy.py"
 
   echo ""
   echo "--> Running Milestone 5 Native Host Deployment & Operations tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
 
   echo ""
   echo "--> Running Milestone 6 Raised-Track Controller Acceptance tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
 
   echo ""
   echo "--> Running Milestone 7 Fast DDS Loopback & Service Correction tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
 
   echo ""
   echo "--> Running Milestone 8 Bounded Arming & Verified Delivery Acceptance tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
 
   echo ""
   echo "--> Running Milestone 9 Physical Acceptance Closure tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
 
   echo ""
   echo "--> Running Milestone 10 Web Control Protocol, State Machine, & Lease tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
 
   echo ""
   echo "--> Running Milestone 11 Shared Operator Agent & CLI Integration tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
+
+  echo ""
+  echo "--> Running Milestone 12 Web API, Service Lifecycle, & WebSocket tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone12_web_api.py" -v
 
   echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, & 11 tests PASSED successfully!"
+  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, & 12 tests PASSED successfully!"
   echo "============================================================"
 }
 

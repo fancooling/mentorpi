@@ -27,8 +27,8 @@ class WebControlConfig:
 
     listen_address: str = "127.0.0.1"
     port: int = 8443
-    tls_cert_path: str | None = "/etc/opt/ubuntu_tank/web/certs/server.crt"
-    tls_key_path: str | None = "/etc/opt/ubuntu_tank/web/certs/server.key"
+    tls_cert_path: str | None = "/var/opt/ubuntu_tank/web/certs/server.crt"
+    tls_key_path: str | None = "/var/opt/ubuntu_tank/web/certs/server.key"
     allowed_origins: list[str] = field(
         default_factory=lambda: [
             "https://127.0.0.1:8443",

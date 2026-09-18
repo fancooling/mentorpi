@@ -3,7 +3,7 @@
 # sandboxed services while providing one administrative start/stop unit.
 [Unit]
 Description=MentorPi Tank Complete Control Stack
-Wants=mentorpi-tank.service mentorpi-tank-operator.service
+Wants=mentorpi-tank.service mentorpi-tank-operator.service mentorpi-tank-web.service mentorpi-tank-lifecycle.service
 After=mentorpi-tank.service
 
 [Install]

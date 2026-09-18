@@ -99,6 +99,12 @@ IMPORT_TO_PKG_MAP = {
     'launch': 'launch',
     'launch_ros': 'launch_ros',
     'setuptools': 'setuptools',
+    'fastapi': 'python3-fastapi',
+    'starlette': 'python3-fastapi',
+    'uvicorn': 'python3-uvicorn',
+    'pydantic': 'python3-pydantic',
+    'websockets': 'python3-websockets',
+    'cryptography': 'python3-cryptography',
 }
 
 STDLIB = {
@@ -107,7 +113,7 @@ STDLIB = {
     'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json', 'secrets',
     'uuid', 'fcntl', 'pathlib', 're', 'logging', 'dataclasses', 'contextlib',
     'ipaddress', 'errno', 'collections', '__future__', 'argparse', 'io',
-    'grp', 'pwd', 'stat'
+    'grp', 'pwd', 'stat', 'datetime', 'asyncio', 'concurrent'
 }
 
 dep_tags = {'depend', 'build_depend', 'build_export_depend', 'exec_depend', 'test_depend'}
@@ -201,13 +207,15 @@ CONTROLLER_ALLOWLIST = {
     'rclpy', 'std_msgs', 'std_srvs', 'geometry_msgs', 'nav_msgs', 'sensor_msgs',
     'ros_robot_controller_msgs', 'ros_robot_controller', 'controller',
     'ubuntu_tank_safety', 'ubuntu_tank_supervisor', 'ubuntu_tank_teleop',
-    'ubuntu_tank_bringup', 'ubuntu_tank_operator',
+    'ubuntu_tank_bringup', 'ubuntu_tank_operator', 'ubuntu_tank_web',
     # Tooling / generators / test
     'ament_cmake', 'ament_copyright', 'ament_flake8', 'ament_lint_auto',
     'ament_lint_common', 'ament_pep257', 'python3-pytest', 'launch',
     'launch_ros', 'rosidl_default_generators', 'rosidl_default_runtime',
     # System dependencies
-    'python3-serial', 'python3-yaml', 'setuptools'
+    'python3-serial', 'python3-yaml', 'setuptools',
+    'python3-fastapi', 'python3-uvicorn', 'python3-pydantic',
+    'python3-websockets', 'python3-cryptography'
 }
 
 FORBIDDEN_PACKAGES = {

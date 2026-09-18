@@ -11,6 +11,7 @@ import json
 import math
 import os
 import socket
+import threading
 import time
 import uuid
 from typing import Any
@@ -34,33 +35,36 @@ class OperatorIpcClient:
         self.socket_path = socket_path
         self._sock: socket.socket | None = None
         self._buf = ""
+        self._lock = threading.RLock()
 
     def connect(self, timeout_sec: float = 3.0) -> None:
         """Connect to operator agent Unix socket."""
-        if self._sock is not None:
-            return
+        with self._lock:
+            if self._sock is not None:
+                return
 
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(timeout_sec)
-        try:
-            sock.connect(self.socket_path)
-            self._sock = sock
-            self._buf = ""
-        except Exception as exc:
-            sock.close()
-            raise ConnectionError(
-                f"Failed to connect to operator agent at '{self.socket_path}': {exc}"
-            ) from exc
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(timeout_sec)
+            try:
+                sock.connect(self.socket_path)
+                self._sock = sock
+                self._buf = ""
+            except Exception as exc:
+                sock.close()
+                raise ConnectionError(
+                    f"Failed to connect to operator agent at '{self.socket_path}': {exc}"
+                ) from exc
 
     def close(self) -> None:
         """Close client connection."""
-        if self._sock is not None:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
-            self._buf = ""
+        with self._lock:
+            if self._sock is not None:
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
+                self._sock = None
+                self._buf = ""
 
     def __enter__(self) -> OperatorIpcClient:
         self.connect()
@@ -73,36 +77,44 @@ class OperatorIpcClient:
         self, req: dict[str, Any], timeout_sec: float = 3.0
     ) -> dict[str, Any]:
         """Send request and wait for newline-delimited JSON response."""
-        if self._sock is None:
-            self.connect(timeout_sec=timeout_sec)
-        assert self._sock is not None
+        with self._lock:
+            if self._sock is None:
+                self.connect(timeout_sec=timeout_sec)
+            assert self._sock is not None
 
-        self._sock.settimeout(timeout_sec)
-        payload = json.dumps(req).encode("utf-8") + b"\n"
-        if len(payload) > MAX_IPC_MESSAGE_BYTES:
-            raise ValueError(
-                f"Request payload exceeds {MAX_IPC_MESSAGE_BYTES} bytes cap"
-            )
-
-        self._sock.sendall(payload)
-
-        # Read until newline
-        start_time = time.monotonic()
-        while "\n" not in self._buf:
-            elapsed = time.monotonic() - start_time
-            if elapsed >= timeout_sec:
-                raise TimeoutError(
-                    f"Timed out waiting for IPC response after {timeout_sec:.2f}s"
+            self._sock.settimeout(timeout_sec)
+            payload = json.dumps(req).encode("utf-8") + b"\n"
+            if len(payload) > MAX_IPC_MESSAGE_BYTES:
+                raise ValueError(
+                    f"Request payload exceeds {MAX_IPC_MESSAGE_BYTES} bytes cap"
                 )
-            self._sock.settimeout(max(0.1, timeout_sec - elapsed))
-            chunk = self._sock.recv(4096)
-            if not chunk:
-                raise ConnectionResetError("Connection closed by operator agent")
-            self._buf += chunk.decode("utf-8", errors="replace")
 
-        line, self._buf = self._buf.split("\n", 1)
-        line = line.strip()
-        return json.loads(line)
+            try:
+                self._sock.sendall(payload)
+
+                # Read until newline
+                start_time = time.monotonic()
+                while "\n" not in self._buf:
+                    elapsed = time.monotonic() - start_time
+                    if elapsed >= timeout_sec:
+                        raise TimeoutError(
+                            f"Timed out waiting for IPC response after {timeout_sec:.2f}s"
+                        )
+                    self._sock.settimeout(max(0.1, timeout_sec - elapsed))
+                    chunk = self._sock.recv(4096)
+                    if not chunk:
+                        raise ConnectionResetError(
+                            "Connection closed by operator agent"
+                        )
+                    self._buf += chunk.decode("utf-8", errors="replace")
+
+                line, self._buf = self._buf.split("\n", 1)
+                line = line.strip()
+                return json.loads(line)
+            except Exception:
+                # On error or timeout, reset socket and buffer to prevent stream desync
+                self.close()
+                raise
 
     def get_status(self, timeout_sec: float = 3.0) -> dict[str, Any]:
         """Query live operator and robot status."""

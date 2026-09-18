@@ -27,11 +27,10 @@ import shutil
 import stat
 import subprocess
 import sys
-import tarfile
 import time
 import tempfile
 import uuid
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from fastdds_setup import validate_loopback_profile
@@ -493,6 +492,14 @@ class SnapshotManager:
                 "mentorpi-tank-operator.service",
             ),
             (
+                os.path.join(systemd_dir, "mentorpi-tank-web.service"),
+                "mentorpi-tank-web.service",
+            ),
+            (
+                os.path.join(systemd_dir, "mentorpi-tank-lifecycle.service"),
+                "mentorpi-tank-lifecycle.service",
+            ),
+            (
                 os.path.join(systemd_dir, "mentorpi-tank-stack.target"),
                 "mentorpi-tank-stack.target",
             ),
@@ -654,6 +661,12 @@ class SnapshotManager:
             "mentorpi-tank.service": os.path.join(systemd_dir, "mentorpi-tank.service"),
             "mentorpi-tank-operator.service": os.path.join(
                 systemd_dir, "mentorpi-tank-operator.service"
+            ),
+            "mentorpi-tank-web.service": os.path.join(
+                systemd_dir, "mentorpi-tank-web.service"
+            ),
+            "mentorpi-tank-lifecycle.service": os.path.join(
+                systemd_dir, "mentorpi-tank-lifecycle.service"
             ),
             "mentorpi-tank-stack.target": os.path.join(
                 systemd_dir, "mentorpi-tank-stack.target"
@@ -1384,7 +1397,7 @@ class ReleaseManager:
             ok, p_errs = validate_loopback_profile(loopback_prof)
             if not ok:
                 raise RuntimeError(
-                    f"Packaging rejected: invalid Fast DDS loopback profile:\n"
+                    "Packaging rejected: invalid Fast DDS loopback profile:\n"
                     + "\n".join(f"  - {e}" for e in p_errs)
                 )
 
@@ -1401,7 +1414,7 @@ class ReleaseManager:
         )
         if leaked:
             raise RuntimeError(
-                f"Packaging rejected: leaked build paths detected in install tree:\n"
+                "Packaging rejected: leaked build paths detected in install tree:\n"
                 + "\n".join(leaked)
             )
 
@@ -1577,6 +1590,37 @@ class ReleaseManager:
             else:
                 subprocess.run(
                     ["usermod", "-aG", "ubuntu-tank-operators", "ubuntu-tank-operator"],
+                    check=False,
+                )
+
+            try:
+                grp.getgrnam("ubuntu-tank-web")
+            except KeyError:
+                subprocess.run(["groupadd", "-r", "ubuntu-tank-web"], check=True)
+
+            try:
+                pwd.getpwnam("ubuntu-tank-web")
+            except KeyError:
+                subprocess.run(
+                    [
+                        "useradd",
+                        "-r",
+                        "-s",
+                        "/usr/sbin/nologin",
+                        "-g",
+                        "ubuntu-tank-web",
+                        "-G",
+                        "ubuntu-tank-operators",
+                        "-d",
+                        "/var/opt/ubuntu_tank/web",
+                        "-M",
+                        "ubuntu-tank-web",
+                    ],
+                    check=True,
+                )
+            else:
+                subprocess.run(
+                    ["usermod", "-aG", "ubuntu-tank-operators", "ubuntu-tank-web"],
                     check=False,
                 )
         elif require_root:
@@ -2023,6 +2067,25 @@ class ReleaseManager:
                 f"[Install] Preserved existing host environment at {target_env}\n"
             )
 
+        target_web_dir = os.path.join(self.etc_dir, "web")
+        os.makedirs(target_web_dir, exist_ok=True)
+        target_web_cfg = os.path.join(target_web_dir, "web.yaml")
+        if not os.path.exists(target_web_cfg):
+            default_web_cfg = os.path.join(
+                target_release_dir, "config", "web", "web.yaml"
+            )
+            if os.path.isfile(default_web_cfg):
+                shutil.copy2(default_web_cfg, target_web_cfg)
+                fsync_file(target_web_cfg)
+                os.chmod(target_web_cfg, 0o644)
+                sys.stdout.write(
+                    f"[Install] Initialized host web configuration at {target_web_cfg}\n"
+                )
+        else:
+            sys.stdout.write(
+                f"[Install] Preserved existing host web configuration at {target_web_cfg}\n"
+            )
+
         # 2. Resolve service UID and GID
         try:
             tank_uid = pwd.getpwnam("ubuntu-tank").pw_uid
@@ -2041,6 +2104,16 @@ class ReleaseManager:
         except (KeyError, AttributeError):
             operator_uid = os.geteuid()
 
+        try:
+            web_uid = pwd.getpwnam("ubuntu-tank-web").pw_uid
+        except (KeyError, AttributeError):
+            web_uid = os.geteuid()
+
+        try:
+            web_gid = grp.getgrnam("ubuntu-tank-web").gr_gid
+        except (KeyError, AttributeError):
+            web_gid = operators_gid
+
         # 3. Create persistent /var directories with proper ownership and modes
         # /var/opt/ubuntu_tank/deployment is mode 0755 so ubuntu-tank service account can read activation-journal
         for p, m, u, g in [
@@ -2052,6 +2125,8 @@ class ReleaseManager:
                 operator_uid,
                 operators_gid,
             ),
+            (os.path.join(self.var_dir, "web"), 0o750, web_uid, web_gid),
+            (os.path.join(self.var_dir, "web", "certs"), 0o700, web_uid, web_gid),
             (os.path.join(self.var_dir, "deployment"), 0o755, 0, 0),
             (self.snapshots_dir, 0o700, 0, 0),
         ]:
@@ -2067,8 +2142,11 @@ class ReleaseManager:
         # /run/ubuntu_tank is 0775 tank_uid:operators_gid so operator agent and clients can interact
         # /run/lock/ubuntu_tank is 0775 root:mentorpi-rrc so ubuntu-tank service account can coordinate startup
         lock_dir = os.path.dirname(self.lock_path)
+        run_parent = os.path.dirname(self.run_dir)
+        web_run_dir = os.path.join(run_parent, "ubuntu_tank-web")
         for p, m, u, g in [
             (self.run_dir, 0o775, tank_uid, operators_gid),
+            (web_run_dir, 0o770, web_uid, operators_gid),
             (lock_dir, 0o775, 0, rrc_gid),
         ]:
             os.makedirs(p, exist_ok=True)
@@ -2249,7 +2327,7 @@ class ReleaseManager:
                 )
                 if not valid:
                     raise RuntimeError(
-                        f"Release archive verification failed:\n" + "\n".join(errs)
+                        "Release archive verification failed:\n" + "\n".join(errs)
                     )
 
                 target_release_dir = os.path.join(self.releases_dir, rel_id)
@@ -2360,7 +2438,7 @@ class ReleaseManager:
             )
             if not valid:
                 raise RuntimeError(
-                    f"Candidate release validation failed:\n" + "\n".join(errs)
+                    "Candidate release validation failed:\n" + "\n".join(errs)
                 )
 
             # Step 2: Snapshot current state and write PREPARED journal record
@@ -2686,10 +2764,14 @@ class ReleaseManager:
 
         optional_units = {
             "mentorpi-tank-stack.target",
+            "mentorpi-tank-web.service",
+            "mentorpi-tank-lifecycle.service",
             "mentorpi-tank-operator.service",
         }
         for unit in (
             "mentorpi-tank-stack.target",
+            "mentorpi-tank-web.service",
+            "mentorpi-tank-lifecycle.service",
             "mentorpi-tank-operator.service",
             "mentorpi-tank.service",
         ):
@@ -2917,6 +2999,14 @@ class ReleaseManager:
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank-operator.service"),
                 os.path.join(self.systemd_dir, "mentorpi-tank-operator.service"),
+            ),
+            (
+                os.path.join(candidate_dir, "host", "mentorpi-tank-web.service"),
+                os.path.join(self.systemd_dir, "mentorpi-tank-web.service"),
+            ),
+            (
+                os.path.join(candidate_dir, "host", "mentorpi-tank-lifecycle.service"),
+                os.path.join(self.systemd_dir, "mentorpi-tank-lifecycle.service"),
             ),
             (
                 os.path.join(candidate_dir, "host", "mentorpi-tank-stack.target"),

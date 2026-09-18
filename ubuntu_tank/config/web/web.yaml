@@ -1,0 +1,17 @@
+# Default configuration for MentorPi Tank Web Service
+# Installed to /etc/opt/ubuntu_tank/web/web.yaml
+listen_address: "127.0.0.1"
+port: 8443
+tls_cert_path: "/var/opt/ubuntu_tank/web/certs/server.crt"
+tls_key_path: "/var/opt/ubuntu_tank/web/certs/server.key"
+allowed_origins:
+  - "https://127.0.0.1:8443"
+  - "https://localhost:8443"
+linear_speed_cap: 0.20
+angular_speed_cap: 0.50
+lease_duration_sec: 0.150
+challenge_interval_sec: 0.050
+idle_timeout_sec: 30.0
+max_hold_duration_sec: 5.0
+operator_socket_path: "/run/ubuntu_tank/operator.sock"
+lifecycle_socket_path: "/run/ubuntu_tank/lifecycle.sock"

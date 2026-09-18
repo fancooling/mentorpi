@@ -1,0 +1,33 @@
+# Restricted root-owned lifecycle helper service for MentorPi Tank
+[Unit]
+Description=MentorPi Tank Lifecycle Helper Service
+After=network.target
+PartOf=mentorpi-tank-stack.target
+StartLimitIntervalSec=30s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/ubuntu_tank/current
+ExecStart=/opt/ubuntu_tank/current/bin/mentorpi-tank-lifecycle --socket-path /run/ubuntu_tank/lifecycle.sock
+Restart=always
+RestartSec=2s
+TimeoutStopSec=5s
+
+# Restricted sandboxing
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+UMask=0022
+ReadWritePaths=/run/ubuntu_tank /run/lock/ubuntu_tank
+ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank /var/opt/ubuntu_tank
+
+[Install]
+WantedBy=multi-user.target

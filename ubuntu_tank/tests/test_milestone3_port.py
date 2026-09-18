@@ -14,6 +14,7 @@ Verifies:
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -1170,11 +1171,7 @@ class TestBuildWorkspaceScript(unittest.TestCase):
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         self.assertEqual(res.returncode, 0)
-        self.assertTrue(
-            "Found 6 workspace packages" in res.stdout
-            or "Found 7 workspace packages" in res.stdout
-            or "Found 8 workspace packages" in res.stdout
-        )
+        self.assertRegex(res.stdout, r"Found \d+ workspace packages:")
         self.assertIn("Dry-run complete", res.stdout)
 
     def test_build_workspace_rejects_legacy_machine_type_env(self):

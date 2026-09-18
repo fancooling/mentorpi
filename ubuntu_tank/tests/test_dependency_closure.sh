@@ -86,6 +86,11 @@ DEP_MAP = {
     "python3-yaml": "python3-yaml",
     "python3-pytest": "python3-pytest",
     "setuptools": "python3-setuptools",
+    "python3-fastapi": "python3-fastapi",
+    "python3-uvicorn": "python3-uvicorn",
+    "python3-pydantic": "python3-pydantic",
+    "python3-websockets": "python3-websockets",
+    "python3-cryptography": "python3-cryptography",
 }
 
 internal_pkgs = {
@@ -96,6 +101,7 @@ internal_pkgs = {
     "ubuntu_tank_supervisor",
     "ubuntu_tank_teleop",
     "ubuntu_tank_operator",
+    "ubuntu_tank_web",
 }
 
 declared_deps = set()

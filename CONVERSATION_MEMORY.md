@@ -5,6 +5,41 @@ Last updated: 2026-09-17
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Milestone 12 web API and service lifecycle implementation (2026-09-17)
+
+- Implemented Milestone 12 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md`:
+  - Created package `ubuntu_tank/src/ubuntu_tank_web`:
+    - `models.py`: strict Pydantic v2 models with `extra="forbid"`, `StrictBool` and `mode="before"` validator for `tracks_raised: true`, versioned schemas, operation payloads, single-use `bind_token` in `ControlAcquireResponseModel` and `WsClientBindPayload`, and log requests.
+    - `tls.py`: self-signed X.509 certificate generation with SANs (`192.168.1.150`, `127.0.0.1`, `localhost`), permissions `0600` (key) / `0644` (cert), validation on load, self-healing corrupt-certificate regeneration, and writable runtime location under `/var/opt/ubuntu_tank/web/certs/`.
+    - `lifecycle_service.py`: restricted root helper over `/run/ubuntu_tank/lifecycle.sock` with `SO_PEERCRED` checks, 64 KiB frame cap, fixed argument arrays (no shell), dedicated priority stop thread that executes immediately without waiting for worker queues or locks, monotonic race prevention against slow starts, fail-closed stop confirmation (treating non-"inactive" or failed status as unconfirmed), non-blocking deployment lock checks (`deploy.lock`), uncommitted activation journal validation, preflight integration, and bounded log retrieval.
+    - `lifecycle_client.py`: Unix socket client for lifecycle helper daemon.
+    - `operator_relay.py`: IPC relay connecting to `OperatorIpcServer` over `/run/ubuntu_tank/operator.sock`, maintaining persistent `_owner_client` connection across `acquire`, `arm`, and `release`, enforcing exclusive WebSocket binding via unpredictable `bind_token`, and executing fallback stops.
+    - `routes_api.py`: non-blocking REST API endpoints offloading synchronous IPC via `asyncio.to_thread` for `/api/v1/version`, `/status`, `/logs`, `/controller/start`, `/controller/stop`, `/control/acquire`, `/control/release`, `/control/arm`, `/control/stop` (with lifecycle fallback stop and propagated confirmation when agent is down), and `/operations/{id}`.
+    - `routes_ws.py`: WebSocket endpoint `/api/v1/control` with strict Origin validation, 64 KiB frame cap, single-use `bind_token` reservation to active owner IPC client, serialized send/receive operations with stop priority via `asyncio.Lock`, latest-intent only with queue congestion drop, 20 Hz challenge relay, stop priority with lifecycle fallback, and fail-closed disarm on disconnect (`relay.close()` only for bound session).
+    - `app.py`: application factory with security headers (CSP, `nosniff`, `DENY`, `no-referrer`), Origin validation middleware returning `CROSS_ORIGIN_DENIED`, 64 KiB request body limit middleware, and static PWA asset serving.
+    - `entrypoint.py`: Web server CLI entrypoint with `--export-openapi` support.
+  - Executable launchers & configuration:
+    - `ubuntu_tank/bin/mentorpi-tank-web`: executable wrapper configuring Uvicorn single-worker process.
+    - `ubuntu_tank/bin/mentorpi-tank-lifecycle`: executable wrapper launching lifecycle helper daemon.
+    - `ubuntu_tank/config/web/web.yaml`: default web configuration pointing to `/var/opt/ubuntu_tank/web/certs/` with localhost/LAN origins, conservative speed limits, and socket paths.
+  - Systemd service units:
+    - `ubuntu_tank/host/mentorpi-tank-web.service`: hardened unit running under `ubuntu-tank-web:ubuntu-tank-web` with `ProtectSystem=strict`, `ReadWritePaths=/var/opt/ubuntu_tank/web`, `NoNewPrivileges=yes`, and `ProtectHome=yes`.
+    - `ubuntu_tank/host/mentorpi-tank-lifecycle.service`: root-owned helper unit with `ProtectSystem=strict`, `NoNewPrivileges=yes`, and `RuntimeDirectory=ubuntu_tank`.
+    - Updated `mentorpi-tank-stack.target` and `ubuntu-tank.conf` tmpfiles for `ubuntu-tank-web` directory and group.
+  - Deployment manager & dependency lock:
+    - Added `package.xml` for `ubuntu_tank_web` declaring runtime and build dependencies.
+    - Pinned all target Python dependencies (FastAPI, Uvicorn, Pydantic, WebSockets, Cryptography) and transitive dependencies in `versions.lock` (446 locked packages total, 100% SHA256 verified) for clean Pi system Python without pip/virtualenv. The web additions were recaptured from the current official Resolute ARM64 APT indexes and downloaded artifacts on 2026-09-17; live target installation remains pending because the Pi was unreachable during review remediation.
+    - Updated `ubuntu_tank/scripts/deployment_manager.py` to provision `ubuntu-tank-web` user/group (supplementary `ubuntu-tank-operators`, never `mentorpi-rrc`), manage web and lifecycle services across install/backup/restore/stop cycles, provision `/var/opt/ubuntu_tank/web/certs`, and initialize default `web.yaml`.
+  - Automated test suite:
+    - Created `ubuntu_tank/tests/test_milestone12_web_api.py` (44 tests) verifying TLS provisioning and corrupt recovery in writable path, same-origin mutation rejection, security headers, strict Pydantic validation, REST control flow with non-blocking offload, lifecycle helper operations and lock interlocks, immediate priority stop under deployment lock or slow commands, fail-closed stop confirmation, exclusive single-use WebSocket binding token, serialized IPC client transactions, systemd service unit hardening via `systemd-analyze verify`, WebSocket origin validation, oversized message rejection, request floods, operator agent outage fallback stop, clean lifecycle launcher imports, lifecycle-authoritative controller status, and configured web motion caps.
+  - Updated `ubuntu_tank/deploy.sh` test runner to resolve `py_bin` from `.venv/bin/python`.
+- Review remediation makes the lifecycle launcher import both release packages without `PYTHONPATH`, treats lifecycle-helper systemd state as authoritative even while the operator remains online, and applies configured web motion caps to every acquisition before the agent's independent final clamp.
+- Validation:
+  - All 44 tests in `test_milestone12_web_api.py` passed 100%.
+  - Full `./ubuntu_tank/deploy.sh test` suite passed 550 tests across Milestones 1 through 12, with the expected native ROS/DDS and live `/dev/rrc` checks skipped on the development workstation.
+  - `test_source_boundary.sh`, `test_dependency_closure.sh`, and `test_negative_boundary.sh` passed 100%.
+  - Ruff format and lint checks passed with 0 errors; shfmt and shellcheck on shell scripts passed with 0 warnings; `git diff --check` reported 0 whitespace errors.
+
 ## Milestone 12 authentication scaffolding removal (2026-09-17)
 
 - Removed obsolete Milestone 10 login/logout scaffolding in accordance with the single-owner trusted network design:

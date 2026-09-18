@@ -10,10 +10,11 @@ The web control and operator subsystems run natively on Ubuntu 26.04 ARM64 witho
 
 | Package | Upstream Version (Noble / Resolute) | Purpose | Service Owner |
 |---|---|---|---|
-| `python3-fastapi` | `0.101.0-3` / `0.110.0+` | REST & WebSocket web framework | `mentorpi-tank-web.service` |
-| `python3-uvicorn` | `0.27.1-1` / `0.29.0+` | Single-worker ASGI production server | `mentorpi-tank-web.service` |
-| `python3-pydantic` | `1.10.14-1` / `2.6.0+` | Data parsing & input validation models | Shared schemas |
-| `python3-websockets` | `12.0-1build1` / `13.0+` | High-throughput async WebSocket streaming | `mentorpi-tank-web.service` |
+| `python3-fastapi` | `0.101.0-3` / `0.118.0-1` | REST & WebSocket web framework | `mentorpi-tank-web.service` |
+| `python3-uvicorn` | `0.27.1-1` / `0.38.0-1` | Single-worker ASGI production server | `mentorpi-tank-web.service` |
+| `python3-pydantic` | `1.10.14-1` / `2.12.5-2` | Data parsing & input validation models | Shared schemas |
+| `python3-websockets` | `12.0-1build1` / `15.0.1-1build2` | High-throughput async WebSocket streaming | `mentorpi-tank-web.service` |
+| `python3-cryptography` | `41.0.7-4ubuntu0.1` / `46.0.5-1ubuntu2.2` | Local TLS certificate and key provisioning | `mentorpi-tank-web.service` |
 | `python3-yaml` | `6.0.3-1build1` | Controller & web configuration parsing | `mentorpi-tank-operator.service` |
 
 ### Service Isolation & Confinement

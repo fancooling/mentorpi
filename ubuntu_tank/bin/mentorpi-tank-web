@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""
+mentorpi-tank-web - Launcher wrapper for the MentorPi Tank Web Service.
+
+Invoked by mentorpi-tank-web.service.
+Launches the single-worker Uvicorn ASGI server serving the FastAPI backend and
+pre-compiled static frontend assets with TLS termination.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+bin_dir = os.path.dirname(os.path.abspath(__file__))
+workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
+src_dir = os.path.join(workspace_root, "src")
+web_pkg_dir = os.path.join(src_dir, "ubuntu_tank_web")
+operator_pkg_dir = os.path.join(src_dir, "ubuntu_tank_operator")
+
+for p in (web_pkg_dir, operator_pkg_dir, src_dir):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+from ubuntu_tank_web.entrypoint import main
+
+if __name__ == "__main__":
+    sys.exit(main())

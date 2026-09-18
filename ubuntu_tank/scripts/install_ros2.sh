@@ -584,9 +584,23 @@ DEP_TO_APT_MAP = {
     "python3-yaml": "python3-yaml",
     "python3-pytest": "python3-pytest",
     "setuptools": "python3-setuptools",
+    "python3-fastapi": "python3-fastapi",
+    "python3-uvicorn": "python3-uvicorn",
+    "python3-pydantic": "python3-pydantic",
+    "python3-websockets": "python3-websockets",
+    "python3-cryptography": "python3-cryptography",
 }
 
-internal_workspace_pkgs = {"ros_robot_controller", "ros_robot_controller_msgs", "controller", "ubuntu_tank_safety", "ubuntu_tank_supervisor", "ubuntu_tank_teleop", "ubuntu_tank_operator"}
+internal_workspace_pkgs = {
+    "ros_robot_controller",
+    "ros_robot_controller_msgs",
+    "controller",
+    "ubuntu_tank_safety",
+    "ubuntu_tank_supervisor",
+    "ubuntu_tank_teleop",
+    "ubuntu_tank_operator",
+    "ubuntu_tank_web",
+}
 
 for dep in sorted(pkg_xml_deps):
     if dep in internal_workspace_pkgs:

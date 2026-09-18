@@ -491,12 +491,12 @@ consumer or explicitly recorded as pending, and all hardware-free gates pass.
   credential-file/login-session configuration, and matching OpenAPI generator,
   generated specification, and TypeScript types. Retain connection identifiers,
   motion challenges, and leases for control arbitration; they are not login sessions.
-- [ ] Implement TLS provisioning, same-origin controls, bounded HTTP/WSS,
+- [x] Implement TLS provisioning, same-origin controls, bounded HTTP/WSS,
   agent challenge relay, status, logs, and operation results.
-- [ ] Implement FastAPI strict models, OpenAPI export, WebSocket validation,
+- [x] Implement FastAPI strict models, OpenAPI export, WebSocket validation,
   compatibility/version endpoint, and the single-worker Uvicorn systemd service.
-- [ ] Implement the narrow lifecycle helper and start/stop deployment interlocks.
-- [ ] Test cross-origin requests, oversized messages, request
+- [x] Implement the narrow lifecycle helper and start/stop deployment interlocks.
+- [x] Test cross-origin requests, oversized messages, request
   floods, frozen web process, and Stop when the agent or ROS is unavailable.
 
 Exit: the page manages a mocked service without login or root web privileges;

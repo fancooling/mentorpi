@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""
+mentorpi-tank-lifecycle - Launcher wrapper for the Restricted Lifecycle Helper Service.
+
+Invoked by mentorpi-tank-lifecycle.service (or runs as root daemon).
+Listens on /run/ubuntu_tank/lifecycle.sock to safely perform fixed controller
+systemd operations (start, stop, status, logs).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import signal
+import sys
+import time
+
+bin_dir = os.path.dirname(os.path.abspath(__file__))
+workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
+src_dir = os.path.join(workspace_root, "src")
+web_pkg_dir = os.path.join(src_dir, "ubuntu_tank_web")
+operator_pkg_dir = os.path.join(src_dir, "ubuntu_tank_operator")
+
+for p in (web_pkg_dir, operator_pkg_dir, src_dir):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+
+def main(argv: list[str] | None = None) -> int:
+    from ubuntu_tank_web.lifecycle_service import (
+        DEFAULT_LIFECYCLE_SOCKET_PATH,
+        LifecycleHelperService,
+    )
+
+    parser = argparse.ArgumentParser(
+        description="MentorPi Tank Restricted Lifecycle Helper Service"
+    )
+    parser.add_argument(
+        "--socket-path",
+        type=str,
+        default=DEFAULT_LIFECYCLE_SOCKET_PATH,
+        help="Path to lifecycle Unix domain socket",
+    )
+    args = parser.parse_args(argv)
+
+    svc = LifecycleHelperService(socket_path=args.socket_path)
+    svc.start()
+
+    running = True
+
+    def _sig_handler(sig, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, _sig_handler)
+    signal.signal(signal.SIGTERM, _sig_handler)
+
+    try:
+        while running:
+            time.sleep(0.5)
+    finally:
+        svc.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
