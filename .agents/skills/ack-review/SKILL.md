@@ -1,9 +1,10 @@
 ---
 name: ack-review
 description: >-
-  Read code review comments from review.md, systematically implement the required
-  fixes and regression tests, verify the test suite and source boundaries, and fold
-  the revisions into the existing feature commit via git commit --amend.
+  Evaluate code review comments from review.md against the personal Pi 5 single-owner
+  system context, systematically implement required fixes and regression tests for
+  serious system failures and safety bugs, verify the test suite and source boundaries,
+  and fold revisions into the existing feature commit via git commit --amend.
 ---
 
 # Acknowledge and Remediate Code Review (`ack-review`)
@@ -32,7 +33,28 @@ Per repository policy in `AGENTS.md`, `GEMINI.md`, and `.agents/rules/git_versio
   - **Required Correction**: Prescribed fix requirements and boundary constraints.
   - **Verification Requirements**: Specific conditions and tests to confirm resolution.
 
-### 2. Architecture & Safety Invariant Check
+### 2. Triage & Practical Impact Assessment (Personal Pi 5 Context)
+Before implementing code changes, critically evaluate each finding against the project's actual operational environment: **a personal, single-owner robot running entirely on a fully controlled Raspberry Pi 5 board where all installed software and user accounts are owner-controlled on a trusted local network**.
+
+Distinguish between serious system-failure bugs and minor/theoretical issues:
+
+- **Serious Bugs & System Failures (Must Remediate)**:
+  - **Runtime Failures & Crash Loops**: Issues that break service startup or cause crash loops on the target Pi 5 (e.g., missing system Python packages in `versions.lock`, permission errors under systemd confinement, unhandled exceptions in background daemons).
+  - **Physical Motion Safety Violations**: Loss of fail-closed guarantees, unconfirmed stops falsely reported as inactive/stopped, emergency Stop blocking behind slow operations, broken lease expirations, or failure to command four-motor zero velocity on disconnect/fault.
+  - **Deadlocks & Communication Breakdown**: Frame interleaving on shared IPC streams, blocking the single Uvicorn event loop on synchronous I/O, or priority inversions.
+  - *Action*: Implement comprehensive architectural remediations and add automated regression tests.
+
+- **Minor or Theoretical Issues Unlikely to Occur (Triage & Prune)**:
+  - **Hostile Multi-Tenant Threat Models**: Findings assuming malicious local users or adversarial same-UID processes on the Pi. Per `GEMINI.md`, the owner controls the OS, services, and accounts; local PID/UID checks exist only to catch accidental misconfiguration, not hostile same-user isolation.
+  - **Over-Engineered Defensive Scaffolding**: Extreme synthetic edge cases or defensive layers for multi-user/untrusted environments that cannot arise in this single-owner setup.
+  - **Cosmetic Nitpicks & Premature Generalization**: Complex architectural shifts proposed for purely theoretical or negligible edge cases that add bloat without improving safety or stability.
+  - *Action*: Document why the finding is low-risk or inapplicable given the single-owner Pi 5 context, or adopt a minimal pragmatic resolution rather than adding unnecessary complexity.
+
+- **Consultation on Ambiguity (Ask the User First)**:
+  - If you are ever unsure whether a finding represents a genuine operational hazard or a negligible edge case under this single-owner model, **always stop and consult the user before taking action**.
+  - Present the finding clearly in plain language, explain the practical risk vs added complexity, and ask the user how they wish to proceed rather than making assumptions or writing unnecessary code.
+
+### 3. Architecture & Safety Invariant Check
 Before modifying any code, verify proposed changes against repository architectural rules:
 - **Vendor Mode vs Native Mode**:
   - Sidecar (`MentorPiFan` on port 8081): Nginx + static assets only; no ROS, drivers, controllers, teleop, or `/dev` access.
@@ -47,7 +69,7 @@ Before modifying any code, verify proposed changes against repository architectu
   - Do not use broad wildcards (`*`, `rt/*`, `rq/*`, `rr/*`) in permission documents.
   - Status enclaves must remain strictly read-only for application motion/arming.
 
-### 3. Implement Remediations & Regression Tests
+### 4. Implement Remediations & Regression Tests
 - Make necessary edits to source files, configuration files, XML permissions, and scripts.
 - **Always add regression tests**:
   - Add test cases in the relevant test suite (e.g., `ubuntu_tank/tests/test_milestone4_bringup.py` or `ubuntu_tank/tests/test_rmw_integration.py`).
@@ -56,7 +78,7 @@ Before modifying any code, verify proposed changes against repository architectu
   - Keep purpose/rationale in top-of-file documentation. For vendor-derived files, identify the original source and meaningful adaptations; preserve copyright/license notices. Git records revisions; no source inventory or per-file hashes are required.
   - Run `ubuntu_tank/tests/test_source_boundary.sh` to verify layout, imports, dependency declarations, and controller-only scope.
 
-### 4. Execute Full Verification Suite
+### 5. Execute Full Verification Suite
 Run the full regression test suite:
 ```bash
 ./ubuntu_tank/deploy.sh test
@@ -71,7 +93,7 @@ Verify:
   ```
 - If material architectural decisions were made, update `CONVERSATION_MEMORY.md`.
 
-### 5. Fold Revisions into Existing Git Commit
+### 6. Fold Revisions into Existing Git Commit
 - Check working tree status:
   ```bash
   git status
@@ -90,7 +112,7 @@ Verify:
   - Do not append, list, or explicitly call out addressed code review comments; describe fixes naturally as part of the overall feature/milestone implementation.
   - Record the updated test suite results and validation counts.
 
-### 6. Verify and Report
+### 7. Verify and Report
 - Verify `git status` is clean.
 - Verify `git log -n 1` shows the expected commit message and parent.
 - Provide a structured response to the user detailing each finding addressed, key changes, and verification results.
