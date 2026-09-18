@@ -142,8 +142,12 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone12_web_api.py" -v
 
   echo ""
+  echo "--> Running Milestone 13 Vue Browser & PWA Driving Interface tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
+
+  echo ""
   echo "============================================================"
-  echo "All Milestone 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, & 12 tests PASSED successfully!"
+  echo "All tests PASSED successfully!"
   echo "============================================================"
 }
 

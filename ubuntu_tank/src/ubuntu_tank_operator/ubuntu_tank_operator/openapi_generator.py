@@ -454,6 +454,8 @@ def generate_openapi_spec() -> dict[str, Any]:
                     "properties": {
                         "success": {"type": "boolean"},
                         "epoch": {"type": "integer", "nullable": True},
+                        "bind_token": {"type": "string", "nullable": True},
+                        "active_owner": {"type": "string", "nullable": True},
                         "error": {
                             "$ref": "#/components/schemas/WebControlErrorCode",
                             "nullable": True,
@@ -649,6 +651,8 @@ export interface ControlAcquireRequest {{
 export interface ControlAcquireResponse {{
   success: boolean;
   epoch: number | null;
+  bind_token?: string | null;
+  active_owner?: string | null;
   error: WebControlErrorCode | null;
   message: string | null;
 }}

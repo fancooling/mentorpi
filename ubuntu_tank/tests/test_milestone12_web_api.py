@@ -724,6 +724,78 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         self.assertEqual(self.sm.state, OperatorState.NO_OWNER)
         self.assertEqual(self.sm.active_direction, MotionDirection.NEUTRAL)
 
+    def test_stop_preserves_operator_ownership_and_supports_rearm(self):
+        """Disarm/Stop must preserve operator ownership (OWNED_DISARMED) and allow re-arming under new epoch."""
+        # 1. Acquire control authority
+        res = self.client.post(
+            "/api/v1/control/acquire",
+            json={"operator_id": "owner-op", "request_id": "req-acq-stop"},
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res.status_code, 200)
+        epoch = res.json()["epoch"]
+
+        # 2. Arm chassis
+        res_arm = self.client.post(
+            "/api/v1/control/arm",
+            json={"epoch": epoch, "tracks_raised": True, "request_id": "req-arm-1"},
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res_arm.status_code, 200)
+        self.assertTrue(res_arm.json()["success"])
+        self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
+
+        # 3. Issue stop / disarm
+        res_stop = self.client.post(
+            "/api/v1/control/stop",
+            json={"epoch": epoch, "request_id": "req-stop-1"},
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res_stop.status_code, 200)
+        self.assertTrue(res_stop.json()["success"])
+        self.assertTrue(res_stop.json()["disarmed"])
+
+        # Disarm is pending downstream guard confirmation
+        self.assertTrue(self.sm.disarm_pending)
+
+        # Simulate downstream guard confirming disarm
+        self.sm.update_guard_telemetry(False, time.monotonic_ns())
+
+        # 4. Assert status: operator ownership is PRESERVED, not revoked!
+        res_status = self.client.get("/api/v1/status")
+        self.assertEqual(res_status.status_code, 200)
+        status_data = res_status.json()
+        self.assertEqual(status_data["operator_state"], "OWNED_DISARMED")
+        self.assertEqual(status_data["active_owner"], "owner-op")
+        self.assertFalse(status_data["guard_armed"])
+        self.assertFalse(status_data["disarm_pending"])
+        new_epoch = status_data["current_epoch"]
+        self.assertEqual(new_epoch, epoch + 1)
+
+        # 5. Re-arm chassis under new epoch
+        res_rearm = self.client.post(
+            "/api/v1/control/arm",
+            json={
+                "epoch": new_epoch,
+                "tracks_raised": True,
+                "request_id": "req-rearm-2",
+            },
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res_rearm.status_code, 200)
+        self.assertTrue(res_rearm.json()["success"])
+        self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
+
+        # 6. Release ownership
+        res_release = self.client.post(
+            "/api/v1/control/release",
+            json={"epoch": new_epoch, "request_id": "req-rel-stop"},
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res_release.status_code, 200)
+        self.assertTrue(res_release.json()["success"])
+        self.assertEqual(self.sm.state, OperatorState.NO_OWNER)
+
 
 class TestLifecycleHelperService(unittest.TestCase):
     """Test restricted root lifecycle helper socket daemon and safety interlocks."""

@@ -505,15 +505,15 @@ congestion cannot prolong an agent lease.
 
 ### Milestone 13 — Vue browser and PWA driving interface
 
-- [ ] Implement the page, hold buttons, W/S/A/D, Space, acknowledgments, status,
+- [x] Implement the page, hold buttons, W/S/A/D, Space, acknowledgments, status,
   ownership display, responsive layout, and accessible focus behavior.
-- [ ] Automate browser tests for key release, focus loss, hidden tabs, pointer
+- [x] Automate browser tests for key release, focus loss, hidden tabs, pointer
   cancellation, mixed inputs, held keys across Arm, delayed messages, multiple
   tabs, connection loss, and reconnection with no automatic resume.
-- [ ] Verify fresh neutral intent while idle and immediate local input clearing.
-- [ ] Build Vue/TypeScript components and the generated HTTP API client; add
+- [x] Verify fresh neutral intent while idle and immediate local input clearing.
+- [x] Build Vue/TypeScript components and the generated HTTP API client; add
   manifest/icons, asset-only caching, explicit updates, and offline status.
-- [ ] Test that offline requests cannot queue/replay movement, updates require
+- [x] Test that offline requests cannot queue/replay movement, updates require
   disarm, and stale or incompatible cached clients cannot arm.
 
 Exit: real browser tests against a mocked agent satisfy every interaction in §2.

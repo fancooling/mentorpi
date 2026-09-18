@@ -94,6 +94,8 @@ export interface ControlAcquireRequest {
 export interface ControlAcquireResponse {
   success: boolean;
   epoch: number | null;
+  bind_token?: string | null;
+  active_owner?: string | null;
   error: WebControlErrorCode | null;
   message: string | null;
 }

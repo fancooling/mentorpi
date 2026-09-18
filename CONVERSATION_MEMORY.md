@@ -1,9 +1,57 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Forward-looking test scope (2026-09-18)
+
+- Do not add new test cases for shell scripts that perform or verify
+  installation, deployment, host preparation, service provisioning, or system
+  configuration. Preserve all existing tests in those areas unchanged.
+- Focus new tests on product functionality, including robot control and motion
+  safety, operator behavior, web/API logic, state transitions, and other
+  user-visible runtime behavior.
+
+## Milestone 13 Vue browser and PWA driving interface implementation (2026-09-18)
+
+- Implemented Milestone 13 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md`:
+  - Frontend SPA and PWA in `ubuntu_tank/web/`:
+    - Vue 3 + TypeScript application bundled with Vite and `vite-plugin-pwa`.
+    - Static build emits `dist/` with `index.html`, minified asset chunks, `registerSW.js`, `manifest.webmanifest`, and Workbox `sw.js`. Target Pi requires only static asset serving (no Node.js at runtime).
+    - PWA compliance: `manifest.webmanifest` specifies `display: standalone`, theme color `#0f172a`, and valid 192x192 and 512x512 maskable/any icons.
+    - Workbox service worker caching: asset-only precaching with strict `/api/` denylist (`denylist: [/^\/api\//]`) and explicit `NetworkOnly` rule for `/api/.*`. Offline mode prevents queuing or replaying movement commands; explicit update prompt requires disarm prior to activation (`SKIP_WAITING`).
+    - Incompatible protocol banner: compares client `PROTOCOL_VERSION` with backend `/api/v1/version` and renders a blocking banner when mismatched.
+    - Interactive driving panel satisfying every safety and control requirement in §2:
+      - Pointer driving: directional hold pad (`forward`, `reverse`, `spin_left`, `spin_right`) with explicit `setPointerCapture`, pointer release/cancellation resetting to neutral intent.
+      - Keyboard driving: W/S/A/D active only when driving panel has focus or pointer is captured; keys held before Arm cannot initiate motion.
+      - STOP priority: Space key has unconditional document-wide priority (including inside input fields and modals), immediately halting motion and disarming.
+      - Tracks-raised physical safety gate: Arm button is disabled until explicit `tracks_raised: true` confirmation checkbox is toggled.
+      - Continuous hold cap: 5.0-second timer with visible progress indicator, disarming and stopping upon expiration.
+      - Inactivity timeout: 30-second idle timer disarms the session.
+      - Loss-of-focus protection: window blur and `visibilitychange` (hidden tab) immediately clear inputs and disarm without auto-resume.
+      - Mixed input conflict detection: conflicting inputs (e.g. simultaneous Forward + Reverse) immediately force neutral intent.
+      - Multi-tab exclusivity: single-use `bind_token` protects active WebSocket control session; secondary tabs render observer status with active owner name.
+  - Automated tests & integration:
+    - Created Playwright test suite `ubuntu_tank/web/tests/browser_control.spec.ts` executing 12 comprehensive browser interaction tests in headless Google Chrome (`/usr/bin/google-chrome`).
+    - Created `ubuntu_tank/tests/test_milestone13_browser_pwa.py` executing build closure verification, PWA manifest compliance, Workbox cache rules audit, and real Playwright browser tests against a live test FastAPI server with background telemetry.
+    - Integrated Milestone 13 test execution into `./ubuntu_tank/deploy.sh test` under `cmd_test()`.
+  - Review remediation for P1 findings (2026-09-18):
+    - Resolved pre-arm key hold bug by introducing `physicallyDepressedKeys` set tracking raw keydown events regardless of arming or panel focus. Depressed keys are copied into `keysHeldBeforeArm` on arm and retained across disarm/re-arm cycles; OS repeat key events while held cannot initiate motion without explicit release and re-press.
+    - Locked control acquisition and arming when protocol is incompatible: `ServiceControls.vue` and `useControlSession.ts` check `isProtocolCompatible`, strictly disabling "Take control", the safety checkbox, and "Arm", and rejecting API calls.
+    - Resolved drive panel blur during keyboard driving: watching `state.isPanelFocused` immediately clears directional input and resets held keys to halt motion when DOM focus leaves the panel.
+    - Resolved asynchronous stop/disarm input clearing: `handleEmergencyStop` and `handleDisarm` in `App.vue` execute `resetAllInput()` synchronously before issuing network requests, preventing subsequent 20 Hz WebSocket challenge loops from transmitting stale directional commands during the HTTP round-trip.
+    - Resolved stop/disarm operator ownership revocation and epoch synchronization bug: `operator_relay.stop()` now executes stops over `_owner_client` without closing `_owner_client` or clearing owner state, preserving the `OWNED_DISARMED` state with the active owner connection intact. `operator_relay.arm()` updates `_active_epoch = epoch` on successful arming; `routes_ws.py`'s `_challenge_loop()` uses `relay.active_epoch or bound_epoch` and updates `bound_epoch = c["epoch"]`; `wsClient.ts` updates its active epoch when advanced by the server and exposes `updateEpoch(newEpoch)`; `useControlSession.ts` and `App.vue` synchronize `currentEpoch.value` with `telemetry.currentEpoch` before arming, after stop, and via `watch`.
+    - Added automated regression test `test_stop_preserves_operator_ownership_and_supports_rearm` in `test_milestone12_web_api.py` asserting that `POST /control/stop` preserves `OWNED_DISARMED` and allows immediate re-arming under the incremented epoch.
+    - Updated Playwright test suite (`browser_control.spec.ts`) with regressions for OS key-repeat events, disarm/re-arm key retention across stops without losing ownership, panel blur halting, on-screen stop synchronous clearing, and disabled control/arm buttons under incompatible protocols.
+  - Validation:
+    - All 4 tests in `test_milestone13_browser_pwa.py` passed 100% (12/12 Playwright tests passed in 16.5s in headless Google Chrome).
+    - All 45 tests in `test_milestone12_web_api.py` passed 100%.
+    - Full test suite `./ubuntu_tank/deploy.sh test` passed all tests across all milestones (1–13).
+    - `ruff format` on modified Python files passed with 0 errors.
+    - `shfmt -i 2 -ci -w` and `shellcheck` on `ubuntu_tank/deploy.sh` passed with 0 warnings.
+    - `git diff --check` reported 0 whitespace errors.
 
 ## Milestone 12 web API and service lifecycle implementation (2026-09-17)
 

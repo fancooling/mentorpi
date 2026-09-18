@@ -50,6 +50,13 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
 
 ## Tests
 
+- Do not add new test cases whose purpose is to exercise shell scripts for
+  installation, deployment, host preparation, service provisioning, or system
+  configuration. Keep the existing tests for those scripts unchanged; this is
+  a forward-looking rule, not a request to delete or rewrite current coverage.
+  Focus new tests on product functionality such as robot control and motion
+  safety, operator behavior, web/API logic, state transitions, and other
+  user-visible runtime behavior.
 - Do not test handwritten source or static configuration files by asserting
   their literal content. This includes exact-string and substring checks, as
   well as parsing XML, systemd units, YAML, JSON, TOML, INI, or similar files

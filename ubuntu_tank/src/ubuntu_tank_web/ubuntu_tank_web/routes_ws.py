@@ -98,12 +98,18 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
 
     async def _challenge_loop() -> None:
         """Periodic loop relaying cryptographic challenges to the browser."""
+        nonlocal bound_epoch
         while running:
             try:
-                if session_ipc is not None and bound_epoch is not None:
+                if session_ipc is not None:
                     # Yield immediately if an intent or stop is queued or requested
                     if not intent_queue.empty() or stop_requested:
                         await asyncio.sleep(0.01)
+                        continue
+
+                    current_epoch = relay.active_epoch or bound_epoch
+                    if current_epoch is None:
+                        await asyncio.sleep(CHALLENGE_INTERVAL_SEC)
                         continue
 
                     async with ws_lock:
@@ -111,9 +117,10 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                             await asyncio.sleep(0.01)
                             continue
                         c = await asyncio.to_thread(
-                            session_ipc.request_challenge, bound_epoch, 0.1
+                            session_ipc.request_challenge, current_epoch, 0.1
                         )
                     if c and c.get("success") and "token" in c:
+                        bound_epoch = c["epoch"]
                         await _send_frame(
                             "challenge",
                             {
@@ -169,39 +176,40 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
             # 1. Stop action has immediate priority
             if action == "stop":
                 stop_requested = True
-                req_id = payload.get("request_id", "ws-stop")
-                epoch = payload.get("epoch")
-                # Clear any pending intent
-                while not intent_queue.empty():
-                    try:
-                        intent_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+                try:
+                    req_id = payload.get("request_id", "ws-stop")
+                    epoch = payload.get("epoch")
+                    # Clear any pending intent
+                    while not intent_queue.empty():
+                        try:
+                            intent_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
 
-                disarmed = False
-                if session_ipc is not None:
-                    async with ws_lock:
-                        ok, stop_msg = await asyncio.to_thread(
-                            session_ipc.stop, req_id, epoch, 1.0
+                    disarmed = False
+                    if session_ipc is not None:
+                        async with ws_lock:
+                            ok, _ = await asyncio.to_thread(
+                                session_ipc.stop, req_id, epoch, 1.0
+                            )
+                    else:
+                        ok, _ = await asyncio.to_thread(relay.stop, req_id, epoch, 1.0)
+
+                    if ok:
+                        disarmed = True
+                    else:
+                        lifecycle = websocket.app.state.lifecycle_client
+                        lc_ok, lc_state, _ = await asyncio.to_thread(
+                            lifecycle.stop_controller
                         )
-                else:
-                    ok, stop_msg = await asyncio.to_thread(
-                        relay.stop, req_id, epoch, 1.0
-                    )
+                        ok = lc_ok
+                        disarmed = bool(lc_ok and lc_state == "inactive")
 
-                if ok:
-                    disarmed = True
-                else:
-                    lifecycle = websocket.app.state.lifecycle_client
-                    lc_ok, lc_state, _ = await asyncio.to_thread(
-                        lifecycle.stop_controller
+                    await _send_frame(
+                        "ack", {"action": "stop", "success": ok, "disarmed": disarmed}
                     )
-                    ok = lc_ok
-                    disarmed = bool(lc_ok and lc_state == "inactive")
-
-                await _send_frame(
-                    "ack", {"action": "stop", "success": ok, "disarmed": disarmed}
-                )
+                finally:
+                    stop_requested = False
 
             # 2. Bind action to attach active operator session
             elif action == "bind":
@@ -355,7 +363,6 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
         # FAIL CLOSED: If the owning WebSocket connection drops, immediately release and stop!
         relay.release_owner_binding(session_id)
         if session_ipc is not None:
-            relay.close()
             logger.info("Closing session IPC; triggering fail-closed disarm")
             try:
                 if bound_epoch is not None:
@@ -364,3 +371,4 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                 pass
             finally:
                 session_ipc.close()
+                relay.close()

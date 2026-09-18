@@ -50,6 +50,12 @@ class OperatorRelay:
         with self._lock:
             return self._owner_client
 
+    @property
+    def active_epoch(self) -> int | None:
+        """Return the active epoch for the owner session."""
+        with self._lock:
+            return self._active_epoch
+
     def claim_owner_binding(
         self,
         operator_id: str,
@@ -148,23 +154,30 @@ class OperatorRelay:
         timeout_sec: float = 3.0,
     ) -> tuple[bool, str | None]:
         """
-        Issue immediate stop request to operator agent and revoke owner connection.
+        Issue immediate stop request to operator agent without revoking ownership.
 
         Independent of ownership: any connected client or stop request can stop the tank.
         """
         with self._lock:
-            owner_to_close = self._owner_client
-            self._clear_owner_state_locked()
+            owner_client = self._owner_client
 
-        if owner_to_close is not None:
+        if owner_client is not None:
             try:
-                res = owner_to_close.stop(
+                return owner_client.stop(
                     request_id=request_id, epoch=epoch, timeout_sec=timeout_sec
                 )
-                owner_to_close.close()
-                return res
-            except Exception:
-                owner_to_close.close()
+            except Exception as exc:
+                logger.warning(
+                    "Stop request on owner client failed, clearing broken owner and falling back: %s",
+                    exc,
+                )
+                with self._lock:
+                    if self._owner_client is owner_client:
+                        try:
+                            self._owner_client.close()
+                        except Exception:
+                            pass
+                        self._clear_owner_state_locked()
 
         fallback_client = self.create_client()
         try:
@@ -269,12 +282,15 @@ class OperatorRelay:
                     "No active control connection holding ownership",
                 )
             try:
-                return client.arm(
+                ok, err, msg = client.arm(
                     epoch=epoch,
                     tracks_raised=tracks_raised,
                     request_id=request_id,
                     timeout_sec=timeout_sec,
                 )
+                if ok:
+                    self._active_epoch = epoch
+                return ok, err, msg
             except Exception as exc:
                 return False, WebControlErrorCode.CONTROLLER_UNAVAILABLE.value, str(exc)
 
