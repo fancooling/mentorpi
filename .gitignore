@@ -36,6 +36,7 @@ docker/original/.source.tmp.*/
 mentorpi/src/simulations/mentorpi_description/meshes/tank/wheel_link.stl
 
 # Ubuntu Tank build, release, and packaging artifacts
+dist/
 ubuntu_tank/dist/
 ubuntu_tank/.work/
 ubuntu_tank/debug/

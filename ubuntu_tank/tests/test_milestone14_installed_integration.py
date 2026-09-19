@@ -235,6 +235,37 @@ class TestPackagingAndAssetClosure(BaseMilestone14TestCase):
         self.assertIn("MentorPi Tank Restricted Lifecycle Helper", res_lc.stdout)
 
 
+class TestLauncherSourceImmutability(unittest.TestCase):
+    """Help/import probes must not modify writable application source trees."""
+
+    def test_repeated_clean_environment_help_preserves_source_hash(self):
+        """Run actual launchers without cached bytecode or inherited -B settings."""
+        with tempfile.TemporaryDirectory(prefix="mentorpi-launcher-source-") as root:
+            os.makedirs(os.path.join(root, "bin"))
+            for package in ("ubuntu_tank_web", "ubuntu_tank_operator"):
+                shutil.copytree(
+                    os.path.join(UBUNTU_TANK_DIR, "src", package),
+                    os.path.join(root, "src", package),
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                )
+            for name in ("mentorpi-tank-web", "mentorpi-tank-lifecycle"):
+                launcher = os.path.join(root, "bin", name)
+                shutil.copy2(os.path.join(UBUNTU_TANK_DIR, "bin", name), launcher)
+                before = compute_tree_sha256(os.path.join(root, "src"))
+                for _ in range(2):
+                    result = subprocess.run(
+                        [sys.executable, launcher, "--help"],
+                        env={"PATH": "/usr/bin:/bin"},
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(
+                        compute_tree_sha256(os.path.join(root, "src")), before
+                    )
+
+
 class TestProductionSystemdConfinement(unittest.TestCase):
     """Test production systemd confinement and sandboxing directives."""
 

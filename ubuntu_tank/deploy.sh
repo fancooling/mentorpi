@@ -5,6 +5,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+py_bin="python3"
+if [ -x "${WORKSPACE_ROOT}/.venv/bin/python" ]; then
+  py_bin="${WORKSPACE_ROOT}/.venv/bin/python"
+fi
+
 usage() {
   cat <<'EOF'
 MentorPi Native Ubuntu Tank Controller - Deployment & Operations CLI
@@ -15,6 +20,7 @@ Usage:
 Core Commands:
   help                           Display this help manual and safety guidelines
   test                           Run hardware-free unit tests and source boundary verification
+  target-test                    Verify a built/installed Pi release; optional prebuilt deployment scenarios
 
 Host & ROS Setup (Milestone 2):
   check-host                     Read-only verification of OS, architecture, EEPROM, and devices
@@ -55,11 +61,6 @@ cmd_test() {
   echo "============================================================"
   echo "Running Hardware-Free Test Suite"
   echo "============================================================"
-
-  local py_bin="python3"
-  if [ -x "${WORKSPACE_ROOT}/.venv/bin/python" ]; then
-    py_bin="${WORKSPACE_ROOT}/.venv/bin/python"
-  fi
 
   # 1. Source boundary gate
   echo ""
@@ -150,9 +151,17 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone14_installed_integration.py" -v
 
   echo ""
+  echo "--> Running Milestone 14.1 Target Test Orchestrator unit & contract tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_target_test.py" -v
+
+  echo ""
   echo "============================================================"
   echo "All tests PASSED successfully!"
   echo "============================================================"
+}
+
+cmd_target_test() {
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/target_test.py" "$@"
 }
 
 # Load ROS and the active release overlay for operator commands, falling back to
@@ -304,7 +313,7 @@ cmd_teleop() {
   fi
 
   local teleop_config_args
-  if ! teleop_config_args="$(python3 "${SCRIPT_DIR}/scripts/config_migration.py" teleop-args "${UBUNTU_TANK_CONFIG:-/etc/opt/ubuntu_tank/controller.yaml}")"; then
+  if ! teleop_config_args="$("${py_bin}" "${SCRIPT_DIR}/scripts/config_migration.py" teleop-args "${UBUNTU_TANK_CONFIG:-/etc/opt/ubuntu_tank/controller.yaml}")"; then
     return 1
   fi
   local -a host_teleop_args
@@ -449,27 +458,27 @@ cmd_bench() {
     ROS_SECURITY_ENABLE="${ROS_SECURITY_ENABLE:-true}" \
     ROS_SECURITY_STRATEGY="${ROS_SECURITY_STRATEGY:-Enforce}" \
     ROS_SECURITY_KEYSTORE="${sec_keystore}" \
-    PYTHONPATH="${WORKSPACE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${SCRIPT_DIR}/scripts/bench_acceptance.py" "$@"
+    PYTHONPATH="${WORKSPACE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/bench_acceptance.py" "$@"
 }
 
 cmd_package() {
   echo "--> Packaging release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" package "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" package "$@"
 }
 
 cmd_install() {
   echo "--> Installing release artifact..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" install "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" install "$@"
 }
 
 cmd_activate() {
   echo "--> Activating release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" activate "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" activate "$@"
 }
 
 cmd_rollback() {
   echo "--> Rolling back to previous release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" python3 "${SCRIPT_DIR}/scripts/deployment_manager.py" rollback "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" rollback "$@"
 }
 
 cmd_start() {
@@ -723,6 +732,9 @@ case "${COMMAND}" in
     ;;
   test)
     cmd_test "$@"
+    ;;
+  target-test)
+    cmd_target_test "$@"
     ;;
   check-host)
     "${SCRIPT_DIR}/scripts/check_host.sh" "$@"

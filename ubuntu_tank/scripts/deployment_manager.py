@@ -2830,12 +2830,6 @@ class ReleaseManager:
                 "systemctl command not available; cannot verify controller is stopped."
             )
 
-        optional_units = {
-            "mentorpi-tank-stack.target",
-            "mentorpi-tank-web.service",
-            "mentorpi-tank-lifecycle.service",
-            "mentorpi-tank-operator.service",
-        }
         for unit in (
             "mentorpi-tank-stack.target",
             "mentorpi-tank-web.service",
@@ -2848,11 +2842,10 @@ class ReleaseManager:
                 ["systemctl", "is-active", unit],
                 capture_output=True,
                 text=True,
+                timeout=timeout_sec,
             )
             status = res.stdout.strip()
             if not status:
-                if unit in optional_units:
-                    continue
                 raise RuntimeError(
                     f"Failed to query status of {unit}: empty response or query failure."
                 )
@@ -2865,6 +2858,7 @@ class ReleaseManager:
                     ["systemctl", "stop", unit],
                     capture_output=True,
                     text=True,
+                    timeout=timeout_sec,
                 )
                 if stop_res.returncode != 0:
                     raise RuntimeError(
@@ -2885,6 +2879,7 @@ class ReleaseManager:
                     ["systemctl", "is-active", unit],
                     capture_output=True,
                     text=True,
+                    timeout=timeout_sec,
                 )
                 poll_status = poll_res.stdout.strip()
                 if poll_status in ("inactive", "failed", "unknown"):
@@ -2904,7 +2899,9 @@ class ReleaseManager:
             if not stopped:
                 # Escalation: send SIGKILL if still active or deactivating
                 subprocess.run(
-                    ["systemctl", "kill", "-s", "SIGKILL", unit], check=False
+                    ["systemctl", "kill", "-s", "SIGKILL", unit],
+                    check=False,
+                    timeout=timeout_sec,
                 )
                 time.sleep(0.5)
 
@@ -2912,6 +2909,7 @@ class ReleaseManager:
                     ["systemctl", "is-active", unit],
                     capture_output=True,
                     text=True,
+                    timeout=timeout_sec,
                 )
                 final_status = final_res.stdout.strip()
                 if final_status not in ("inactive", "failed", "unknown"):
@@ -3029,7 +3027,11 @@ class ReleaseManager:
         return ReleaseManager.merge_udev_rule(rule, matches[0])
 
     def _stage_host_files(self, candidate_dir: str):
-        """Stage host files to temporary targets on destination filesystem, fsync, and atomic rename."""
+        """Atomically stage candidate host files after stopping and snapshotting.
+
+        Remove obsolete web/lifecycle units for native-only releases, preserving
+        the owner's web configuration and the transaction's recovery snapshot.
+        """
         udev_target = os.path.join(self.udev_dir, "99-mentorpi-rrc.rules")
         candidate_udev_src = os.path.join(
             candidate_dir, "host", "99-mentorpi-rrc.rules"
@@ -3091,6 +3093,13 @@ class ReleaseManager:
                 with open(src, "rb") as f:
                     data = f.read()
                 atomic_write_file(dst, data, mode=0o644)
+            elif os.path.basename(dst) in (
+                "mentorpi-tank-web.service",
+                "mentorpi-tank-lifecycle.service",
+            ) and os.path.lexists(dst):
+                # Native-only activation must establish a native host baseline.
+                # The transaction snapshot retains these units for recovery.
+                os.unlink(dst)
 
         target_env = os.path.join(self.etc_dir, "mentorpi-tank.env")
         if os.path.isfile(target_env) or os.path.isfile(

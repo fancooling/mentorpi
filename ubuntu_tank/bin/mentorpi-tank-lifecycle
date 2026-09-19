@@ -15,6 +15,10 @@ import signal
 import sys
 import time
 
+# Preserve immutable release hashes when this helper runs with root privileges.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 bin_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
 src_dir = os.path.join(workspace_root, "src")

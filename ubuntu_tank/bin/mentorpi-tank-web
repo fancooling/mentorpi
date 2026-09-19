@@ -12,6 +12,10 @@ from __future__ import annotations
 import os
 import sys
 
+# Installed release contents are hashed; even root-run probes must not add caches.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 bin_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
 src_dir = os.path.join(workspace_root, "src")

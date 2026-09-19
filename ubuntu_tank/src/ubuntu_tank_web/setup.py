@@ -1,4 +1,4 @@
-"""Install the ubuntu_tank_web Python package."""
+"""Install the web package and explicit ROS package-index/manifest metadata."""
 
 from setuptools import find_packages, setup
 
@@ -8,6 +8,13 @@ setup(
     name=package_name,
     version="1.0.0",
     packages=find_packages(),
+    data_files=[
+        (
+            "share/ament_index/resource_index/packages",
+            ["resource/" + package_name],
+        ),
+        ("share/" + package_name, ["package.xml"]),
+    ],
     install_requires=[
         "fastapi",
         "uvicorn",

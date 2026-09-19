@@ -223,9 +223,10 @@ controller per active page and clean it up on component unmount.
 [Vue introduction](https://vuejs.org/guide/introduction.html) and
 [Vite PWA guide](https://vite-pwa-org.netlify.app/guide/).
 
-Build on the workstation or build host and package the static output with the
-backend. The Pi serves those files without a Node.js server or frontend build
-tools at runtime. A web app manifest defines the name, icons, start URL, scope,
+Build on the workstation/build host, or on the Pi 5 with Node.js and npm installed
+as build-time dependencies, and package the static output with the backend.
+The Pi serves those files without a Node.js server or frontend build tools at
+runtime. A web app manifest defines the name, icons, start URL, scope,
 and standalone display. Use the same stable HTTPS origin for installation,
 API calls and WSS; document certificate trust on phones.
 
@@ -532,6 +533,279 @@ Exit: real browser tests against a mocked agent satisfy every interaction in §2
 Exit: reproducible target-Pi installation and recovery pass; motion gates remain
 blocked until raised-track testing is explicitly undertaken.
 
+### Milestone 14.1 — Real Pi 5 installation and deployment integration tests
+
+Implement and run a dedicated integration suite on a real ARM64 Pi 5 running
+the supported native Ubuntu image. **Always build and install before running
+integration tests.** The owner or deployment pipeline runs the complete production
+build, packaging, installation, and activation workflow first; the integration
+test then verifies the resulting installed system. It must not perform an implicit
+initial build or installation to satisfy missing prerequisites. Organize tests
+around complete workflows and their final state, not individual scripts. Expose
+verification through a separate, explicit target-test command, outside the default
+development-machine test run. Lifecycle/recovery scenarios can change installed
+files and services, but their verification likewise follows the corresponding
+completed deployment or recovery operation. Keep motor power off
+and motion disarmed throughout; movement testing remains Milestone 15.
+
+Required sequence:
+
+1. Prepare the host and dependencies using the production setup commands, including
+   any required reboot.
+2. Build the frontend from the checked-out source:
+
+   ```bash
+   cd ubuntu_tank/web
+   npm ci
+   npm run build
+   ```
+
+   This generates `ubuntu_tank/web/dist/`; keep it ignored by Git. Run the build
+   on the Pi 5 or transfer the generated output from the build computer to the
+   packaging workspace. Node.js/npm are build-time requirements only.
+3. Build the native ROS workspace and package the complete release, including
+   the generated frontend assets. Install and activate that release on the Pi 5
+   using the production deployment commands. Stop if any step fails.
+4. Run integration verification against that installed, active release. Check
+   release identity, manifests, and installed frontend assets before service
+   tests. Missing or stale build/install prerequisites must produce an actionable
+   failure, not trigger a build, installation, or a misleading pass. Merely building
+   `web/dist/` in the checkout does not update an already installed release.
+
+After installation, run from the repository root:
+
+```bash
+sudo ./ubuntu_tank/deploy.sh target-test --expected-release-id YOUR_INSTALLED_RELEASE_ID
+```
+
+The command never builds or performs an initial installation. Normal runs verify
+the installed system and service lifecycle, leaving motion stopped/disarmed.
+`--expected-release-id` rejects an unintended or stale active release; omit it
+only when intentionally verifying whichever release is currently active.
+
+Repeat-install, upgrade, recovery and offline rollback scenarios are opt-in:
+add `--deployment-scenarios --release-archive /absolute/path/current.tar.zst
+--upgrade-release-archive /absolute/path/upgrade.tar.zst
+--native-release-archive /absolute/path/native-release.tar.zst` to that command.
+All archives must be built beforehand. The repeat-install archive must match the
+active release; the upgrade archive must be web-enabled with a different release
+ID. The native archive must be a genuinely production-built ARM64 release (including
+the ROS workspace and SROS2 policy tooling, without web/lifecycle units). Build
+that archive from the native-only milestone using its production packaging
+workflow; do not construct a synthetic install tree. The suite installs and
+activates that baseline, activates the web release, then uses production rollback
+to verify the native result. The archive must use the target's release prefix.
+For these optional scenarios, the operator login defaults to `SUDO_USER`; direct
+root invocation requires `--operator-user LOGIN`. Archive paths and the login
+are checked before host mutation, except
+that archive integrity and production build provenance are validated by the
+production installer. `--inspect-only` does not require the archive or login.
+Cleanup confirms services are stopped before restoring baseline files and treats
+shutdown or systemd reload failure as a failed run. Real target execution remains
+required; passing development tests does not verify Pi installation.
+
+- [x] Separate production build/installation from integration verification using the documented
+  production entrypoints: host preflight and preparation, dependency setup,
+  build, packaging, installation, and activation, including required reboots.
+  Require successful completion before starting integration verification; remove
+  automatic initial setup/build/install from the integration-test entrypoint.
+  Let the production entrypoints invoke their helpers normally; do not create a separate
+  test for each script or installation step. Preserve production safety checks
+  and stop the workflow if a required step fails.
+- [x] Implement target checks and a reproducible setup procedure for a clean
+  Pi image with a recoverable baseline. Use real apt/dpkg, ROS, systemd, udev,
+  users/groups, and production paths; do not replace them with mocked commands,
+  synthetic install trees, or a development-machine imitation of the Pi.
+- [x] After the whole installation/deployment workflow completes, run a
+  comprehensive verification phase covering every installed configuration artifact:
+  package sources and locked versions, users/groups, device rules, runtime
+  directories, service units and enablement, environment files, controller and
+  web settings, DDS/SROS2 configuration and credentials, TLS files, release
+  manifests, frontend assets, and the active-release link.
+- [x] Check installed file locations, ownership, permissions, preserved user
+  settings, and generated values against the installation inputs and deployment
+  contract. Load configuration through its actual consumer and verify effective
+  service settings, ARM64 imports, protected IPC, native DDS communication,
+  HTTPS/static delivery, and status/log access while the controller is stopped.
+  Reading checked-in configuration text alone is not installation verification.
+- [x] Exercise fresh installation, repeat installation, upgrade, activation,
+  controlled interruption and recovery, and offline rollback to web-enabled and
+  native-only baselines. Verify configuration preservation, legacy snapshots,
+  removal of obsolete installed files, and stopped/disarmed state after recovery.
+  Run each as a complete workflow on the recoverable target, followed by checks
+  of the resulting system state, with documented reset steps. For an interrupted
+  workflow, verify the recovered state after recovery completes.
+- [x] Record the exact release and starting image, invoked commands, exit codes,
+  installed-state checks, logs, and recovery outcome. Missing target services or
+  unexecuted cases remain pending; a mock or development-machine pass cannot
+  complete this milestone.
+
+Exit: the complete installation/deployment workflow and recovery scenarios have
+reproducible real-Pi execution evidence, and comprehensive post-run verification
+confirms that all required files and configuration are in place and work through their
+real consumers. The Pi can be restored to the recorded baseline without enabling
+motion. These results supply the target evidence required by Milestone 14.
+
+#### Installed configuration and generated-file verification checklist
+
+Verify this checklist after the complete workflow, not through separate tests of
+each producing script. Paths below use the default production layout;
+`<release>` is `/opt/ubuntu_tank/releases/<release-id>` and `<keystore>` is
+`/etc/opt/ubuntu_tank/security/keystore`. Resolve configured overrides and symlink
+targets from the actual installation. Copied configuration is included because
+its installed destination must be verified even when its contents were not
+generated. Do not log private keys or credential contents.
+
+| Installed configuration / output | Producer | Required post-run verification |
+| --- | --- | --- |
+| `/etc/opt/ubuntu_tank/controller.yaml` | `deployment_manager.py` installation; copied from release defaults only when missing | Real controller configuration loader accepts it; calibration and safety limits match installation inputs, and existing owner settings survive reinstall/upgrade. |
+| `/etc/opt/ubuntu_tank/mentorpi-tank.env` | `deployment_manager.py` installation and `migrate_host_env()` during activation | Systemd and launchers load the intended ROS/DDS/security environment; profile, keystore, log and controller-config paths resolve; unrelated owner settings survive migration. |
+| `/etc/opt/ubuntu_tank/web/web.yaml` | `deployment_manager.py` installation; copied only when missing | Web configuration loader accepts listen address/port, origins, TLS paths, IPC paths and motion limits; actual HTTPS access works at the configured address and existing settings are preserved. |
+| `/etc/systemd/system/mentorpi-tank.service`, `mentorpi-tank-operator.service`, `mentorpi-tank-web.service`, `mentorpi-tank-lifecycle.service`, `mentorpi-tank-recover.service`, `mentorpi-tank-stack.target` (all in that directory) | `deployment_manager.py` activation copies release units | Systemd loads the installed units without errors, resolves executable/environment paths, and applies the intended users, groups, dependencies and restrictions. Check actual start/stop and recovery behavior with motor power off. Check enablement against the documented setup procedure; a unit's `[Install]` section alone does not enable it. |
+| `/etc/udev/rules.d/99-mentorpi-rrc.rules` | `deployment_manager.py` merges candidate rule with the selected device identity | Rule retains the selected serial or USB-port discriminator; real udev binds the intended device as `/dev/rrc` with the required group/access. Verify no ambiguous device selection. |
+| `/etc/tmpfiles.d/ubuntu-tank.conf` | `deployment_manager.py` copies release tmpfiles configuration and invokes `systemd-tmpfiles` | Real tmpfiles processing creates the required runtime/state paths with effective owner/group/mode, including after reboot. Verify the resulting filesystem, not just directives. |
+| `<release>/config/controller.yaml`, `config/web/web.yaml`, `config/fastdds/loopback.xml` | `deployment_manager.py` packaging copies configuration; installation extracts it | Manifest integrity passes; defaults are available; active Fast DDS profile is accepted and real native DDS traffic stays on the configured loopback transport. Distinguish release defaults from mutable host configuration above. |
+| `<release>/config/sros2/governance.xml`, `policies.xml`, `permissions/{controller,guard,bridge,operator,status}_permissions.xml`, `schemas/omg_shared_ca_governance.xsd`, `schemas/omg_shared_ca_permissions.xsd` | Packaging copies SROS2 policy inputs and schemas | Installed policy validation succeeds; generated signed grants correspond to the selected release and real secured participants communicate as intended. |
+| `<keystore>/identity_ca.key.pem`, `identity_ca.cert.pem`, `permissions_ca.key.pem`, `permissions_ca.cert.pem`, `governance.xml`, `governance.p7s` | `deployment_manager.py` `_provision_sros2_keystore()` generates/preserves CA identities and signs the policy | Validate certificate/key pairs and signed governance, owner/mode and service access; preserve existing identities across upgrades. Resolve the live keystore link to a complete published generation. |
+| `<keystore>/enclaves/ubuntu_tank/<role>/{key.pem,cert.pem,identity_ca.cert.pem,permissions_ca.cert.pem,governance.p7s,permissions.p7s}` for each of `controller`, `guard`, `bridge`, `operator`, `status` | Same SROS2 provisioning function | Every enclave has its full file set; certificates and signatures validate; intended service roles can read their credentials and start with security enforcement. Temporary `request.csr` files are removed after successful generation. |
+| `/var/opt/ubuntu_tank/web/certs/server.crt`, `server.key` (or the paths configured in `web.yaml`) | Web entrypoint calls `ubuntu_tank_web/tls.py` on startup; not created by package installation alone | After the explicit web-service startup phase, verify readable certificate, matching protected private key, validity and configured hostname/IP coverage, and browser HTTPS trust. Preserve valid owner-provided credentials. |
+| `/etc/ros/rosdep/sources.list.d/10-ubuntu-tank.list` | `install_ros2.sh install-deps` generates it | Rosdep consumes the local verified source files; obsolete unpinned `20-default.list` is absent after this workflow. |
+| `/var/opt/ubuntu_tank/rosdep_sources/index-v4.yaml`, `base.yaml`, `python.yaml`, `ruby.yaml` | `install_ros2.sh install-deps` downloads and verifies pinned inputs | Files match the lock's hashes and dependency resolution succeeds. Verify the effective `ROSDISTRO_INDEX_URL` used by the command separately; downloading `index-v4.yaml` does not prove the resolver used that local file. |
+| System locale configuration affected by `locale-gen` / `update-locale` (`/etc/locale.gen` where used; `/etc/default/locale` or the target package's actual locale-config destination) | `install_ros2.sh prepare-host` invokes distribution locale tools | Record the files actually modified by the installed tools; a fresh process has the requested UTF-8 locale and the generated locale is available. Do not assume every listed distribution-dependent path exists. |
+| Ubuntu APT source files actually changed under `/etc/apt/sources.list` and `/etc/apt/sources.list.d/`; ROS source definitions and signing key files installed by `ros2-apt-source` | `prepare-host` invokes `add-apt-repository`; `install-ros` installs the pinned repository package | Enumerate actual source/key paths through the target package inventory (`dpkg-query -L ros2-apt-source`) and resolved links, including package-owned files outside `/etc`. Verify enabled repositories, signature-key references, and locked package versions through real APT/dpkg. Do not invent a fixed ROS source filename that the script does not specify. |
+| Account databases affected by provisioning: `/etc/passwd`, `/etc/group`, and associated `/etc/shadow` / `/etc/gshadow` entries managed by the OS tools | `deployment_manager.py` invokes account/group management tools | Verify accounts and membership through NSS (`getent`/`id`), including controller, operator, web, hardware-access, operator-access and status-access roles and the selected human operator. Do not compare entire host databases or dump password hashes. |
+
+Also verify the following generated state and supporting artifacts. These are
+not all configuration files, but a correct installation depends on them:
+
+| Output | Producer | Required post-run verification |
+| --- | --- | --- |
+| `/var/opt/ubuntu_tank/deployment/host-baseline-pre.txt`, `host-baseline-post.txt`, `host-baseline.txt` | `install_ros2.sh prepare-host` | Accepted baseline matches the running target after required reboot; a pending-reboot snapshot must not be mistaken for an accepted baseline. |
+| `/var/opt/ubuntu_tank/deployment/activation-journal` | `deployment_manager.py` | Selected release and transaction state agree with the installed system; successful completion has no unresolved transaction. |
+| `/var/opt/ubuntu_tank/deployment/snapshots/<tx-id>/{symlink_target,metadata.json,checksums.sha256,security.json}`, backed-up configuration/unit/rule files, and `keystore/` when present | `SnapshotManager` during activation | Verify checksums, tracked/present-file metadata, recorded release, credential ownership, and actual restoration. Conditional backups include `controller.yaml`, `mentorpi-tank.env`, `web.yaml`, the six systemd units/target above, and `99-mentorpi-rrc.rules`; absence is valid only when the saved baseline lacked that file. |
+| `<release>/release-manifest.txt`, `<release>/install/production-build.json`, generated `install/setup.*`, `install/local_setup.*`, package environment hooks and installed launch/configuration files | Colcon/build scripts generate install tree and provenance; packaging generates manifest | Enumerate the full generated install tree from the manifest/provenance rather than hard-coding every colcon filename. Verify hashes, ARM64 imports, correct production prefix, non-synthetic build provenance, and no dependency on the checkout/build root. |
+| `<release>/web/dist/index.html`, `manifest.webmanifest`, `sw.js`, and all emitted asset/service-worker files | Frontend build produces assets; deployment packaging copies `web/dist` | Every emitted file is included in the manifest and served correctly by the installed web service; target serving requires no Node.js runtime. |
+| `/opt/ubuntu_tank/current` and `/etc/opt/ubuntu_tank/security/keystore` symlinks | `deployment_manager.py` publishes release/security generations | Links resolve to the intended complete release and credential generation; activation, rollback and recovery leave them consistent. |
+| `/opt/ubuntu_tank/libexec/recover-activation`, `deployment_manager.py`, `config_migration.py` | Installation generates the recovery launcher and copies its helper modules | Installed recovery runs independently of the checkout and selected release, with correct executable/read permissions. |
+| `/run/ubuntu_tank/`, `/run/ubuntu_tank-web/`, `/run/lock/ubuntu_tank/`, deployment/operator lock files, configured IPC sockets, and `/var/opt/ubuntu_tank/{deployment,ros-log,operator-log,web}` | Provisioning/tmpfiles create paths; running services create sockets and other runtime files | Verify live ownership and access, lock coordination and socket connectivity in the appropriate service phase; verify reboot recreation. Do not require service-owned sockets while their service is stopped. |
+
+For the build phase, additionally record the actual disposable-root destination
+and verify `.ubuntu-tank-build-root.json`, its generated `etc/passwd`, `etc/group`,
+`etc/machine-id`, copied `var/lib/dpkg/status`, generated `var/lib/dpkg/arch`, and
+the host configuration copied by `prepare_build_root.py`: `etc/os-release`,
+`alternatives/`, `ld.so.cache`, `ld.so.conf`, `ld.so.conf.d/`, `nsswitch.conf`,
+`localtime`, `timezone`, `locale.alias`, `default/locale`, `python3/`, and
+`python3.14/`, where present on the source host. These are build-root artifacts,
+not additional production-host configuration. Use the provenance and resulting
+real build to establish correctness; do not create a simulated root for this test.
+
+Record package-tool outputs whose filenames depend on the installed package
+version from the actual target's package inventory. Temporary downloads, candidate
+closure manifests under `/tmp`, APT transaction caches, retired credential
+generations, and ROS/rosdep caches are not mandatory persistent configuration;
+check their documented cleanup or failure-preservation behavior when applicable.
+Extend this inventory if the scripts gain new outputs. Every applicable checklist
+entry must have a verification result or an explicit pending/failure reason;
+mere file existence is insufficient.
+
+### Milestone 14.2 — Remove development-machine installation simulations
+
+Remove tests that imitate a Pi installation on the development machine.
+Milestone 14.1's end-to-end integration testing is the way to verify installation
+and deployment; do not port or replace individual simulation tests with target
+test cases. Preserve existing milestone numbers and retain tests of runtime
+product behavior.
+
+- [ ] Verify each candidate in the inventory below against its current test body,
+  setup/teardown, helper calls, and assertions before deleting it. Record a
+  remove/retain/split decision and a short reason for each test method. Remove
+  a case when it tests installation/deployment by substituting a Pi host, package
+  manager, installed filesystem, service provisioning, or release workflow on
+  the development machine. A mock, temporary directory, or deployment-related
+  filename alone does not qualify a test for removal. Do not delete whole mixed
+  files or classes without checking every method.
+- [ ] Remove those simulation cases and fixtures used only by them. Split mixed
+  test files as needed: retain robot control, motion safety, operator, web/API,
+  and state-transition tests, along with reusable pure-function tests that do
+  not pretend to validate an installed Pi environment.
+- [ ] Update test runners and documentation so development tests exercise
+  product behavior and the separate target suite verifies installation and
+  deployment. Remove stale imports, test counts, and claims that development
+  fixtures establish real-Pi installation correctness.
+- [ ] Run the retained development tests to verify the cleanup preserves product
+  and motion-safety coverage. Keep installation/deployment verification in the
+  Milestone 14.1 integration suite, without requiring one-to-one replacements
+  for removed tests.
+
+Exit: development-machine installation/deployment simulations are removed;
+Milestone 14.1 provides installation verification, and product and motion-safety
+regression coverage remains intact.
+
+#### Removal candidate inventory (code scan, 2026-09-19)
+
+All paths below are relative to `ubuntu_tank/tests/`. These are concrete candidates
+for developer verification, not permission to delete every listed class wholesale.
+Class names identify all methods to inspect unless specific methods are listed.
+
+| File | Candidate classes or methods | What currently substitutes for the installed Pi |
+| --- | --- | --- |
+| `test_install_workflow.py` | `TestHostPreflight`, `TestMutualExclusion` | Execute `check_host.sh` with `UBUNTU_TANK_MOCK_TARGET` and overridden architecture, OS, EEPROM, containers, or serial-device state. Inspect exceptions such as `test_non_mock_process_table_scan_clean` separately. |
+| `test_install_workflow.py` | `TestDryRunCommands`, `TestAptRecoveryWorkflow`, `TestRebootSequence` | Installer dry runs, synthetic candidate manifests/reboot baselines, and fake `dpkg`/`apt-get` executables exercise host setup and recovery without installing on the Pi. |
+| `test_install_workflow.py` | `TestDeploymentLock`; `TestSecurityAndCliGuards.test_reject_all_mock_and_override_variables_without_dry_run` | A temporary deployment lock and injected installer overrides exercise simulated setup interlocks. Verify the installation purpose of each assertion before removal. |
+| `test_milestone3_port.py` | `TestInstallRos2ClosureManifest.test_generate_candidate_manifest_rejects_unreadable_artifact`, `test_generate_candidate_manifest_rejects_duplicate_package`, `test_generate_candidate_manifest_includes_unlocked_archives` | Source `install_ros2.sh` functions with fake `dpkg-deb`/`apt-cache` and dummy archives standing in for package installation inputs. Distinguish these from actual artifact-parser tests in the same class. |
+| `test_milestone5_deployment.py` | `TestPackagingAndReleaseManifest`, `TestInstallationAndImmutability`, `TestAtomicActivationAndRollback`, `TestFaultInjectionAndBootRecovery` | `BaseDeploymentTestCase` builds temporary `/opt`, `/etc`, `/var`, `/run`, systemd and udev layouts; packaging uses `allow_staged_install=True`, and installation/activation use synthetic releases with target checks disabled. |
+| `test_milestone5_deployment.py` | `TestReviewRemediations.test_p1_finding1_self_contained_recovery_outside_checkout`, `test_p1_finding2_service_identity_and_ownership_normalization`, `test_p1_finding4_recovery_and_rollback_reject_unverified_baseline` | Package/install/provision/recover releases inside the temporary host hierarchy. Other methods in this class cover runtime behavior and require separate decisions. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound2.test_finding1_interrupted_rollback_is_journaled_and_recoverable`, `test_finding2_retried_activation_reconciles_pending_transaction` | Fabricated releases, snapshots, and journal state simulate interrupted deployment and retry. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound3.test_finding1_packaged_tree_production_prefix_no_checkout_leak`, `test_finding2_interrupted_install_resumes_host_provisioning` | Synthetic build/install trees and interrupted provisioning simulate installed releases outside the checkout. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound4.test_finding3_remove_executable_trailing_eof_and_subprocess_package`, `test_finding4_build_inside_disposable_root_at_actual_prefix` | Builder/packager tests use development fixtures and simulated build roots rather than a native installed Pi. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound5.test_finding2_explicit_copy_rootfs_to_target_and_failed_build_rejection` | Constructs fake Ubuntu 26.04/ARM64 rootfs metadata, ROS setup, and build payloads to exercise packaging and failed-build recovery. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound6.test_finding1_mutual_exclusion_fails_closed_across_entrypoints`, `test_finding2_fresh_installation_provisions_valid_sros2_keystore`, `test_finding4_nounset_disabled_during_ros_sourcing` | Simulated host inventory, temporary installed credentials, and fixture ROS setup exercise installation/build behavior. Split any runtime safety checks from installation simulation. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound7.test_legacy_pem_store_repaired_without_rotating_identity`, `test_policy_activation_rollback_and_interruption`, `test_preflight_rejects_before_install_and_activation_mutations`, `test_live_preflight_checks_host_and_exclusion_and_rejects_overrides`, `test_role_permissions_and_operator_membership`, `test_incomplete_security_snapshot_rejected_before_restore` | Temporary credential stores, release activation/snapshots, mocked host preflight, and mocked account provisioning stand in for installed-host operations. Check whether any method is solely a reusable integrity validator before deleting it. |
+| `test_milestone5_deployment.py` | `TestReviewFindingsRound8.test_wrong_prefix_and_changed_payload_are_rejected`, `test_conflicting_archive_rejected_identical_retry_preserved`, `test_development_tree_does_not_bypass_production_builder`, `test_empty_production_root_bootstraps_before_build`, `test_bootstrap_dry_run_and_destination_guards` | Fixture releases/build provenance, intercepted builder subprocesses, fake rootfs/bootstrap helpers, and dry-run bootstrap exercise deployment on the development machine. Separate pure integrity and destructive-path validation from installation simulation. |
+| `test_milestone7_dds_correction.py` | `TestHostEnvironmentMigrationAndRollback` | Temporary host directories and constructed legacy/candidate releases exercise installation, migration, activation, rollback, and recovery. Inspect the two direct `migrate_host_env` methods separately as possible pure transformation tests. |
+| `test_milestone11_operator_agent.py` | `TestDeploymentProvisioningAndLifecycle.test_service_identities_provisioning`, `test_deployment_manager_backup_and_restore_mappings` | Mocked root UID, passwd/group lookups and account-management subprocesses; temporary service files and snapshots simulate provisioning and rollback. |
+| `test_milestone14_installed_integration.py` | `TestPackagingAndAssetClosure.test_package_includes_web_dist_and_manifest_checksums`, `TestTransactionalActivationAndRollbackClosure`, `TestSnapshotWebConfigPreservation` | `BaseMilestone14TestCase` supplies a temporary Pi directory hierarchy; synthetic native/web releases and snapshot mutations simulate installed packaging, activation, rollback, and configuration restoration. |
+
+Inspect these neighboring tests too, but do not label them Pi installation
+simulations solely because they live beside the candidates:
+
+- `test_milestone5_deployment.py`: `TestSystemdUnitAndConfinementDirectives`
+  mixes isolated systemd/tmpfiles roots with actual consumer checks and
+  `test_target_udev_rule_creates_restricted_rrc_device`, which checks a real
+  connected target device. Remove only methods verified to imitate installation;
+  retain or place genuine target checks with the target suite. Likewise inspect
+  `TestDeploymentLockContention` and `TestNonInteractiveRunner` by purpose.
+- `test_milestone11_operator_agent.py`:
+  `TestDeploymentProvisioningAndLifecycle.test_tmpfiles_recreation_preserves_agent_access`
+  mixes static assertions with an optional real `systemd-tmpfiles --root` call.
+  Determine which parts simulate provisioning; do not describe static assertions
+  as a successful installation test.
+- `test_milestone14_installed_integration.py`: `TestProductionSystemdConfinement`
+  checks source units, while
+  `TestPackagingAndAssetClosure.test_launchers_import_release_packages_without_pythonpath`
+  actually runs checkout launchers. Neither performs a Pi installation despite
+  the file/class wording; classify their actual purpose before removal.
+- `test_milestone3_port.py`: `TestBuildWorkspaceScript` includes help/dry-run
+  checks and destructive-path rejection; `TestInstallRos2ClosureManifest` also
+  includes real `.deb` parsing. `test_install_workflow.py`: `TestVerifyLock`,
+  `TestUpstreamInputsVerification`, `TestExternalWorkingDirectory`, and the
+  remaining `TestSecurityAndCliGuards` methods need individual classification.
+  `test_dependency_closure.sh` verifies locks/manifests and tamper rejection;
+  it does not install packages or simulate a Pi host.
+
+Retain runtime tests even when they use mocks: bridge zeroing/watchdogs, supervisor
+heartbeats, launch command routing, operator ownership and leases, web lifecycle
+APIs, and browser input behavior. In particular, do not sweep away the runtime
+methods mixed into Milestone 5 review classes, the Milestone 3/4 controller tests,
+or Milestone 14's `TestLifecycleAndWebAvailability`,
+`TestCliAndBrowserMutualExclusion`, and
+`TestCachedClientRecoveryAndIncompatibleProtocol`. Pure schema, path-safety,
+checksum, and configuration-transformation tests are not automatically installation
+simulations. Check shared fixture users and `deploy.sh` test-runner references
+before removing helpers or entire modules. The inventory is a starting list;
+repeat the scan at implementation time and apply the same per-method decision
+to additional candidates.
+
 ### Milestone 15 — Raised-track web movement and failure acceptance
 
 - [ ] Observe all four directions via buttons and keyboard at conservative speed;
@@ -576,6 +850,6 @@ disarmed updates, and cached-client compatibility/recovery pass their gates;
 start/stop, arm/disarm, mouse/touch buttons, W/S/A/D, and Space work as specified.
 Only one operator controls motion, loss of input or connectivity cannot latch
 movement, reconnection never resumes it, and production DDS/security confinement
-remains effective. M10–M16 evidence, including M11.1, is complete and
+remains effective. M10–M16 evidence, including M11.1, M14.1, and M14.2, is complete and
 distinguishable from native M1–M9 evidence. Raised-track completion still does
 not authorize on-ground use.

@@ -1,7 +1,8 @@
 # Generate ROS message and service bindings for the MentorPi board interface.
-# Copied directly from Hiwonder MentorPi:
+# Adapted from Hiwonder MentorPi:
 # mentorpi/src/driver/ros_robot_controller_msgs/CMakeLists.txt.
-cmake_minimum_required(VERSION 3.8)
+# Require CMake 3.10 policies to avoid deprecated pre-3.10 compatibility.
+cmake_minimum_required(VERSION 3.10)
 project(ros_robot_controller_msgs)
 
 if(POLICY CMP0148)

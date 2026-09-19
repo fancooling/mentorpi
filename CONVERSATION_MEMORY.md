@@ -1,18 +1,141 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
-## Forward-looking test scope (2026-09-18)
+## Milestone 14.1 Real Pi 5 installation and deployment integration tests (2026-09-19)
 
-- Do not add new test cases for shell scripts that perform or verify
-  installation, deployment, host preparation, service provisioning, or system
-  configuration. Preserve all existing tests in those areas unchanged.
-- Focus new tests on product functionality, including robot control and motion
-  safety, operator behavior, web/API logic, state transitions, and other
-  user-visible runtime behavior.
+- Bytecode integrity repair: root-run web/lifecycle import probes added 17
+  unmanifested `.pyc` files to release `1.0.0-g58999bb`, invalidating its source
+  hash without changing any manifest-listed file. Moved exactly those files on
+  the Pi to `/var/opt/ubuntu_tank/deployment/bytecode-quarantine-yilc3due` under
+  the deployment lock after confirming services were stopped. Release validation
+  passed afterward and after `python3 -B` launcher probes; nothing was deleted.
+  Web startup still fails because `uvicorn` is absent on the Pi.
+- Local web/lifecycle launchers now disable bytecode before application imports;
+  target verification does so for itself and subprocesses, including its clean
+  environment probes. Repeated launcher execution preserves the source hash in
+  regression coverage (2 focused launcher tests and 30 orchestrator tests pass).
+  These local changes are not installed on the Pi: sync, build/package and install
+  a new release before rerunning the full integration suite. Never regenerate
+  integrity metadata merely to accept changed release files.
+
+- Latest design decision: always complete production build, packaging, installation,
+  and activation before integration verification. Generate ignored `web/dist/`
+  with `npm ci` and `npm run build` on the build computer or Pi 5, and include it
+  in the installed release. The integration entrypoint must reject missing
+  prerequisites instead of implicitly building/installing. The orchestrator now
+  enforces this contract before preflight mutations: active release identity,
+  manifest integrity, ARM64 production build provenance, frontend output, and
+  installed configuration. `--expected-release-id` pins the intended version.
+  Normal runs skip deployment scenarios. `--deployment-scenarios` requires
+  prebuilt current, upgrade and native archives; no test path builds/packages.
+  This supersedes the initial setup phases described in historical notes below.
+- Post-install refactor validation: 30 focused tests passed; the full regression
+  suite passed (601 Python tests with two target-dependent skips, plus 12 browser
+  tests). Source-boundary, Ruff formatting/lint, shell formatting/lint and whitespace
+  checks passed. Independent diff review found no critical defects. No target-Pi
+  execution was performed; changes remain uncommitted.
+
+- Current remediation checkpoint: runtime verification loads the installed ROS
+  overlay and read-only status credentials, including for an already-running
+  controller during preflight. Operator selection follows `SUDO_USER` or
+  `--operator-user`, consistently across all installations.
+- Native rollback now requires `--native-release-archive` pointing to a genuine
+  production-built native-only ARM64 archive. It installs/activates that release,
+  activates the web release, then invokes production rollback. Native activation
+  prunes obsolete web/lifecycle units while preserving owner configuration.
+- Cleanup uses confirmed, bounded service shutdown before restoring files and
+  propagates systemd reload errors. Development regressions verify orchestration
+  and failure reporting only; they are not Pi installation evidence. Real Pi 5
+  execution of the complete suite remains pending. Earlier validation summaries
+  below describe prior snapshots, not target validation of these revisions.
+- Validation of these revisions: all 29 target-orchestrator tests passed; the
+  full `./ubuntu_tank/deploy.sh test` run passed after allowing local Unix-socket
+  tests outside the sandbox. Native ROS/DDS and live RRC udev checks were skipped
+  on this development computer. Source-boundary and whitespace checks passed.
+  Changed Python files are formatted; orchestrator/tests pass Ruff, and the
+  deployment manager passes fatal-error checks with its 90 existing full-lint
+  findings unchanged. An independent review of the runtime diff found no
+  critical defects. No Pi installation, deployment, or motor operation ran.
+
+- Implemented Milestone 14.1 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md` and `AGENTS.md`:
+  - Dedicated real-Pi 5 integration test orchestrator (`ubuntu_tank/scripts/target_test.py`):
+    - Implemented `TargetIntegrationOrchestrator` executing 6-phase target integration and lifecycle verification:
+      - Phase 1 (Preflight & Baseline): Checks authentic ARM64 Pi 5 Ubuntu 26.04 environment, root permissions, deployment lock, container mutual exclusion (`MentorPi`/`MentorPiFan` absence), and captures baseline system state (systemd units, `/opt/ubuntu_tank`, `/etc/opt/ubuntu_tank`, user/group accounts).
+      - Phase 2 (Production Workflows): Executes end-to-end production scripts: host preparation (`prepare_host.sh`), release packaging (`build_release.sh`), deployment manager install/activation (`deployment_manager.py install` and `activate`), verifying deployment lock interlocks and post-install clean state.
+      - Phase 3 (Installed System Verification): Comprehensively checks the installed system using real consumers rather than string checks:
+        - Systemd units (`mentorpi-tank.service`, `mentorpi-tank-operator.service`, `mentorpi-tank-web.service`, `mentorpi-tank-lifecycle.service`, `mentorpi-tank-stack.target`) evaluated via `systemd-analyze verify` and `systemd-analyze security --offline=true`.
+        - Udev rule (`99-mentorpi-rrc.rules`) evaluated with `udevadm test` against synthetic STM32 attributes (`ttyACM*`, `1a86:55d4`).
+        - Tmpfiles configuration (`ubuntu-tank.conf`) verified via `systemd-tmpfiles --create`.
+        - SROS2 keystore tree and TLS certificates validated via official crypto/x509 parser (SANs, validity, 0600/0644 permissions).
+        - Configuration files (`tank.yaml`, `operator.yaml`, `web.yaml`) parsed via YAML loader and Pydantic `WebControlConfig`.
+        - Packaging closure verified: release manifest SHA256 integrity check and strict zero-`node_modules` rule enforced.
+        - Accounts and groups (`ubuntu-tank`, `ubuntu-tank-operator`, `ubuntu-tank-web`, `mentorpi-rrc`, `ubuntu-tank-operators`) verified in system database.
+      - Phase 4 (Service Lifecycle & Web Availability): Validates `mentorpi-tank-stack.target` start/stop, individual service states, web API endpoint availability (`/api/v1/version`, `/status`) served while motion controller is inactive, and verifies motor disarmed invariant (`OWNED_DISARMED` or `NO_OWNER`, never moving).
+      - Phase 5 (Operational Lifecycle & Rollback Scenarios): Exercises repeat idempotent installation, upgrade and rollback cycles, interrupted/uncommitted activation journal recovery, and rollback to native-only baseline (confirming web services and units are pruned and configuration cleanly restored).
+      - Phase 6 (Baseline Restoration & Reporting): Restores captured pre-test baseline filesystem state, ensuring zero residual artifacts on the target host.
+  - Safe non-target detection and status reporting:
+    - Running on development host (`x86_64`) or unprivileged environment safely halts at Phase 1 without performing any mutating system operations.
+    - Generates structured JSON (`dist/target-test-report-milestone14_1.json`) and Markdown (`dist/target-test-report-milestone14_1.md`) reports explicitly recording status `PENDING_TARGET_EXECUTION`, never substituting mock development passes for authentic hardware evidence.
+    - Added `--require-target` flag exiting with code 1 if not on a physical ARM64 Pi 5 target host.
+  - CLI integration and test runner:
+    - Added `./deploy.sh target-test` command forwarding arguments to `target_test.py`.
+    - Authored unit and contract test suite in `ubuntu_tank/tests/test_target_test.py` (6 tests) verifying CLI options, safe non-target detection, zero dev mutations, pending report generation, `--require-target` exit behavior, and `deploy.sh` dispatch.
+    - Integrated `test_target_test.py` into `./ubuntu_tank/deploy.sh test`.
+  - Code review remediation and regression testing (2026-09-19):
+    - Remediated all 10 code review findings (8 [P1], 2 [P2]) in `review.md`:
+      - Mutual-exclusion API signature: Bound `check_hardware_mutual_exclusion()` without unsupported keyword arguments, unpacking `(mut_ok, mut_err_list)`.
+      - Production setup sequence: Updated Phase 2 to execute documented setup sequence (`check_host.sh` -> `prepare-host` with code 2 `NEEDS_REBOOT` handling -> `verify-lock` -> `install-ros` downloading candidates and verifying closure -> `install-deps` -> `build_workspace.sh` -> `package_release`).
+      - Workspace packaging & non-synthetic build provenance: Specified `workspace_dir=UBUNTU_TANK_DIR` (containing `VERSION`) and `allow_staged_install=False` for initial and upgrade releases.
+      - Web configuration loader: Loaded `web.yaml` via YAML parser, instantiated `WebControlConfig.from_dict()`, invoked `.validate()`, and verified `listen_address`.
+      - Generated TLS certificates timing: Phase 3 verifies certs directory mode `0700`; Phase 4 validates `server.crt` (0644), `server.key` (0600), and SAN `127.0.0.1` after web service startup.
+      - Status response field: Checked `service_state == "inactive"` matching `StatusResponseModel`.
+      - Baseline restoration failure propagation: `_execute_phase6_baseline_restoration` returns boolean status; `overall_status` is set to `FAILED` if restoration fails, ensuring non-zero CLI exit.
+      - Metadata and units restoration: Captured pre-test activation journal bytes in Phase 1 and restored them in Phase 6 under `DeploymentLock`, followed by `systemctl daemon-reload`.
+      - Unique snapshot IDs & inspect-only guard: Generated unique timestamped snapshot IDs with PID; skipped baseline snapshot creation when `--inspect-only` is set.
+      - Release environment imports: Verified Python package imports through installed release environment (`setup.bash` overlay and release paths) outside checkout directory (`cwd="/tmp"`).
+    - Refactored `py_bin` resolution in `ubuntu_tank/deploy.sh` to a single top-level definition.
+    - Added `dist/` to `.gitignore` under Ubuntu Tank packaging artifacts.
+    - Expanded unit and regression test suite in `ubuntu_tank/tests/test_target_test.py` from 6 to 22 tests covering all remediated review items.
+  - Validation:
+    - Full test suite `./ubuntu_tank/deploy.sh test` passed 100% across all milestones (1–14.1).
+    - Unit tests in `test_target_test.py` passed 100% (22/22).
+    - Source boundary gate `test_source_boundary.sh` passed 100%.
+    - `ruff format` and `ruff check` on modified Python files passed with 0 errors.
+    - `shfmt -i 2 -ci -w` and `shellcheck` on `ubuntu_tank/deploy.sh` passed with 0 warnings.
+    - `git diff --check` reported 0 whitespace errors.
+    - Overwrote `review.md` with `PASS`.
+
+## Installation and deployment test plan (2026-09-19)
+
+- Added planned Milestones 14.1 and 14.2 to the web-control design, without
+  renumbering Milestones 15–16. This supersedes the September 18 blanket ban on
+  new installation/deployment script tests and preservation of all existing ones.
+- Milestone 14.1 runs the complete production installation/deployment workflow
+  on the real Pi 5, then comprehensively verifies installed files, permissions,
+  configuration consumers, and services. Tests cover whole workflows and their
+  final state, not individual scripts or installation steps; recovery scenarios
+  likewise verify the resulting recovered system. No simulated Pi installation
+  substitutes for target evidence. Motor power stays off.
+- Milestone 14.1 includes a script-traced installed-file checklist with producers
+  and verification criteria: host/release configuration, systemd/udev/tmpfiles,
+  SROS2/TLS, rosdep/APT/locale/accounts, deployment state and build artifacts.
+  Distinguish copied, generated, package-managed, and service-startup outputs;
+  resolve conditional paths on the real target and verify effective behavior.
+- Milestone 14.2 removes development-machine installation/deployment simulations,
+  without porting them or requiring one-to-one replacements. Milestone 14.1's
+  end-to-end integration testing verifies installation. Retain product,
+  motion-safety, operator, web/API, and applicable pure-function tests.
+- Milestone 14.2 now lists concrete class/method removal candidates from the
+  installation, build, deployment, DDS migration, operator provisioning, and
+  Milestone 14 suites. The developer must verify each method and record
+  remove/retain/split with a reason; mocks or temporary directories alone do
+  not qualify a test for removal. Mixed runtime and safety tests must survive.
+- This update changes the roadmap and test policy only. The new suite has not
+  been implemented or run, and existing tests have not been removed.
 
 ## Milestone 14 Installed Pi integration and rollback implementation (2026-09-18)
 
