@@ -640,10 +640,16 @@ class TestSystemdUnitAndConfinementDirectives(BaseDeploymentTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
         output = result.stdout + result.stderr
-        marker = f"-> Unit {unit_name}:"
+        marker = (
+            f"-> Unit {unit_name}:"
+            if f"-> Unit {unit_name}:" in output
+            else f"→ Unit {unit_name}:"
+        )
         self.assertIn(marker, output)
         unit_dump = output.split(marker, 1)[1]
         next_unit = unit_dump.find("\n\t-> Unit ")
+        if next_unit < 0:
+            next_unit = unit_dump.find("\n\t→ Unit ")
         if next_unit >= 0:
             unit_dump = unit_dump[:next_unit]
 

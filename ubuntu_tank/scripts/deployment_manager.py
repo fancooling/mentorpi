@@ -452,6 +452,18 @@ class SnapshotManager:
     Snapshots live under /var/opt/ubuntu_tank/deployment/snapshots/<tx-id>/.
     """
 
+    LEGACY_TRACKED_FILES = {
+        "controller.yaml",
+        "mentorpi-tank.env",
+        "mentorpi-tank.service",
+        "mentorpi-tank-operator.service",
+        "mentorpi-tank-web.service",
+        "mentorpi-tank-lifecycle.service",
+        "mentorpi-tank-stack.target",
+        "mentorpi-tank-recover.service",
+        "99-mentorpi-rrc.rules",
+    }
+
     def __init__(self, snapshots_base_dir: str):
         self.snapshots_base_dir = snapshots_base_dir
 
@@ -507,6 +519,7 @@ class SnapshotManager:
                 os.path.join(systemd_dir, "mentorpi-tank-recover.service"),
                 "mentorpi-tank-recover.service",
             ),
+            (os.path.join(etc_dir, "web", "web.yaml"), "web.yaml"),
             (os.path.join(udev_dir, "99-mentorpi-rrc.rules"), "99-mentorpi-rrc.rules"),
         ]
 
@@ -565,6 +578,8 @@ class SnapshotManager:
             "tx_id": tx_id,
             "symlink_target": current_symlink_target,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "format_version": 2,
+            "tracked_files": [name for _, name in files_to_backup],
             "backed_up_files": list(checksums.keys()),
         }
         with open(meta_file, "w", encoding="utf-8") as f:
@@ -674,8 +689,27 @@ class SnapshotManager:
             "mentorpi-tank-recover.service": os.path.join(
                 systemd_dir, "mentorpi-tank-recover.service"
             ),
+            "web.yaml": os.path.join(etc_dir, "web", "web.yaml"),
             "99-mentorpi-rrc.rules": os.path.join(udev_dir, "99-mentorpi-rrc.rules"),
         }
+
+        meta_file = os.path.join(snapshot_dir, "metadata.json")
+        backed_up_files = set()
+        tracked_files = None
+        if os.path.isfile(meta_file):
+            try:
+                with open(meta_file, encoding="utf-8") as mf:
+                    meta_data = json.load(mf)
+                    backed_up_files = set(meta_data.get("backed_up_files", []))
+                    if "tracked_files" in meta_data and isinstance(
+                        meta_data["tracked_files"], list
+                    ):
+                        tracked_files = set(meta_data["tracked_files"])
+            except Exception:
+                pass
+
+        if tracked_files is None:
+            tracked_files = self.LEGACY_TRACKED_FILES
 
         for name, dest in file_map.items():
             src = os.path.join(snapshot_dir, name)
@@ -683,6 +717,16 @@ class SnapshotManager:
                 with open(src, "rb") as f:
                     data = f.read()
                 atomic_write_file(dest, data, mode=0o644)
+            elif (
+                backed_up_files
+                and name in tracked_files
+                and name not in backed_up_files
+                and os.path.isfile(dest)
+            ):
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
 
         security_meta = os.path.join(snapshot_dir, "security.json")
         if not os.path.isfile(security_meta):
@@ -959,6 +1003,25 @@ class ReleaseManager:
         elif not os.access(runner_path, os.X_OK):
             errors.append("bin/mentorpi-tank-run is not executable")
 
+        web_service_unit = os.path.join(
+            release_dir, "host", "mentorpi-tank-web.service"
+        )
+        if os.path.isfile(web_service_unit):
+            for web_bin in ["mentorpi-tank-web", "mentorpi-tank-lifecycle"]:
+                bp = os.path.join(release_dir, "bin", web_bin)
+                if not os.path.isfile(bp):
+                    errors.append(f"Missing bin/{web_bin} launcher")
+                elif not os.access(bp, os.X_OK):
+                    errors.append(f"bin/{web_bin} is not executable")
+
+            web_dist = os.path.join(release_dir, "web", "dist")
+            if os.path.isdir(web_dist):
+                for asset in ["index.html", "manifest.webmanifest", "sw.js"]:
+                    if not os.path.isfile(os.path.join(web_dist, asset)):
+                        errors.append(
+                            f"Missing static frontend asset in web/dist: {asset}"
+                        )
+
         loopback_prof = os.path.join(release_dir, "config", "fastdds", "loopback.xml")
         if os.path.isfile(loopback_prof):
             if validate_loopback_profile is not None:
@@ -1161,6 +1224,11 @@ class ReleaseManager:
         ws_scripts = os.path.join(workspace_dir, "scripts")
         if os.path.isdir(ws_scripts):
             shutil.copytree(ws_scripts, os.path.join(staging_dir, "scripts"))
+
+        # Include pre-compiled static web frontend assets if present
+        ws_web_dist = os.path.join(workspace_dir, "web", "dist")
+        if os.path.isdir(ws_web_dist):
+            shutil.copytree(ws_web_dist, os.path.join(staging_dir, "web", "dist"))
 
         # Target production install prefix
         install_prefix = f"{self.opt_dir}/releases/{release_id}/install"

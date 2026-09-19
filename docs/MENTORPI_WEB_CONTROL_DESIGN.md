@@ -520,13 +520,13 @@ Exit: real browser tests against a mocked agent satisfy every interaction in §2
 
 ### Milestone 14 — Installed Pi integration and rollback
 
-- [ ] Package all services/assets; verify ARM64 imports, dependency closure,
+- [x] Package all services/assets; verify ARM64 imports, dependency closure,
   ownership, TLS trust setup, and production systemd confinement on the Pi.
-- [ ] Verify installed native DDS delivery without motor power, CLI/browser
+- [x] Verify installed native DDS delivery without motor power, CLI/browser
   exclusion, web availability while the controller is stopped, and safe restart.
-- [ ] Test activation, interrupted activation, incompatible protocols, and
+- [x] Test activation, interrupted activation, incompatible protocols, and
   rollback to native-only releases without retained sessions or motion.
-- [ ] Verify packaged static frontend delivery without Node.js at runtime,
+- [x] Verify packaged static frontend delivery without Node.js at runtime,
   phone-trusted HTTPS, PWA installation, and cached-client recovery on rollback.
 
 Exit: reproducible target-Pi installation and recovery pass; motion gates remain

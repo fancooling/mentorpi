@@ -14,6 +14,47 @@ current architecture and safety constraints; use `README.md` for commands.
   safety, operator behavior, web/API logic, state transitions, and other
   user-visible runtime behavior.
 
+## Milestone 14 Installed Pi integration and rollback implementation (2026-09-18)
+
+- Implemented Milestone 14 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md`:
+  - Packaging closure and frontend delivery:
+    - Packaged pre-compiled Vue static assets (`web/dist`: `index.html`, `manifest.webmanifest`, `sw.js`, and chunk files) into release archive and hashed each into `release-manifest.txt`.
+    - Zero Node.js / npm artifacts (`node_modules`, `package.json`, `tsconfig.json`) packaged into production archives. Target Pi operates with zero runtime Node.js.
+    - Launchers (`mentorpi-tank-web`, `mentorpi-tank-lifecycle`) resolve packages cleanly without ambient `PYTHONPATH`.
+  - Production systemd confinement:
+    - `mentorpi-tank-web.service`: runs under non-root `ubuntu-tank-web:ubuntu-tank-web` with `ProtectSystem=strict`, `DevicePolicy=closed`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=`, and read-only `/opt/ubuntu_tank` and `/etc/opt/ubuntu_tank`.
+    - `mentorpi-tank-lifecycle.service`: root helper with `ProtectSystem=strict`, `NoNewPrivileges=yes`, `RestrictAddressFamilies=AF_UNIX`, read-only mounts, and communication confined to `/run/ubuntu_tank/lifecycle.sock`.
+    - Unit files in `host/` validated with `systemd-analyze verify`.
+  - Web availability and lifecycle coordination:
+    - Web control daemon serves status and logs even when the motion controller is stopped (`inactive`).
+    - Starting the controller coordinates cleanly through the restricted lifecycle helper.
+    - Service restarts reset ownership to empty (`NO_OWNER`) and leave motion disarmed.
+  - Mutual exclusion between CLI and browser:
+    - Enforced single-operator control authority across both browser and CLI sessions.
+    - Acquisition rejected with `DEPLOYMENT_BUSY` when ownership is already held.
+    - Space/emergency stop by any observer halts motion, forces disarm, and advances epoch.
+  - Transactional activation and rollback closure:
+    - Release activation executes 6 steps atomically with journal and snapshot verification.
+    - Uncommitted or interrupted transactions reconcile during boot recovery without corrupting state.
+    - Rollback to a native-only baseline unloads web services, removes web unit files, restores prior configuration, and restores previous symlink.
+  - Cached client recovery and protocol compatibility:
+    - Clients with stale or incompatible protocols fail closed, cannot arm, and cannot queue motion.
+    - Authoritative `/api/v1/version` endpoint exposes `protocol_version` and supported protocols.
+  - Review remediation for P1 snapshot web configuration preservation (2026-09-18):
+    - Resolved web configuration deletion during legacy snapshot restore (`deployment_manager.py`):
+      - Updated `create_snapshot()` to record `format_version: 2` and `tracked_files: [name for _, name in files_to_backup]` in `metadata.json`.
+      - Updated `restore_snapshot()` to distinguish explicitly recorded absence from legacy snapshot formats that never tracked `web.yaml`. For snapshots lacking `tracked_files`, `tracked_files` defaults to `LEGACY_TRACKED_FILES` (which excludes `web.yaml`).
+      - Preserves custom `/etc/opt/ubuntu_tank/web/web.yaml` when restoring legacy snapshots, restores saved custom `web.yaml` when present in new snapshots, and safely prunes `web.yaml` only when a format_version 2 snapshot explicitly recorded its absence.
+    - Added automated regression test suite `TestSnapshotWebConfigPreservation` in `ubuntu_tank/tests/test_milestone14_installed_integration.py` (4 tests covering legacy preservation, saved web.yaml restoration, new snapshot absence pruning, and legacy service pruning).
+  - Automated tests & tooling updates:
+    - Created `ubuntu_tank/tests/test_milestone14_installed_integration.py` (16 tests covering packaging closure, systemd confinement, web availability, mutual exclusion, 6-step activation, rollback, cached client handling, and snapshot web configuration preservation).
+    - Integrated Milestone 14 test runner into `./ubuntu_tank/deploy.sh test`.
+    - Updated `cmd_status()`, `cmd_logs()`, and `cmd_stop()` in `deploy.sh` to include `mentorpi-tank-web.service` and `mentorpi-tank-lifecycle.service`.
+  - Validation:
+    - All 16 tests in `test_milestone14_installed_integration.py` passed 100%.
+    - Full test suite `./ubuntu_tank/deploy.sh test` passed all tests across all milestones (1–14).
+    - Ruff format and lint checks passed with 0 errors; shfmt and shellcheck on shell scripts passed with 0 warnings; `git diff --check` reported 0 whitespace errors.
+
 ## Milestone 13 Vue browser and PWA driving interface implementation (2026-09-18)
 
 - Implemented Milestone 13 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md`:

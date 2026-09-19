@@ -146,6 +146,10 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
 
   echo ""
+  echo "--> Running Milestone 14 Installed Pi Integration & Rollback tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone14_installed_integration.py" -v
+
+  echo ""
   echo "============================================================"
   echo "All tests PASSED successfully!"
   echo "============================================================"
@@ -340,6 +344,16 @@ cmd_status() {
       echo "Operator: ACTIVE (mentorpi-tank-operator.service)"
     else
       echo "Operator: INACTIVE (mentorpi-tank-operator.service)"
+    fi
+    if systemctl is-active --quiet mentorpi-tank-web.service 2>/dev/null; then
+      echo "Web: ACTIVE (mentorpi-tank-web.service)"
+    else
+      echo "Web: INACTIVE (mentorpi-tank-web.service)"
+    fi
+    if systemctl is-active --quiet mentorpi-tank-lifecycle.service 2>/dev/null; then
+      echo "Lifecycle: ACTIVE (mentorpi-tank-lifecycle.service)"
+    else
+      echo "Lifecycle: INACTIVE (mentorpi-tank-lifecycle.service)"
     fi
     if systemctl is-active --quiet mentorpi-tank-stack.target 2>/dev/null; then
       echo "Stack: ACTIVE (mentorpi-tank-stack.target)"
@@ -611,11 +625,23 @@ cmd_stop() {
     if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
       sudo systemctl stop mentorpi-tank-operator.service
     fi
+    if systemctl is-active --quiet mentorpi-tank-web.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-web.service
+    fi
+    if systemctl is-active --quiet mentorpi-tank-lifecycle.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-lifecycle.service
+    fi
     if systemctl is-active --quiet mentorpi-tank.service 2>/dev/null; then
       sudo systemctl stop mentorpi-tank.service
     fi
   else
     echo "NOTE: Stack target is not installed; using legacy per-service shutdown."
+    if systemctl is-active --quiet mentorpi-tank-web.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-web.service
+    fi
+    if systemctl is-active --quiet mentorpi-tank-lifecycle.service 2>/dev/null; then
+      sudo systemctl stop mentorpi-tank-lifecycle.service
+    fi
     if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
       sudo systemctl stop mentorpi-tank-operator.service
     fi
@@ -625,6 +651,14 @@ cmd_stop() {
     sudo systemctl stop mentorpi-tank.service
   fi
 
+  if systemctl is-active --quiet mentorpi-tank-web.service 2>/dev/null; then
+    echo "ERROR: mentorpi-tank-web.service remains active after stack shutdown." >&2
+    exit 1
+  fi
+  if systemctl is-active --quiet mentorpi-tank-lifecycle.service 2>/dev/null; then
+    echo "ERROR: mentorpi-tank-lifecycle.service remains active after stack shutdown." >&2
+    exit 1
+  fi
   if systemctl is-active --quiet mentorpi-tank-operator.service 2>/dev/null; then
     echo "ERROR: mentorpi-tank-operator.service remains active after stack shutdown." >&2
     exit 1
@@ -633,7 +667,7 @@ cmd_stop() {
     echo "ERROR: mentorpi-tank.service remains active after stack shutdown." >&2
     exit 1
   fi
-  echo "mentorpi-tank-stack.target is STOPPED (controller and operator inactive)."
+  echo "mentorpi-tank-stack.target is STOPPED (controller, operator, web, and lifecycle inactive)."
 }
 
 cmd_logs() {
@@ -641,6 +675,14 @@ cmd_logs() {
   local lines="50"
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      mentorpi-tank-web.service | web)
+        target_service="mentorpi-tank-web.service"
+        shift
+        ;;
+      mentorpi-tank-lifecycle.service | lifecycle)
+        target_service="mentorpi-tank-lifecycle.service"
+        shift
+        ;;
       mentorpi-tank-operator.service | operator)
         target_service="mentorpi-tank-operator.service"
         shift

@@ -159,9 +159,12 @@ class TestSystemdUnitStartLimit(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            self.assertIn(
-                "Unknown key name 'StartLimitIntervalSec' in section 'Service'",
-                res_bad.stderr,
+            self.assertTrue(
+                "Unknown key 'StartLimitIntervalSec' in section [Service]"
+                in res_bad.stderr
+                or "Unknown key name 'StartLimitIntervalSec' in section 'Service'"
+                in res_bad.stderr,
+                f"Expected StartLimitIntervalSec warning in stderr: {res_bad.stderr}",
             )
 
 
