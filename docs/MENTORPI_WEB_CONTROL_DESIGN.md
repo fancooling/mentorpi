@@ -828,6 +828,18 @@ claims. If measurements fail, keep the gate open; do not silently raise limits.
 Exit: actual track observations and instrumented timings pass. Mocks, request
 acknowledgments, and serial writes alone cannot mark physical acceptance passed.
 
+*Implementation note (2026-09-20)*: Orchestrator software (`ubuntu_tank/scripts/web_acceptance.py`),
+CLI integration (`./ubuntu_tank/deploy.sh web-acceptance`), strict evidence schemas, live API/release
+correlation, report generation, and regression tests (`ubuntu_tank/tests/test_milestone15_web_acceptance.py`)
+are implemented. A certifying target run must use `--interactive-observations`: the runner holds a
+read-only shared deployment lock, validates the active managed bridge and USB device, probes the installed
+HTTPS API before and after the session, requires the complete button, keyboard, PWA, fault, client,
+instrument, raw-evidence, and timing breakdown record, and confirms a final fail-closed stop. A static
+`--physical-observations` payload can exercise schema validation but remains
+`PENDING_PHYSICAL_ACCEPTANCE`; mocks and development-computer runs also cannot certify the release. Live
+physical execution with the real Pi 5, elevated tracks, motors, clients, network faults, and instruments
+remains pending.
+
 ### Milestone 16 — Operator handoff and release
 
 - [ ] Document certificate setup and direct page access, normal start/arm/drive/stop flow,

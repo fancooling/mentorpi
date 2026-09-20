@@ -1,9 +1,36 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Milestone 15 Raised-track web movement and failure acceptance (2026-09-20)
+
+- Implemented the Milestone 15 acceptance orchestrator in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md` (§7) and `AGENTS.md`:
+  - Dedicated orchestrator script (`ubuntu_tank/scripts/web_acceptance.py`):
+    - Mandatory physical safety acknowledgment (`--ack-tracks-raised`): fails closed under all circumstances if tracks are not confirmed mechanically elevated clear of surface.
+    - Live preflight holds the root-owned deployment lock read-only/shared for the entire run, identifies the one serial bridge owned by `mentorpi-tank.service`, rejects unrelated `/dev/rrc` owners and conflicting containers, verifies the `1a86:55d4` USB device, validates the active ARM64 release manifest, and probes the installed HTTPS API with safe battery telemetry.
+    - 4-direction web motion acceptance validation (`forward`, `reverse`, `spin_left`, `spin_right`) requires both button and keyboard execution, commanded direction match, immediate burst stop, and a non-empty physical observer identity.
+    - Web driving safety controls observation validation: validates halting across all controls; distinguishes controls requiring disarm (`space_stop`, `disarm`, `stop_controller`, `idle_timeout`, `hold_cap`) from `key_release` which transitions to `ARMED_IDLE` with zero velocity while the guard remains armed.
+    - Campaign checkpoint & resume across host shutdown: when measuring physical `host_shutdown`, the orchestrator supports saving a release- and web-configuration-bound checkpoint to disk before the Pi powers down. Resuming with `--resume-campaign` verifies release ID identity, web config hash identity, verifies host reboot via kernel boot ID (`/proc/sys/kernel/random/boot_id`), verifies post-reboot clean stopped/disarmed state, restores prior observations, and collects the shutdown measurement to complete physical certification.
+    - Mobile PWA interaction validation: validates touch cancellation, app switching, screen lock, resume, and disarmed status updates without latching motion.
+    - Instrumented stop latency verification against Section 7 bounds (target <= 300.0 ms):
+      - 8 Web/network failure modes: `loss_of_focus` (<= 300 ms), `tab_close` (<= 300 ms), `browser_crash` (<= 300 ms), `wifi_loss` (<= 300 ms), `delayed_buffered_packets` (<= 300 ms), `web_crash_hang` (<= 300 ms), `operator_crash_hang` (<= 300 ms), `reconnect_behavior` (<= 300 ms).
+      - 5 Re-verified native downstream failure modes: `guard_freshness_timeout` (<= 300 ms), `bridge_crash` (<= 250 ms), `service_stop_sigterm` (<= 100 ms), `serial_disconnect` (<= 600 ms), `host_shutdown` (<= 100 ms).
+      - Every measurement requires finite event-to-agent (`event_to_agent_ms`), zero-write (`zero_write_ms`), and physical-stop (`physical_stop_ms`) components that reconcile with the total, explicit physical-stop confirmation, and a raw-evidence reference.
+    - Physical acceptance strict invariant: mocks, static observation JSON, serial writes, or request acknowledgments alone can NEVER mark physical acceptance as passed. `ACCEPTED` requires `--interactive-observations` on the real Pi 5, live API probes before and after the session, the same active release and web configuration throughout, and a confirmed fail-closed final stop. Static input remains `PENDING_PHYSICAL_ACCEPTANCE`; simulation produces `MOCK_VERIFICATION_ONLY`.
+    - Safe non-target detection: on development computer (`x86_64`), cleanly records status `PENDING_TARGET_EXECUTION` / `PENDING_PHYSICAL_ACCEPTANCE` without corrupting evidence or claiming false passes.
+    - Structured reporting: emits comprehensive JSON (`dist/web-acceptance-report-milestone15.json`) and Markdown (`dist/web-acceptance-report-milestone15.md`) reports.
+  - Deployment CLI integration (`ubuntu_tank/deploy.sh`):
+    - Added `web-acceptance` command invoking `web_acceptance.py`.
+    - Added `web-acceptance` documentation, `--resume-campaign`, and safety rules to `usage()`.
+    - Added Milestone 15 test suite to `cmd_test()`.
+  - Comprehensive unit & contract tests (`ubuntu_tank/tests/test_milestone15_web_acceptance.py`):
+    - 20 focused tests cover safety acknowledgment fail-closed behavior, target detection, observation schemas, required input methods and screen lock, timing breakdowns, shared-lock coordination, static-evidence rejection, complete interactive collection, live-session correlation, reports, CLI parsing, armed-idle key release acceptance, and campaign checkpoint persistence and validated resumption across host reboot.
+- Target status:
+  - Software orchestration, live correlation, schema validation, latency bound checkers, CLI commands, and focused tests are implemented and verified on the development computer.
+  - Live execution on the physical Raspberry Pi 5 hardware with elevated tracks remains pending authentic owner bench testing.
 
 ## Milestone 14.2 Removal of development-machine installation simulations (2026-09-19)
 

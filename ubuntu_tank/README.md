@@ -483,3 +483,41 @@ the suite reports `SOFTWARE_DELIVERY_PASSED` with physical acceptance `INCOMPLET
 - **STM32 Firmware Watchdog**: Command-loss stopping timeout (<= 1000 ms) requires live bench verification on target hardware; safe stop observation alone does not certify timing claims without instrumented measurements.
 - **Operator Emergency Disconnect**: Physical battery switch accessible within immediate reach during all bench operations.
 - **On-Ground Authorization**: `FORBIDDEN`. Raised-track controller acceptance does not authorize on-ground use.
+
+### Milestone 15 raised-track web acceptance
+
+Milestone 15 validates the installed browser and PWA control path on the real Pi 5.
+It does not authorize on-ground motion. Mechanically elevate the chassis, keep the
+battery disconnect within immediate reach, start the managed controller and web
+services, and run the command as the authorized operator:
+
+```bash
+./deploy.sh web-acceptance \
+  --ack-tracks-raised \
+  --require-target \
+  --expected-release-id RELEASE_ID \
+  --interactive-observations
+```
+
+Use the installed HTTPS page and installed Android/iOS PWAs while answering the
+prompts. The workflow requires button and keyboard motion in all four directions,
+every safety and PWA case including screen lock, and all browser, network, service,
+guard, bridge, serial, and host-stop fault measurements. Record the physical
+observer, client versions, instruments, network conditions, raw evidence references,
+and the separate event-to-agent, zero-write, and physical-stop timing components.
+
+The runner holds a shared deployment lock throughout the live session, permits only
+the serial bridge owned by `mentorpi-tank.service`, verifies `/dev/rrc` USB identity
+`1a86:55d4`, correlates the session with the installed release and web configuration,
+and requests a fail-closed disarm before verifying the final live status. A deployment
+attempt or unrelated serial owner makes preflight fail.
+
+`--physical-observations FILE` is useful for validating an evidence document or for
+`--mock` regression work, but static input alone never reports `ACCEPTED` on the Pi.
+It remains `PENDING_PHYSICAL_ACCEPTANCE`. When executing the physical `host_shutdown`
+measurement, the runner offers to save a campaign checkpoint before the Pi powers down.
+After the Pi reboots, resume and complete the certified run with
+`--resume-campaign dist/web-acceptance-campaign.json`; the runner verifies release and
+web-configuration identity and confirms host reboot via kernel boot ID. The JSON and Markdown
+reports are written under `dist/` by default. The physical Pi 5, connected robot, motors, installed
+clients, fault injections, and measurement instruments are required for final acceptance.

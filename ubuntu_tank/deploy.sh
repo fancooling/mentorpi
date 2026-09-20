@@ -43,12 +43,19 @@ Target Operations (Milestone 5):
   status                         Display service health, ROS graph, and guard state
   logs                           Show recent systemd journal logs for mentorpi-tank.service
 
-Hardware Actuation (Milestones 4, 6, & 9):
+Hardware Actuation (Milestones 4, 6, 9, & 15):
   arm --ack-tracks-raised        Explicitly arm motor guard (requires physical safety acknowledgment)
   disarm                         Immediately disarm and send repeated zero commands
   teleop                         Run interactive keyboard teleoperation (W/A/S/D)
   bench --ack-tracks-raised      Run bounded bench test of forward/reverse/left/right motion
                                  Options: [--physical-observations <file>] [--interactive-observations]
+  web-acceptance --ack-tracks-raised
+                                 Run Milestone 15 raised-track web movement & failure acceptance suite
+                                 Options: [--physical-observations <file>] [--interactive-observations]
+                                          [--expected-release-id <id>] [--mock] [--require-target]
+                                          [--resume-campaign <file>] [--campaign-file <file>]
+                                 Only a complete interactive run on the Pi 5 can report ACCEPTED;
+                                 static observations are schema evidence and remain pending.
 
 Safety Rules:
   1. Motor guard starts disarmed by default after every restart.
@@ -155,6 +162,10 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_target_test.py" -v
 
   echo ""
+  echo "--> Running Milestone 15 Raised-Track Web Movement & Failure Acceptance tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone15_web_acceptance.py" -v
+
+  echo ""
   echo "============================================================"
   echo "All tests PASSED successfully!"
   echo "============================================================"
@@ -162,6 +173,10 @@ cmd_test() {
 
 cmd_target_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/target_test.py" "$@"
+}
+
+cmd_web_acceptance() {
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/web_acceptance.py" "$@"
 }
 
 # Load ROS and the active release overlay for operator commands, falling back to
@@ -792,6 +807,9 @@ case "${COMMAND}" in
     ;;
   bench)
     cmd_bench "$@"
+    ;;
+  web-acceptance)
+    cmd_web_acceptance "$@"
     ;;
 
   *)
