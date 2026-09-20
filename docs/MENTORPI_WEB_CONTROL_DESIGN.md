@@ -716,7 +716,7 @@ and deployment; do not port or replace individual simulation tests with target
 test cases. Preserve existing milestone numbers and retain tests of runtime
 product behavior.
 
-- [ ] Verify each candidate in the inventory below against its current test body,
+- [x] Verify each candidate in the inventory below against its current test body,
   setup/teardown, helper calls, and assertions before deleting it. Record a
   remove/retain/split decision and a short reason for each test method. Remove
   a case when it tests installation/deployment by substituting a Pi host, package
@@ -724,15 +724,15 @@ product behavior.
   the development machine. A mock, temporary directory, or deployment-related
   filename alone does not qualify a test for removal. Do not delete whole mixed
   files or classes without checking every method.
-- [ ] Remove those simulation cases and fixtures used only by them. Split mixed
+- [x] Remove those simulation cases and fixtures used only by them. Split mixed
   test files as needed: retain robot control, motion safety, operator, web/API,
   and state-transition tests, along with reusable pure-function tests that do
   not pretend to validate an installed Pi environment.
-- [ ] Update test runners and documentation so development tests exercise
+- [x] Update test runners and documentation so development tests exercise
   product behavior and the separate target suite verifies installation and
   deployment. Remove stale imports, test counts, and claims that development
   fixtures establish real-Pi installation correctness.
-- [ ] Run the retained development tests to verify the cleanup preserves product
+- [x] Run the retained development tests to verify the cleanup preserves product
   and motion-safety coverage. Keep installation/deployment verification in the
   Milestone 14.1 integration suite, without requiring one-to-one replacements
   for removed tests.

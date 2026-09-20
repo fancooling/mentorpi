@@ -5,6 +5,24 @@ Last updated: 2026-09-19
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Milestone 14.2 Removal of development-machine installation simulations (2026-09-19)
+
+- Completed Milestone 14.2 in accordance with `docs/MENTORPI_WEB_CONTROL_DESIGN.md` and `AGENTS.md`.
+- Removed development-machine installation and deployment simulations without porting or replacing them individually with mock tests:
+  - `ubuntu_tank/tests/test_install_workflow.py`: Removed fake host preflight (`TestHostPreflight`), mutual exclusion overrides (`TestMutualExclusion`), installer dry-run commands (`TestDryRunCommands`), simulated deployment lock (`TestDeploymentLock`), apt recovery workflow (`TestAptRecoveryWorkflow`), and reboot sequence (`TestRebootSequence`). Retained real process table scan sanity, lock file verification, and CLI security guards (9 tests).
+  - `ubuntu_tank/tests/test_milestone3_port.py`: Removed fake `dpkg-deb` / `apt-cache` simulations in candidate manifest generation. Retained real `.deb` parsing, locked package omission reporting, build workspace CLI argument validation, and all controller/supervisor/odometry/build script tests (50 tests).
+  - `ubuntu_tank/tests/test_milestone5_deployment.py`: Removed simulation classes (`TestPackagingAndReleaseManifest`, `TestInstallationAndImmutability`, `TestAtomicActivationAndRollback`, `TestFaultInjectionAndBootRecovery`) and deployment/provisioning/recovery simulations across review findings (Rounds 1–8). Retained pure build integrity verification (`attest_build`/`verify_build`), configuration schema migration/downgrade, systemd unit confinement, target udev rule test, tmpfiles configuration, deployment lock contention, runner help, bridge watchdog, supervisor freshness, udev serial persistence, teleop settings, colcon options parser, and bootstrap dry-run/destination guards (30 tests).
+  - `ubuntu_tank/tests/test_milestone7_dds_correction.py`: Removed synthetic release packaging, candidate installation, upgrade, interrupted activation recovery, and failed activation rollback simulations. Retained pure environment migration functions (`migrate_host_env`), Fast DDS XML profile validation, systemd start limit directives, loopback environment resolvers, and delivery deadlock regressions (13 tests).
+  - `ubuntu_tank/tests/test_milestone11_operator_agent.py`: Removed `TestDeploymentProvisioningAndLifecycle` (simulated user/group provisioning, tmpfiles text parsing assertions, and snapshot backup/restore). Retained all 15 operator runtime, authority arbitration, deadline, lease, IPC, SROS2, and CLI integration classes (66 tests).
+  - `ubuntu_tank/tests/test_milestone14_installed_integration.py`: Removed `BaseMilestone14TestCase`, packaging tar/untars with release manifests, transactional activation / rollback closures, and snapshot format migrations. Retained pure launcher entrypoint execution without ambient `PYTHONPATH`, launcher source tree immutability, `systemd-analyze` unit verification and sandboxing properties, web lifecycle API coordination, browser/CLI mutual exclusion, and cached client protocol compatibility (10 tests).
+- Target evidence is exclusively provided by Milestone 14.1's integration suite (`ubuntu_tank/scripts/target_test.py`); no development-machine simulations remain.
+- Validation:
+  - Full test suite `./ubuntu_tank/deploy.sh test` passed 100% across all milestones with zero failures.
+  - Authored code formatted with `.venv/bin/ruff format` and linted with `.venv/bin/ruff check`.
+  - Shell scripts formatted with `.venv/bin/shfmt -i 2 -ci -w` and checked with `.venv/bin/shellcheck`.
+  - Verified zero whitespace errors with `git diff --check`.
+  - Source boundary and dependency closure gates passed.
+
 ## Milestone 14.1 Real Pi 5 installation and deployment integration tests (2026-09-19)
 
 - Bytecode integrity repair: root-run web/lifecycle import probes added 17

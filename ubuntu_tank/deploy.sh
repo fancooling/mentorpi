@@ -147,7 +147,7 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
 
   echo ""
-  echo "--> Running Milestone 14 Installed Pi Integration & Rollback tests..."
+  echo "--> Running Milestone 14 Installed Pi Integration tests..."
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone14_installed_integration.py" -v
 
   echo ""
