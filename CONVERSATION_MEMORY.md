@@ -5,6 +5,24 @@ Last updated: 2026-09-24
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Container refactor C2 (2026-09-24)
+
+- Lifecycle operations now use Supervisor in `ubuntu_tank_supervisor`; web
+  remains a socket client. Controller boot/restart is stopped, with no automatic
+  process restart. Native runner/lifecycle startup is no longer supported.
+- Independent monitor checks 500 ms event-loop progress, probes Supervisor with
+  a 200 ms timeout, and signals controller groups directly. Runner reciprocally
+  watches the monitor and terminates the ROS group on guard/bridge failure.
+  Stop cancels pending starts; epoch changes revoke operator ownership and Arm.
+- All 12 motor-free C2 tests pass using real Supervisor and child processes.
+  Existing development and browser suites pass; the copied-launcher fixture
+  needed the moved runtime package and its suite passed on rerun. Independent
+  review is `PASS`; frontend types, new-code lint and shell lint pass. Existing
+  files have no added lint diagnostics. Native DDS/live udev checks skip locally.
+- Commands and timing limits: `ubuntu_tank/docs/CONTAINER_SUPERVISION.md`.
+  C3–C6, ARM64 DDS/container integration and real-robot validation remain pending.
+  No deployment, motor operation, commit or push performed.
+
 ## Container refactor C1 (2026-09-24)
 
 - Extracted `ubuntu_tank_protocol`: schemas, enums, constants, web config,

@@ -16,9 +16,12 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import os
 import threading
 import time
 from typing import Any
+
+from ubuntu_tank_supervisor import progress
 
 try:
     import rclpy
@@ -177,13 +180,20 @@ class OperatorAgentNode(Node):
             self.sub_obs = None
             self._timer = None
 
+        self._runtime_epoch = (
+            progress.read_record("epoch").get("value") if progress.enabled() else None
+        )
         self._guard_liveness_override = None
 
         # Start Operator IPC Server
         self.ipc_server = OperatorIpcServer(
             state_machine=self.state_machine,
             socket_path=socket_path,
-            allowed_uids=allowed_uids,
+            allowed_uids=(
+                [os.getuid()]
+                if progress.enabled() and allowed_uids is None
+                else allowed_uids
+            ),
             arm_callback=self.execute_arm,
             stop_callback=self.execute_stop,
             observations_callback=self.get_observations,
@@ -240,6 +250,20 @@ class OperatorAgentNode(Node):
         """Periodic safety loop checking lease expiry and publishing /controller/cmd_vel."""
         with self._lock:
             now_ns = time.monotonic_ns()
+            if progress.enabled():
+                epoch = progress.read_record("epoch").get("value")
+                if epoch != self._runtime_epoch:
+                    if self.state_machine.owner_id is not None:
+                        self.state_machine.release(
+                            self.state_machine.owner_id,
+                            self.state_machine.epoch,
+                            now_ns,
+                        )
+                    else:
+                        self.state_machine.stop(now_ns)
+                    self.execute_stop()
+                    self._runtime_epoch = epoch
+                progress.beat("operator")
             # In disarmed/idle states, check guard service readiness to observe liveness
             if self.state_machine.state in (
                 OperatorState.NO_OWNER,

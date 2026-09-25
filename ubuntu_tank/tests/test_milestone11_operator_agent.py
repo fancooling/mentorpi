@@ -43,6 +43,7 @@ BRINGUP_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_bringup")
 TELEOP_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_teleop")
 
 for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_supervisor"),
     os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
     UBUNTU_TANK_DIR,
     OPERATOR_PKG_DIR,

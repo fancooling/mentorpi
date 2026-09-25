@@ -1,5 +1,10 @@
 # MentorPi Native Tank Controller
 
+Current checkout: container refactor C1/C2 is implemented. The runner and lifecycle
+adapter now require Supervisor; native startup commands below describe the
+previous delivery. Images and Pi deployment remain pending in C3/C4. See
+[C2 supervision and local tests](docs/CONTAINER_SUPERVISION.md).
+
 Status: Milestones 1–9 implemented and certified ACCEPTED on live target hardware (5-stage software delivery, live battery telemetry, owner-observed 4-direction motion, accepted physical stop latencies across all 9 failure modes, and STM32 command-loss watchdog verified on elevated tracks).
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)
 Runtime: Native ROS 2 Lyrical on Ubuntu 26.04 LTS (No Docker).
@@ -528,4 +533,6 @@ Web and runtime now consume `ubuntu_tank_protocol` directly. It contains the
 ROS-free message contracts, web configuration validation, operator IPC client,
 lifecycle wire limits, and API generator. See
 [dependency and generation instructions](docs/WEB_DEPENDENCY_CLOSURE.md#3-protocol--api-compatibility-specification).
-C1 preserves native service behavior; Docker delivery follows in C2–C6.
+C2 replaces native lifecycle operations and runner supervision. See
+[C2 runtime supervision](docs/CONTAINER_SUPERVISION.md); Docker delivery follows
+in C3–C6.

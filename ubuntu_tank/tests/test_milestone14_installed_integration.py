@@ -39,6 +39,7 @@ WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 
 for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_supervisor"),
     os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
     REPO_ROOT,
     UBUNTU_TANK_DIR,
@@ -117,7 +118,11 @@ class TestLauncherSourceImmutability(unittest.TestCase):
         """Run actual launchers without cached bytecode or inherited -B settings."""
         with tempfile.TemporaryDirectory(prefix="mentorpi-launcher-source-") as root:
             os.makedirs(os.path.join(root, "bin"))
-            for package in ("ubuntu_tank_web", "ubuntu_tank_protocol"):
+            for package in (
+                "ubuntu_tank_web",
+                "ubuntu_tank_protocol",
+                "ubuntu_tank_supervisor",
+            ):
                 shutil.copytree(
                     os.path.join(UBUNTU_TANK_DIR, "src", package),
                     os.path.join(root, "src", package),

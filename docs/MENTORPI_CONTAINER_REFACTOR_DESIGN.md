@@ -1,6 +1,6 @@
 # MentorPi Ubuntu Tank Container Refactor
 
-Status: C1 implemented and verified on the development computer; C2–C6 and physical validation pending. No robot cutover authorized.
+Status: C1/C2 implemented and verified on the development computer; C3–C6 and physical validation pending. No robot cutover authorized.
 Date: 2026-09-24.
 
 ## 1. Purpose and scope
@@ -196,8 +196,10 @@ and controller runner, so it can act when either hangs.
 | Safety monitor | Controller runner; reciprocal progress heartbeat while controller runs | Stop/disarm and exit controller group |
 | Entire runtime frozen | STM32 firmware watchdog | Stop motors independently of Linux |
 
-In C2, set and test numeric deadlines for new progress checks before proceeding
-to image integration. Heartbeats must come from the event loop being monitored.
+C2 defines 500 ms progress deadlines, a 50 ms poll interval, a 200 ms local
+Supervisor API timeout, a 10 s startup allowance, and 500 ms group cleanup.
+See [C2 supervision](../ubuntu_tank/docs/CONTAINER_SUPERVISION.md) for detection
+latency, shutdown behavior and reproducible process tests. Heartbeats must come from the event loop being monitored.
 Keep existing command deadlines and physical-stop bounds; monitoring timeouts
 are not substitutes for those bounds. Recovery requires explicit Start and Arm.
 
@@ -435,7 +437,7 @@ These phases are local to this document; existing milestone numbering is intact.
 | Phase | Deliverable | Exit evidence |
 |---|---|---|
 | C1 (complete) | Shared protocol package | Installed protocol/web wheel test passes with runtime imports forbidden; generated OpenAPI/TypeScript unchanged; existing product and browser tests pass |
-| C2 | Supervisor integration, lifecycle adapter, existing robot supervisor adaptation | Numeric monitor deadlines set; process tests cover each monitored failure, start/stop races, stopped boot |
+| C2 (complete) | Supervisor integration, lifecycle adapter, existing robot supervisor adaptation | Numeric monitor deadlines set; process tests cover each monitored failure, start/stop races, stopped boot |
 | C3 | Two final image targets and Compose definition | ARM64 images build; installed entrypoints work; shared IPC and ROS-free web verified |
 | C4 | Host ownership and Docker deployment tooling | Real-Pi deployment/redeployment checks pass; manual Git fallback steps documented |
 | C5 | Container-specific failure and physical campaign | Real robot elevated-track observations and instrumented stop bounds pass |

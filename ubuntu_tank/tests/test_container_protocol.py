@@ -70,7 +70,7 @@ class NoRuntime(importlib.abc.MetaPathFinder):
             'rclpy', 'geometry_msgs', 'std_msgs', 'std_srvs',
             'ros_robot_controller_msgs', 'ubuntu_tank_operator',
             'ubuntu_tank_bringup', 'ubuntu_tank_supervisor',
-        } or fullname == 'ubuntu_tank_web.lifecycle_service':
+        }:
             raise AssertionError('Runtime import attempted: ' + fullname)
 sys.meta_path.insert(0, NoRuntime())
 from fastapi.testclient import TestClient

@@ -1,0 +1,2 @@
+# Real Supervisor process tests for container refactor C2.
+supervisor==4.3.0

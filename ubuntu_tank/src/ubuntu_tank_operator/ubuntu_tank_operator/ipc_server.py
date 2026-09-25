@@ -34,6 +34,7 @@ from ubuntu_tank_protocol.schemas import (
     ControlStopResponse,
     VersionResponse,
 )
+from ubuntu_tank_supervisor import progress
 
 if TYPE_CHECKING:
     from .state_machine import OperatorStateMachine
@@ -137,7 +138,7 @@ class OperatorIpcServer:
             except Exception:
                 pass
             try:
-                os.chmod(self.socket_path, 0o660)
+                os.chmod(self.socket_path, 0o600 if progress.enabled() else 0o660)
             except OSError:
                 pass
             self._server_sock.listen(16)
@@ -192,6 +193,7 @@ class OperatorIpcServer:
                         break
                     rlist = [self._server_sock] + list(self._clients.keys())
 
+                progress.beat("operator_ipc")
                 readable, _, exceptional = select.select(rlist, [], rlist, 0.05)
 
                 for sock in exceptional:
@@ -203,7 +205,7 @@ class OperatorIpcServer:
                     else:
                         self._read_client(sock)
 
-            except (select.error, OSError) as exc:
+            except (select.error, OSError, ValueError) as exc:
                 if not self._running:
                     break
                 logger.warning("Error in IPC server select loop: %s", exc)

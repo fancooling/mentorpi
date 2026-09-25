@@ -31,6 +31,7 @@ WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 
 for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_supervisor"),
     os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
     REPO_ROOT,
     UBUNTU_TANK_DIR,

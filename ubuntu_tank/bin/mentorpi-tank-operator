@@ -67,6 +67,7 @@ for cand in [
     os.path.join(workspace_root, "scripts"),
     os.path.join(workspace_root, "src", "ubuntu_tank_operator"),
     os.path.join(workspace_root, "src", "ubuntu_tank_protocol"),
+    os.path.join(workspace_root, "src", "ubuntu_tank_supervisor"),
 ]:
     if os.path.isdir(cand) and cand not in sys.path:
         sys.path.insert(0, cand)

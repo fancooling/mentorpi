@@ -99,19 +99,19 @@ cmd_test() {
 
   echo ""
   echo "--> Running Milestone 2 installation workflow unit tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_install_workflow.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_install_workflow.py" -v
 
   echo ""
   echo "--> Running Milestone 3 Lyrical port and dependency closure unit tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone3_port.py" -v
 
   echo ""
   echo "--> Running Milestone 4 Guarded bringup and safe teleop tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone4_bringup.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone4_bringup.py" -v
 
   echo ""
   echo "--> Running Milestone 4 Hardware-Free RMW & Runtime Integration tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_rmw_integration.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_rmw_integration.py" -v
 
   echo ""
   echo "--> Verifying SROS2 Security Policies..."
@@ -119,53 +119,54 @@ cmd_test() {
 
   echo ""
   echo "--> Running Milestone 5 Native Host Deployment & Operations tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone5_deployment.py" -v
 
   echo ""
   echo "--> Running Milestone 6 Raised-Track Controller Acceptance tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone6_acceptance.py" -v
 
   echo ""
   echo "--> Running Milestone 7 Fast DDS Loopback & Service Correction tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone7_dds_correction.py" -v
 
   echo ""
   echo "--> Running Milestone 8 Bounded Arming & Verified Delivery Acceptance tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone8_delivery.py" -v
 
   echo ""
   echo "--> Running Milestone 9 Physical Acceptance Closure tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone9_physical_closure.py" -v
 
   echo ""
   echo "--> Running Milestone 10 Web Control Protocol, State Machine, & Lease tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone10_protocol.py" -v
 
   echo ""
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_protocol.py" -v
+  "${py_bin}" "${SCRIPT_DIR}/tests/test_container_supervision.py" -v
 
   echo "--> Running Milestone 11 Shared Operator Agent & CLI Integration tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
 
   echo ""
   echo "--> Running Milestone 12 Web API, Service Lifecycle, & WebSocket tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone12_web_api.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone12_web_api.py" -v
 
   echo ""
   echo "--> Running Milestone 13 Vue Browser & PWA Driving Interface tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
 
   echo ""
   echo "--> Running Milestone 14 Installed Pi Integration tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone14_installed_integration.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone14_installed_integration.py" -v
 
   echo ""
   echo "--> Running Milestone 14.1 Target Test Orchestrator unit & contract tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_target_test.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_target_test.py" -v
 
   echo ""
   echo "--> Running Milestone 15 Raised-Track Web Movement & Failure Acceptance tests..."
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone15_web_acceptance.py" -v
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone15_web_acceptance.py" -v
 
   echo ""
   echo "============================================================"
@@ -174,11 +175,11 @@ cmd_test() {
 }
 
 cmd_target_test() {
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/target_test.py" "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/target_test.py" "$@"
 }
 
 cmd_web_acceptance() {
-  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_protocol${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/web_acceptance.py" "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol${PYTHONPATH:+:${PYTHONPATH}}" "${py_bin}" "${SCRIPT_DIR}/scripts/web_acceptance.py" "$@"
 }
 
 # Load ROS and the active release overlay for operator commands, falling back to
@@ -480,22 +481,22 @@ cmd_bench() {
 
 cmd_package() {
   echo "--> Packaging release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" package "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" package "$@"
 }
 
 cmd_install() {
   echo "--> Installing release artifact..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" install "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" install "$@"
 }
 
 cmd_activate() {
   echo "--> Activating release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" activate "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" activate "$@"
 }
 
 cmd_rollback() {
   echo "--> Rolling back to previous release..."
-  PYTHONPATH="${WORKSPACE_ROOT}" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" rollback "$@"
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/scripts/deployment_manager.py" rollback "$@"
 }
 
 cmd_start() {

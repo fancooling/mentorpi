@@ -39,6 +39,7 @@ OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 PROTOCOL_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_protocol")
 
 for p in [
+    os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_supervisor"),
     PROTOCOL_PKG_DIR,
     UBUNTU_TANK_DIR,
     WEB_PKG_DIR,
@@ -62,9 +63,9 @@ from ubuntu_tank_protocol.enums import (
 )
 from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 from ubuntu_tank_protocol.schemas import TelemetrySnapshot
+from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
 from ubuntu_tank_web.app import create_app
 from ubuntu_tank_web.lifecycle_client import LifecycleClient
-from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
 from ubuntu_tank_web.tls import ensure_tls_certificate
 
 
@@ -240,12 +241,12 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         self.lc_service = LifecycleHelperService(
             socket_path=self.lc_sock,
             allowed_uids={os.getuid()},
-            systemctl_runner=lambda args: (
+            process_runner=lambda args: (
                 0,
                 "active" if "is-active" in args else "",
                 "",
             ),
-            journalctl_runner=lambda limit: [f"log entry {i}" for i in range(limit)],
+            log_runner=lambda limit: [f"log entry {i}" for i in range(limit)],
         )
         self.lc_service.start()
 
@@ -566,8 +567,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         self.lc_service = LifecycleHelperService(
             socket_path=self.lc_sock,
             allowed_uids={os.getuid()},
-            systemctl_runner=lambda args: (0, "active", ""),
-            journalctl_runner=lambda limit: [],
+            process_runner=lambda args: (0, "active", ""),
+            log_runner=lambda limit: [],
         )
         self.lc_service.start()
 
@@ -840,12 +841,9 @@ class TestLifecycleHelperService(unittest.TestCase):
         self.helper = LifecycleHelperService(
             socket_path=self.socket_path,
             allowed_uids={os.getuid()},
-            systemctl_runner=_mock_systemctl,
-            journalctl_runner=lambda limit: [f"entry {i}" for i in range(limit)],
+            process_runner=_mock_systemctl,
+            log_runner=lambda limit: [f"entry {i}" for i in range(limit)],
             preflight_runner=_mock_preflight,
-            deployment_lock_file=self.deploy_lock,
-            recovery_pending_file=self.recovery_pending,
-            journal_file=self.journal_file,
         )
         self.helper.start()
         self.client = LifecycleClient(socket_path=self.socket_path)
@@ -869,36 +867,6 @@ class TestLifecycleHelperService(unittest.TestCase):
         ok_stop, state_stop, _ = self.client.stop_controller()
         self.assertTrue(ok_stop)
         self.assertEqual(state_stop, "inactive")
-
-    def test_start_blocked_when_deployment_lock_held(self):
-        """Start must fail with DEPLOYMENT_BUSY if deployment lock is held."""
-        # Hold deployment lock exclusively
-        with open(self.deploy_lock, "w") as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-            ok, _, msg = self.client.start_controller()
-            self.assertFalse(ok)
-            self.assertIn("deployment lock", msg.lower())
-
-    def test_start_blocked_when_recovery_pending(self):
-        """Start must fail if activation recovery is pending."""
-        with open(self.recovery_pending, "w") as f:
-            f.write("recovery required")
-
-        ok, _, msg = self.client.start_controller()
-        self.assertFalse(ok)
-        self.assertIn("recovery is pending", msg.lower())
-
-    def test_start_blocked_when_uncommitted_journal_transaction(self):
-        """Start must fail if activation journal has an uncommitted transaction."""
-        with open(self.journal_file, "w") as f:
-            json.dump(
-                {"format_version": "1.0.0", "current_transaction": {"tx_id": "tx1"}}, f
-            )
-
-        ok, _, msg = self.client.start_controller()
-        self.assertFalse(ok)
-        self.assertIn("uncommitted", msg.lower())
 
     def test_start_blocked_when_preflight_fails(self):
         """Start must fail with PREFLIGHT_FAILED if host preflight fails."""
@@ -1042,8 +1010,8 @@ class TestFaultToleranceAndUnavailableSubsystems(unittest.TestCase):
         self.lc_service = LifecycleHelperService(
             socket_path=self.lc_sock,
             allowed_uids={os.getuid()},
-            systemctl_runner=_mock_systemctl,
-            journalctl_runner=lambda limit: [],
+            process_runner=_mock_systemctl,
+            log_runner=lambda limit: [],
         )
         self.lc_service.start()
 
@@ -1120,7 +1088,8 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
                 "import sys\n"
                 f"sys.path.insert(0, '{WEB_PKG_DIR}')\n"
                 f"sys.path.insert(0, {PROTOCOL_PKG_DIR!r})\n"
-                "from ubuntu_tank_web.lifecycle_service import LifecycleHelperService\n"
+                f"sys.path.insert(0, {os.path.join(UBUNTU_TANK_DIR, 'src/ubuntu_tank_supervisor')!r})\n"
+                "from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService\n"
                 "assert 'fastapi' not in sys.modules, 'fastapi was imported eagerly!'\n"
             ),
         ]
@@ -1175,7 +1144,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
         helper = LifecycleHelperService(
             socket_path=lc_sock,
             allowed_uids={os.getuid()},
-            systemctl_runner=lambda args: (0, "active", ""),
+            process_runner=lambda args: (0, "active", ""),
         )
         helper.start()
 
@@ -1296,7 +1265,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
             helper = LifecycleHelperService(
                 socket_path=sock_path,
                 allowed_uids={os.getuid()},
-                systemctl_runner=_mock_failing_systemctl,
+                process_runner=_mock_failing_systemctl,
             )
             helper.start()
             lc_client = LifecycleClient(socket_path=sock_path)
@@ -1311,7 +1280,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
                         return 0, "active", ""
                     return 0, "", ""
 
-                helper._custom_systemctl = _mock_active_systemctl
+                helper._custom_process = _mock_active_systemctl
                 success, state, _ = lc_client.stop_controller(timeout_sec=2.0)
                 self.assertFalse(success)
                 self.assertEqual(state, "active")
@@ -1322,7 +1291,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
                         return 3, "inactive", ""
                     return 0, "", ""
 
-                helper._custom_systemctl = _mock_inactive_systemctl
+                helper._custom_process = _mock_inactive_systemctl
                 success, state, _ = lc_client.stop_controller(timeout_sec=2.0)
                 self.assertTrue(success)
                 self.assertEqual(state, "inactive")
@@ -1410,7 +1379,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
             helper = LifecycleHelperService(
                 socket_path=sock_path,
                 allowed_uids={os.getuid()},
-                systemctl_runner=_slow_systemctl,
+                process_runner=_slow_systemctl,
                 preflight_runner=lambda: (True, "OK"),
             )
             helper.start()

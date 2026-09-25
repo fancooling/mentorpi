@@ -14,11 +14,11 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "ubuntu_tank_protocol"],
     zip_safe=True,
     maintainer="Ubuntu Tank Maintainers",
     maintainer_email="dev@mentorpi.local",
-    description="Trusted AND-gating process and heartbeat supervisor for systemd watchdog integration",
+    description="Robot heartbeat supervision and restricted container lifecycle",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [

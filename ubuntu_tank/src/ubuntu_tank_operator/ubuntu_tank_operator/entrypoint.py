@@ -102,7 +102,8 @@ def main(args: list[str] | None = None) -> int:
                 rclpy.spin_once(node, timeout_sec=0.1)
         else:
             while running:
-                time.sleep(0.1)
+                node._timer_tick()
+                time.sleep(0.02)
     except KeyboardInterrupt:
         pass
     finally:

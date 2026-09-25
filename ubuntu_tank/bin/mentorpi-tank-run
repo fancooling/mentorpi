@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-"""
-mentorpi-tank-run - Non-interactive ROS launch and supervisor wrapper for systemd.
+"""Run the installed guarded ROS graph with bounded process-group shutdown.
 
-Invoked by mentorpi-tank.service (ExecStart=/opt/ubuntu_tank/current/bin/mentorpi-tank-run).
-Runs only installed artifacts from /opt/ubuntu_tank/current/install.
-Runs the supervisor in the main process (satisfying NotifyAccess=main),
-applies preserved host configuration from UBUNTU_TANK_CONFIG to the ROS graph,
-launches the ROS bringup graph (tank.launch.py) as a supervised child process,
-notifies systemd (READY=1, WATCHDOG=1), coordinates safe disarmed shutdown on SIGTERM/SIGINT,
-and propagates unexpected child termination as a supervisor failure.
+Container Start admission and reciprocal monitor progress are required before
+launch. Guard/bridge credentials and configured heartbeat deadlines remain in
+force. SIGINT/SIGTERM and stale progress stop the full graph, including a hung
+launch parent. Native service activation is replaced by runtime supervision.
 """
 
 import argparse
-import fcntl
 import json
 import math
 import os
@@ -42,16 +37,6 @@ except ImportError:
         from ubuntu_tank.scripts.config_migration import validate_config
     except ImportError:
         validate_config = None
-
-try:
-    from deployment_manager import check_hardware_mutual_exclusion
-except ImportError:
-    try:
-        from ubuntu_tank.scripts.deployment_manager import (
-            check_hardware_mutual_exclusion,
-        )
-    except ImportError:
-        check_hardware_mutual_exclusion = None
 
 try:
     from fastdds_setup import apply_loopback_env, validate_loopback_profile
@@ -210,24 +195,6 @@ def validate_heartbeat(
     return True, ts, f"Accepted heartbeat for {sender_name}"
 
 
-def send_systemd_notify(message: str, notify_sock_path: Optional[str] = None):
-    """Send sd_notify datagram to systemd."""
-    sock_path = notify_sock_path or os.environ.get("NOTIFY_SOCKET")
-    if not sock_path:
-        return
-    try:
-        if sock_path.startswith("@"):
-            sock_path = "\0" + sock_path[1:]
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        s.connect(sock_path)
-        s.sendall(message.encode("utf-8"))
-        s.close()
-    except Exception as e:
-        sys.stderr.write(
-            f"[mentorpi-tank-run] Failed to send systemd notification '{message}': {e}\n"
-        )
-
-
 def verify_runtime_paths(current_dir: str) -> bool:
     """Verify that current release and configuration files exist."""
     install_dir = os.path.join(current_dir, "install")
@@ -371,17 +338,6 @@ def main():
     bridge_sock: Optional[socket.socket] = None
     guard_sock_path: Optional[str] = None
     bridge_sock_path: Optional[str] = None
-    startup_lock_fd: Optional[int] = None
-
-    def release_startup_lock():
-        nonlocal startup_lock_fd
-        if startup_lock_fd is not None:
-            try:
-                fcntl.flock(startup_lock_fd, fcntl.LOCK_UN)
-                os.close(startup_lock_fd)
-            except Exception:
-                pass
-            startup_lock_fd = None
 
     def handle_signal(sig, frame):
         nonlocal running, shutdown_requested
@@ -395,84 +351,31 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    # 0. Preflight check: coordinate startup with deployment lock and require clean journal
-    lock_path = os.environ.get(
-        "UBUNTU_TANK_LOCK_FILE", "/run/lock/ubuntu_tank/deploy.lock"
-    )
-    journal_path = os.environ.get(
-        "UBUNTU_TANK_JOURNAL_FILE", "/var/opt/ubuntu_tank/deployment/activation-journal"
-    )
+    # Installed imports are available after sourcing ROS below. Source checkout
+    # execution uses the same package, not a second supervisor implementation.
+    package_root = os.path.join(current_dir, "src", "ubuntu_tank_supervisor")
+    if os.path.isdir(package_root):
+        sys.path.insert(0, package_root)
+    from ubuntu_tank_supervisor import progress
 
-    # Acquire shared deployment coordination lock for startup transition
-    if os.path.exists(lock_path) or os.path.isdir(os.path.dirname(lock_path)):
-        try:
-            try:
-                startup_lock_fd = os.open(lock_path, os.O_RDWR)
-            except (PermissionError, OSError):
-                startup_lock_fd = os.open(lock_path, os.O_RDONLY)
-        except Exception as e:
-            sys.stderr.write(
-                f"[mentorpi-tank-run] FATAL: Cannot open deployment lock at '{lock_path}': {e}. Failing closed.\n"
-            )
-            sys.stderr.flush()
-            sys.exit(1)
-
-        if startup_lock_fd is not None:
-            try:
-                fcntl.flock(startup_lock_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-            except (IOError, OSError):
-                sys.stderr.write(
-                    f"[mentorpi-tank-run] FATAL: Deployment lock at '{lock_path}' is held by another process. "
-                    "Cannot start controller during deployment.\n"
-                )
-                sys.stderr.flush()
-                try:
-                    os.close(startup_lock_fd)
-                except Exception:
-                    pass
-                sys.exit(1)
-
-    # Activation journal validation: fail closed on corruption, unreadability, or uncommitted transaction
-    dep_dir = os.path.dirname(journal_path)
-    if os.path.exists(journal_path):
-        try:
-            with open(journal_path, "r", encoding="utf-8") as f:
-                jdata = json.load(f)
-            if not isinstance(jdata, dict) or "format_version" not in jdata:
-                sys.stderr.write(
-                    f"[mentorpi-tank-run] FATAL: Activation journal at '{journal_path}' has invalid schema. "
-                    "Failing closed.\n"
-                )
-                sys.stderr.flush()
-                release_startup_lock()
-                sys.exit(1)
-            tx = jdata.get("current_transaction")
-            if tx is not None:
-                sys.stderr.write(
-                    f"[mentorpi-tank-run] FATAL: Uncommitted activation transaction '{tx.get('tx_id')}' "
-                    f"in state '{tx.get('status')}'. Refusing to start controller before clean recovery.\n"
-                )
-                sys.stderr.flush()
-                release_startup_lock()
-                sys.exit(1)
-        except Exception as e:
-            sys.stderr.write(
-                f"[mentorpi-tank-run] FATAL: Failed to read activation journal at '{journal_path}': {e}. "
-                "Failing closed.\n"
-            )
-            sys.stderr.flush()
-            release_startup_lock()
-            sys.exit(1)
-    elif os.path.exists(dep_dir) or os.path.islink(
-        os.path.join(os.path.dirname(current_dir), "current")
+    permit = progress.read_record("permit").get("token")
+    if (
+        not args.check
+        and not args.dry_run
+        and (not progress.enabled() or not permit or not progress.fresh("monitor"))
     ):
-        sys.stderr.write(
-            f"[mentorpi-tank-run] FATAL: Activation journal missing at '{journal_path}'. "
-            "Cannot start controller without verified activation state. Failing closed.\n"
-        )
-        sys.stderr.flush()
-        release_startup_lock()
-        sys.exit(1)
+        sys.stderr.write("Runtime Start admission or safety monitor unavailable\n")
+        return 1
+    run_dir = str(progress.private_dir())
+    for key, filename in (
+        ("GUARD_SOCK", "guard_heartbeat.sock"),
+        ("BRIDGE_SOCK", "bridge_heartbeat.sock"),
+        ("GUARD_PID_FILE", "guard.pid"),
+        ("BRIDGE_PID_FILE", "bridge.pid"),
+    ):
+        os.environ["UBUNTU_TANK_" + key] = os.path.join(run_dir, filename)
+    if not args.check and not args.dry_run:
+        progress.beat("controller", graph_pid=0, ready=False, phase="starting")
 
     # 1. Load host environment file
     env_file = os.environ.get(
@@ -499,7 +402,6 @@ def main():
                 f"[mentorpi-tank-run] FATAL: Fast DDS loopback discovery setup failed: {exc}\n"
             )
             sys.stderr.flush()
-            release_startup_lock()
             sys.exit(1)
     else:
         prof = os.path.join(current_dir, "config", "fastdds", "loopback.xml")
@@ -508,7 +410,6 @@ def main():
                 f"[mentorpi-tank-run] FATAL: Fast DDS loopback profile missing at '{prof}'. Failing closed.\n"
             )
             sys.stderr.flush()
-            release_startup_lock()
             sys.exit(1)
         os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
         os.environ["ROS_DOMAIN_ID"] = "0"
@@ -545,22 +446,7 @@ def main():
             + "\n"
         )
         sys.stderr.flush()
-        release_startup_lock()
         sys.exit(1)
-
-    # 5. Verify hardware mutual exclusion before proceeding
-    if check_hardware_mutual_exclusion:
-        serial_dev = (cfg or {}).get("serial_bridge", {}).get("serial_device")
-        ok, exc_errors = check_hardware_mutual_exclusion(serial_dev=serial_dev)
-        if not ok:
-            sys.stderr.write(
-                "[mentorpi-tank-run] FATAL: Hardware mutual exclusion check failed:\n"
-                + "\n".join(f"  - {e}" for e in exc_errors)
-                + "\n"
-            )
-            sys.stderr.flush()
-            release_startup_lock()
-            sys.exit(1)
 
     launch_args = build_launch_arguments(cfg)
 
@@ -600,7 +486,6 @@ def main():
     )
 
     if args.check:
-        release_startup_lock()
         if verify_runtime_paths(current_dir):
             print(
                 f"[mentorpi-tank-run] Release runtime paths and configuration verified at {current_dir}"
@@ -617,7 +502,6 @@ def main():
     )
 
     if args.dry_run:
-        release_startup_lock()
         print(
             "[mentorpi-tank-run:dry-run] Host environment and launch parameters verified."
         )
@@ -680,12 +564,24 @@ def main():
         )
         sys.stdout.flush()
 
+        if progress.read_record("permit").get("token") != permit or not progress.fresh(
+            "monitor"
+        ):
+            raise RuntimeError("Start was revoked before ROS launch")
+        for pid_file in (guard_pid_file, bridge_pid_file):
+            try:
+                os.unlink(pid_file)
+            except FileNotFoundError:
+                pass
         child = subprocess.Popen(
-            launch_cmd, env=os.environ.copy(), stdout=sys.stdout, stderr=sys.stderr
+            launch_cmd,
+            env=os.environ.copy(),
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            start_new_session=True,
         )
 
         # Startup transition complete: release deployment coordination lock
-        release_startup_lock()
 
         # Supervisor state
         guard_last: Optional[float] = None
@@ -694,10 +590,22 @@ def main():
         bridge_last_ts: Optional[float] = None
         last_watchdog_ping = time.monotonic()
         ready_notified = False
+        launched_at = time.monotonic()
+        progress.beat("controller", graph_pid=child.pid, ready=False, token=permit)
 
         poll_descriptors = [guard_sock, bridge_sock]
 
         while running:
+            if progress.read_record("permit").get(
+                "token"
+            ) != permit or not progress.fresh("monitor"):
+                sys.stderr.write(
+                    "Controller admission revoked or safety monitor stale\n"
+                )
+                break
+            progress.beat(
+                "controller", graph_pid=child.pid, ready=ready_notified, token=permit
+            )
             # Check if ROS launch child is still alive
             ret = child.poll()
             if ret is not None:
@@ -707,7 +615,9 @@ def main():
                 )
                 break
 
-            rlist, _, _ = select.select(poll_descriptors, [], [], check_interval)
+            rlist, _, _ = select.select(
+                poll_descriptors, [], [], min(check_interval, progress.POLL_INTERVAL)
+            )
             now = time.monotonic()
 
             for desc in rlist:
@@ -794,40 +704,38 @@ def main():
                 if guard_ok and bridge_ok:
                     if not ready_notified:
                         ready_notified = True
-                        send_systemd_notify("READY=1")
+
                         sys.stdout.write(
-                            "[mentorpi-tank-run] Guard and bridge healthy. Systemd notified READY=1.\n"
+                            "[mentorpi-tank-run] Guard and bridge healthy. Controller ready and disarmed.\n"
                         )
                         sys.stdout.flush()
-                    send_systemd_notify("WATCHDOG=1")
-                elif ready_notified:
+
+                elif ready_notified or now - launched_at > progress.STARTUP_DEADLINE:
                     reasons = []
                     if not guard_ok:
                         reasons.append(f"guard timeout (last={guard_last})")
                     if not bridge_ok:
                         reasons.append(f"bridge timeout (last={bridge_last})")
                     sys.stderr.write(
-                        f"[mentorpi-tank-run] Watchdog ping withheld: {', '.join(reasons)}\n"
+                        f"[mentorpi-tank-run] Stopping controller: {', '.join(reasons)}\n"
                     )
                     sys.stderr.flush()
+                    break
 
     finally:
-        release_startup_lock()
-        # Graceful shutdown: send SIGINT to child so motor_guard sends 5 zero commands
-        if child is not None and child.poll() is None:
-            sys.stdout.write(
-                "[mentorpi-tank-run] Sending SIGINT to ROS child process for safe zeroing...\n"
-            )
-            sys.stdout.flush()
-            child.send_signal(signal.SIGINT)
-            try:
-                child.wait(timeout=3.5)
-            except subprocess.TimeoutExpired:
-                sys.stderr.write(
-                    "[mentorpi-tank-run] Warning: Child did not exit after SIGINT, sending SIGKILL.\n"
-                )
-                child.kill()
-                child.wait()
+        progress.beat(
+            "controller",
+            graph_pid=child.pid if child else 0,
+            ready=False,
+            phase="stopping",
+            token=permit,
+        )
+        # Signal the ROS group even if its launch parent already exited.
+        if child is not None:
+            progress.stop_groups({child.pid})
+            child.wait(timeout=1.0)
+        progress.revoke()
+        progress.write_record("controller", {})
 
         # Clean up sockets
         for sock, path in [
@@ -845,7 +753,6 @@ def main():
                 except Exception:
                     pass
 
-        send_systemd_notify("STOPPING=1")
         sys.stdout.write("[mentorpi-tank-run] Shutdown complete.\n")
         sys.stdout.flush()
 
@@ -866,4 +773,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

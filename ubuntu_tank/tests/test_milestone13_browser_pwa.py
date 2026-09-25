@@ -46,6 +46,7 @@ OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 for p in [
     os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
     UBUNTU_TANK_DIR,
+    os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_supervisor"),
     WEB_PKG_DIR,
     OPERATOR_PKG_DIR,
 ]:
@@ -57,8 +58,8 @@ from ubuntu_tank_operator.state_machine import OperatorStateMachine
 from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_protocol.enums import MotionDirection, OperatorState
 from ubuntu_tank_protocol.schemas import TelemetrySnapshot
+from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
 from ubuntu_tank_web.app import create_app
-from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
 
 
 def find_free_port() -> int:
@@ -232,8 +233,8 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.lc_service = LifecycleHelperService(
             socket_path=cls.lc_sock,
             allowed_uids={os.getuid()},
-            systemctl_runner=_mock_systemctl,
-            journalctl_runner=lambda limit: [
+            process_runner=_mock_systemctl,
+            log_runner=lambda limit: [
                 "Sep 18 14:00:00 mentorpi systemd[1]: Started MentorPi Tank Controller."
             ],
         )

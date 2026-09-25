@@ -948,6 +948,17 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         )
         base_env["ROS_LOG_DIR"] = os.path.join(self.var_dir, "ros-log")
 
+        from ubuntu_tank_supervisor import progress
+
+        base_env["UBUNTU_TANK_PRIVATE_DIR"] = self.run_dir
+
+        def admit():
+            with patch.dict(os.environ, {"UBUNTU_TANK_PRIVATE_DIR": self.run_dir}):
+                progress.write_record("permit", {"token": "test-child-exit"})
+                progress.beat("monitor")
+
+        admit()
+
         # 6a. Child exits with 17
         env17 = base_env.copy()
         env17["_UBUNTU_TANK_TEST_CHILD_CMD"] = "bash -c 'exit 17'"
@@ -956,6 +967,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         self.assertIn("terminated unexpectedly with code 17", res17.stderr)
 
         # 6b. Child exits with 23
+        admit()
         env23 = base_env.copy()
         env23["_UBUNTU_TANK_TEST_CHILD_CMD"] = "bash -c 'exit 23'"
         res23 = subprocess.run([runner_path], env=env23, capture_output=True, text=True)
@@ -963,6 +975,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         self.assertIn("terminated unexpectedly with code 23", res23.stderr)
 
         # 6c. Unexpected child exit 0 without signal must still fail closed (code 1)
+        admit()
         env0 = base_env.copy()
         env0["_UBUNTU_TANK_TEST_CHILD_CMD"] = "bash -c 'exit 0'"
         res0 = subprocess.run([runner_path], env=env0, capture_output=True, text=True)
@@ -970,6 +983,7 @@ class TestReviewRemediations(BaseDeploymentTestCase):
         self.assertIn("terminated unexpectedly with code 0", res0.stderr)
 
         # 6d. Graceful signal termination exits 0
+        admit()
         env_sleep = base_env.copy()
         env_sleep["_UBUNTU_TANK_TEST_CHILD_CMD"] = "sleep 10"
         proc = subprocess.Popen(
@@ -1004,48 +1018,6 @@ class TestReviewFindingsRound2(BaseDeploymentTestCase):
     6. Unreadable or corrupt journals fail closed, blocking startup without altering assets.
     7. Udev serial identity is preserved across activation; ambiguous rules are rejected.
     """
-
-    def test_finding3_startup_blocked_by_lock_and_transaction_gate(self):
-        """
-        Finding 3: Controller startup via mentorpi-tank-run and deploy.sh start is blocked
-        while deployment lock is held or when an uncommitted transaction is pending.
-        mentorpi-tank-recover.service must have RemainAfterExit=no.
-        """
-        runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
-
-        # 3a. Verify startup blocked when DeploymentLock is held
-        with DeploymentLock(self.mgr.lock_path):
-            env_locked = os.environ.copy()
-            env_locked["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
-            env_locked["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-            res = subprocess.run(
-                [runner_path, "--dry-run"],
-                env=env_locked,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(res.returncode, 1)
-            self.assertIn("Deployment lock", res.stderr)
-            self.assertIn("held by another process", res.stderr)
-
-        # 3b. Verify startup blocked when uncommitted transaction is pending
-        tx_id = "tx-gate-test"
-        self.mgr.journal.record_prepared(
-            tx_id=tx_id,
-            candidate_release_id="rel-cand",
-            candidate_release_path="/cand/path",
-            previous_release_id=None,
-            previous_release_path=None,
-            snapshot_dir="/snap/path",
-        )
-        env_pending = os.environ.copy()
-        env_pending["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
-        env_pending["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-        res_pending = subprocess.run(
-            [runner_path, "--dry-run"], env=env_pending, capture_output=True, text=True
-        )
-        self.assertEqual(res_pending.returncode, 1)
-        self.assertIn("Uncommitted activation transaction", res_pending.stderr)
 
     def test_finding4_deactivating_waits_and_query_errors_rejected(self):
         """
@@ -1343,97 +1315,6 @@ class TestReviewFindingsRound3(BaseDeploymentTestCase):
     - Finding 3: Authoritative paths used for startup deployment lock and activation journal,
                  coordinating startup with deployment without deadlocking recovery, and rejecting
                  unreadable/corrupted journal state.
-    """
-
-    def test_finding3_startup_uses_authoritative_paths_and_serializes(self):
-        """
-        Finding 3: Startup coordination uses authoritative paths:
-        /run/lock/ubuntu_tank/deploy.lock and /var/opt/ubuntu_tank/deployment/activation-journal.
-        Startup transition acquires shared lock, rejecting startup if exclusive lock is held,
-        failing closed on corrupt/unreadable journals, and preventing races during activation.
-        """
-        runner_path = os.path.join(self.workspace_dir, "bin", "mentorpi-tank-run")
-
-        # 3a. Verify authoritative default constants
-        from ubuntu_tank.scripts.deployment_manager import (
-            DEFAULT_JOURNAL_PATH,
-            DEFAULT_LOCK_PATH,
-        )
-
-        self.assertEqual(DEFAULT_LOCK_PATH, "/run/lock/ubuntu_tank/deploy.lock")
-        self.assertEqual(
-            DEFAULT_JOURNAL_PATH, "/var/opt/ubuntu_tank/deployment/activation-journal"
-        )
-
-        # 3b. Verify startup fails closed when deployment lock is held
-        with DeploymentLock(self.mgr.lock_path):
-            env_test = os.environ.copy()
-            env_test["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
-            env_test["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-            res = subprocess.run(
-                [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
-            )
-            self.assertEqual(res.returncode, 1)
-            self.assertIn("Deployment lock at", res.stderr)
-            self.assertIn("held by another process", res.stderr)
-
-        # 3c. Verify startup fails closed on corrupt journal
-        os.makedirs(os.path.dirname(self.mgr.journal.journal_path), exist_ok=True)
-        with open(self.mgr.journal.journal_path, "w", encoding="utf-8") as f:
-            f.write("{corrupt_json_payload")
-        env_test = os.environ.copy()
-        env_test["UBUNTU_TANK_LOCK_FILE"] = self.mgr.lock_path
-        env_test["UBUNTU_TANK_JOURNAL_FILE"] = self.mgr.journal.journal_path
-        res_corrupt = subprocess.run(
-            [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
-        )
-        self.assertEqual(res_corrupt.returncode, 1)
-        self.assertIn("Failed to read activation journal", res_corrupt.stderr)
-
-        # 3d. Verify startup fails closed on invalid schema
-        with open(self.mgr.journal.journal_path, "w", encoding="utf-8") as f:
-            f.write('{"missing_fields": true}')
-        res_schema = subprocess.run(
-            [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
-        )
-        self.assertEqual(res_schema.returncode, 1)
-        self.assertIn("has invalid schema", res_schema.stderr)
-
-        # 3e. Verify activation holding lock prevents controller launch during asset changes
-        out_dist = os.path.join(self.test_root, "dist")
-        archive = self.mgr.package_release(
-            self.workspace_dir, out_dist, "1.0.0-startrace", allow_staged_install=True
-        )
-        self.mgr.install_release(archive, require_root=False)
-
-        # Simulate activation holding deploy.lock and staging assets
-        with DeploymentLock(self.mgr.lock_path):
-            res_launch = subprocess.run(
-                [runner_path, "--dry-run"], env=env_test, capture_output=True, text=True
-            )
-            self.assertEqual(res_launch.returncode, 1)
-            self.assertIn(
-                "Cannot start controller during deployment", res_launch.stderr
-            )
-
-
-class TestReviewFindingsRound4(BaseDeploymentTestCase):
-    """
-    Regression tests covering Milestone 5 Review Round 4 Findings (P1 x 4):
-    - Finding 1: Reject unsafe release IDs before deleting staging directories.
-                 Validate IDs as single path-safe components and verify staging containment.
-                 Test absolute paths, traversal, and symlink escapes, asserting no deletion occurs.
-    - Finding 2: Constrain disposable-build cleanup to disposable directories.
-                 Reject workspace roots, ancestors, system directories, and symlink escapes.
-                 Verify rejected inputs preserve sentinel files.
-    - Finding 3: Remove the executable trailing EOF from build_disposable_root.sh.
-                 Test successful builder invocation through packaging subprocess path,
-                 checking both exit status 0 and archive creation.
-    - Finding 4: Build inside disposable root at actual production prefix.
-                 Verify dry-run plan specifies container isolation root and internal production prefix,
-                 verify rootfs architecture check rejects non-ARM64 / non-Ubuntu,
-                 and verify hardware-free ROS artifact architecture and installed imports
-                 after removing access to checkout and build root.
     """
 
     def test_finding1_reject_unsafe_release_id_and_staging_containment(self):

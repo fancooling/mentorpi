@@ -66,7 +66,8 @@ package for constants, enums, schemas, web configuration validation, operator
 IPC client, lifecycle wire limits, and API generation. Web depends on this
 package, without importing ROS or the operator implementation. Runtime authority
 and state transitions remain in `ubuntu_tank_operator`. The lifecycle client
-imports shared wire limits; the native server remains in place until C2.
+imports shared wire limits; the C2 runtime server lives in
+`ubuntu_tank_supervisor.lifecycle_service` and uses Supervisor, not host systemd.
 
 Regenerate the unchanged public artifacts from the repository root:
 

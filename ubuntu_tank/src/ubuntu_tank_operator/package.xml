@@ -21,6 +21,7 @@ Declare the ubuntu_tank_operator ROS package metadata and build/runtime dependen
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
+  <exec_depend>ubuntu_tank_supervisor</exec_depend>
   <exec_depend>ubuntu_tank_protocol</exec_depend>
 
   <export>

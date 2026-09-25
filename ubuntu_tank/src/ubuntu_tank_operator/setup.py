@@ -15,7 +15,7 @@ setup(
         ),
         ("share/" + package_name, ["package.xml"]),
     ],
-    install_requires=["ubuntu_tank_protocol", "setuptools"],
+    install_requires=["ubuntu_tank_protocol", "ubuntu_tank_supervisor", "setuptools"],
     zip_safe=True,
     maintainer="Ubuntu Tank Maintainers",
     maintainer_email="dev@mentorpi.local",

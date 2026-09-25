@@ -2,9 +2,9 @@
 """
 mentorpi-tank-lifecycle - Launcher wrapper for the Restricted Lifecycle Helper Service.
 
-Invoked by mentorpi-tank-lifecycle.service (or runs as root daemon).
+Runs as the application UID inside the runtime container.
 Listens on /run/ubuntu_tank/lifecycle.sock to safely perform fixed controller
-systemd operations (start, stop, status, logs).
+Supervisor operations (start, stop, status, logs).
 """
 
 from __future__ import annotations
@@ -22,17 +22,17 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 bin_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
 src_dir = os.path.join(workspace_root, "src")
-web_pkg_dir = os.path.join(src_dir, "ubuntu_tank_web")
+runtime_pkg_dir = os.path.join(src_dir, "ubuntu_tank_supervisor")
 protocol_pkg_dir = os.path.join(src_dir, "ubuntu_tank_protocol")
 
-for p in (web_pkg_dir, protocol_pkg_dir, src_dir):
+for p in (runtime_pkg_dir, protocol_pkg_dir, src_dir):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 
 def main(argv: list[str] | None = None) -> int:
     from ubuntu_tank_protocol.constants import DEFAULT_LIFECYCLE_SOCKET_PATH
-    from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
+    from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
 
     parser = argparse.ArgumentParser(
         description="MentorPi Tank Restricted Lifecycle Helper Service"
@@ -40,7 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--socket-path",
         type=str,
-        default=DEFAULT_LIFECYCLE_SOCKET_PATH,
+        default=os.environ.get(
+            "UBUNTU_TANK_LIFECYCLE_SOCKET", DEFAULT_LIFECYCLE_SOCKET_PATH
+        ),
         help="Path to lifecycle Unix domain socket",
     )
     args = parser.parse_args(argv)
