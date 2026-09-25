@@ -17,32 +17,35 @@ REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
 OPERATOR_PKG_DIR = os.path.join(REPO_ROOT, "ubuntu_tank/src/ubuntu_tank_operator")
 if OPERATOR_PKG_DIR not in sys.path:
     sys.path.insert(0, OPERATOR_PKG_DIR)
+sys.path.insert(
+    0, os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol")
+)
 
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.constants import (
-    LOCK_LEVEL_DEPLOYMENT,
-    LOCK_LEVEL_LIFECYCLE,
-    LOCK_LEVEL_OPERATOR,
-    PROTOCOL_VERSION,
-)
-from ubuntu_tank_operator.enums import (
-    MotionDirection,
-    OperatorState,
-    WebControlErrorCode,
-)
 from ubuntu_tank_operator.locks import (
     LockHierarchy,
     LockOrderViolationError,
     execute_non_blocking_stop,
 )
-from ubuntu_tank_operator.schemas import (
+from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.constants import (
+    LOCK_LEVEL_DEPLOYMENT,
+    LOCK_LEVEL_LIFECYCLE,
+    LOCK_LEVEL_OPERATOR,
+    PROTOCOL_VERSION,
+)
+from ubuntu_tank_protocol.enums import (
+    MotionDirection,
+    OperatorState,
+    WebControlErrorCode,
+)
+from ubuntu_tank_protocol.schemas import (
     ChallengeResponse,
     ControlArmRequest,
     LogsRequest,
     TelemetrySnapshot,
     VersionResponse,
 )
-from ubuntu_tank_operator.state_machine import OperatorStateMachine
 
 
 class TestMilestone10StateMachineTransitions(unittest.TestCase):

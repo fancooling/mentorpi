@@ -75,6 +75,7 @@ for pkg in [
     "ubuntu_tank_teleop",
     "ubuntu_tank_bringup",
     "ubuntu_tank_operator",
+    "ubuntu_tank_protocol",
     "ubuntu_tank_web",
 ]:
     pkg_path = os.path.join(SRC_DIR, pkg)
@@ -110,7 +111,7 @@ except ImportError:
     default_backend = None
 
 try:
-    from ubuntu_tank_operator.config import WebControlConfig
+    from ubuntu_tank_protocol.config import WebControlConfig
 except ImportError:
     WebControlConfig = None
 
@@ -1176,6 +1177,7 @@ class TargetIntegrationOrchestrator:
                     os.path.join(current_dir, "src"),
                     os.path.join(current_dir, "src", "ubuntu_tank_web"),
                     os.path.join(current_dir, "src", "ubuntu_tank_operator"),
+                    os.path.join(current_dir, "src", "ubuntu_tank_protocol"),
                 ]
             )
             py_cmd = (

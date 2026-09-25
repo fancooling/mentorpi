@@ -14,9 +14,9 @@ import secrets
 import threading
 from typing import Any
 
-from ubuntu_tank_operator.constants import DEFAULT_OPERATOR_SOCKET_PATH
-from ubuntu_tank_operator.enums import WebControlErrorCode
-from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.constants import DEFAULT_OPERATOR_SOCKET_PATH
+from ubuntu_tank_protocol.enums import WebControlErrorCode
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
 logger = logging.getLogger(__name__)
 

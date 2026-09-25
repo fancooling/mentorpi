@@ -104,7 +104,7 @@ def main(args=None):
     # Route through shared Operator Agent IPC if not explicitly --direct
     if not direct:
         try:
-            from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+            from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
             client = OperatorIpcClient()
             try:

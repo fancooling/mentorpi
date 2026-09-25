@@ -14,7 +14,7 @@ import grp
 import os
 import stat
 
-from .constants import (
+from ubuntu_tank_protocol.constants import (
     DEFAULT_OPERATOR_SOCKET_PATH,
     ENV_OPERATOR_LOCK_PATH,
     ENV_OPERATOR_SOCKET_PATH,

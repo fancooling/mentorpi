@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
-from .constants import (
+from ubuntu_tank_protocol.constants import (
     LOCK_LEVEL_DEPLOYMENT,
     LOCK_LEVEL_LIFECYCLE,
     LOCK_LEVEL_OPERATOR,

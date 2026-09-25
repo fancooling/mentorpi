@@ -22,8 +22,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.constants import MAX_IPC_MESSAGE_BYTES
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.constants import MAX_IPC_MESSAGE_BYTES
 
 from .lifecycle_client import LifecycleClient
 from .operator_relay import OperatorRelay

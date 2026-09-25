@@ -229,7 +229,7 @@ class BenchClientNode(Node):
             is_direct = True
         else:
             try:
-                from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+                from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
                 ipc = OperatorIpcClient()
                 try:

@@ -42,7 +42,13 @@ OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 BRINGUP_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_bringup")
 TELEOP_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_teleop")
 
-for p in [UBUNTU_TANK_DIR, OPERATOR_PKG_DIR, BRINGUP_PKG_DIR, TELEOP_PKG_DIR]:
+for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
+    UBUNTU_TANK_DIR,
+    OPERATOR_PKG_DIR,
+    BRINGUP_PKG_DIR,
+    TELEOP_PKG_DIR,
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -51,25 +57,25 @@ from ubuntu_tank_operator.authority_lock import (
     acquire_authority_lock,
     release_authority_lock,
 )
-from ubuntu_tank_operator.constants import (
-    FIRST_COMMAND_DEADLINE_SEC,
-    MAX_IPC_MESSAGE_BYTES,
-    PROTOCOL_VERSION,
-)
-from ubuntu_tank_operator.enums import (
-    MotionDirection,
-    OperatorState,
-    WebControlErrorCode,
-)
-from ubuntu_tank_operator.ipc_client import OperatorIpcClient
 from ubuntu_tank_operator.ipc_server import (
     OperatorIpcServer,
     extract_peer_credentials,
 )
-from ubuntu_tank_operator.schemas import (
+from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.constants import (
+    FIRST_COMMAND_DEADLINE_SEC,
+    MAX_IPC_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
+)
+from ubuntu_tank_protocol.enums import (
+    MotionDirection,
+    OperatorState,
+    WebControlErrorCode,
+)
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.schemas import (
     TelemetrySnapshot,
 )
-from ubuntu_tank_operator.state_machine import OperatorStateMachine
 
 
 class TestIpcPeerCredentialsAndFraming(unittest.TestCase):

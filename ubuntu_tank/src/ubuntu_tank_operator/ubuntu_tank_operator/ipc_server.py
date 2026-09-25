@@ -22,13 +22,13 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
-from .constants import (
+from ubuntu_tank_protocol.constants import (
     DEFAULT_OPERATOR_SOCKET_PATH,
     ENV_OPERATOR_SOCKET_PATH,
     MAX_IPC_MESSAGE_BYTES,
 )
-from .enums import OperatorState, WebControlErrorCode
-from .schemas import (
+from ubuntu_tank_protocol.enums import OperatorState, WebControlErrorCode
+from ubuntu_tank_protocol.schemas import (
     ChallengeResponse,
     ControlArmRequest,
     ControlStopResponse,

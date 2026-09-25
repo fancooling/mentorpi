@@ -13,7 +13,7 @@ import socket
 import time
 from typing import Any
 
-from .lifecycle_service import (
+from ubuntu_tank_protocol.constants import (
     DEFAULT_LIFECYCLE_SOCKET_PATH,
     MAX_LIFECYCLE_MESSAGE_BYTES,
 )

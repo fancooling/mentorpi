@@ -76,6 +76,7 @@ for pkg in [
     "ubuntu_tank_supervisor",
     "ubuntu_tank_teleop",
     "ubuntu_tank_operator",
+    "ubuntu_tank_protocol",
     "ubuntu_tank_web",
     "controller",
     "ros_robot_controller",
@@ -90,8 +91,8 @@ from deployment_manager import (
     check_hardware_mutual_exclusion,
     parse_release_manifest,
 )
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
 # Hardware & Platform Constants
 EXPECTED_ARCH = "aarch64"
@@ -938,9 +939,7 @@ class WebAcceptanceOrchestrator:
             else {}
         )
         partial_pwa = (
-            (partial_existing or {}).get("pwa_controls", {})
-            if partial_existing
-            else {}
+            (partial_existing or {}).get("pwa_controls", {}) if partial_existing else {}
         )
         partial_latencies = (
             (partial_existing or {}).get("latencies", {}) if partial_existing else {}
@@ -1144,7 +1143,8 @@ class WebAcceptanceOrchestrator:
                             "latencies": latencies,
                         }
                         sess_id = (
-                            getattr(self, "_active_session_id", None) or uuid.uuid4().hex
+                            getattr(self, "_active_session_id", None)
+                            or uuid.uuid4().hex
                         )
                         self.save_campaign_checkpoint(partial_obs, sess_id)
                         print(
@@ -1153,7 +1153,9 @@ class WebAcceptanceOrchestrator:
                         print(
                             "--> You may now execute the host shutdown test (e.g. 'sudo systemctl poweroff')."
                         )
-                        print("--> After the Pi reboots, resume acceptance testing with:")
+                        print(
+                            "--> After the Pi reboots, resume acceptance testing with:"
+                        )
                         print(
                             f"    ./ubuntu_tank/deploy.sh web-acceptance --ack-tracks-raised --interactive-observations --resume-campaign {self.campaign_file}\n"
                         )
@@ -1163,7 +1165,9 @@ class WebAcceptanceOrchestrator:
                         }
 
                 print(f"\n  Failure condition: {condition}")
-                measured = ask_duration("    Injected-fault to physical-rest total (ms): ")
+                measured = ask_duration(
+                    "    Injected-fault to physical-rest total (ms): "
+                )
                 event_to_agent = ask_duration("    Event-to-agent phase (ms): ")
                 zero_write = ask_duration("    Agent-to-zero-write phase (ms): ")
                 physical_stop = ask_duration(
@@ -1351,9 +1355,7 @@ class WebAcceptanceOrchestrator:
             self.live_run_evidence = {
                 "session_id": session_id,
                 "campaign_id": campaign_id,
-                "active_release_id": self.environment_metadata.get(
-                    "active_release_id"
-                ),
+                "active_release_id": self.environment_metadata.get("active_release_id"),
                 "started_at": started_wall,
                 "status": "ABORTED",
                 "cleanup_stop_confirmed": stop_ok,
@@ -1366,9 +1368,7 @@ class WebAcceptanceOrchestrator:
             self.live_run_evidence = {
                 "session_id": session_id,
                 "campaign_id": campaign_id,
-                "active_release_id": self.environment_metadata.get(
-                    "active_release_id"
-                ),
+                "active_release_id": self.environment_metadata.get("active_release_id"),
                 "started_at": started_wall,
                 "status": "CHECKPOINT_SAVED",
                 "campaign_file": observations.get("campaign_file"),
@@ -1512,11 +1512,7 @@ class WebAcceptanceOrchestrator:
             entry = obs_ctrl.get(c, {})
             v = "✅" if entry.get("verified") else "❌"
             if c in CONTROLS_REQUIRING_DISARM:
-                d = (
-                    "✅ Disarmed"
-                    if entry.get("motion_disarmed")
-                    else "❌ Not Disarmed"
-                )
+                d = "✅ Disarmed" if entry.get("motion_disarmed") else "❌ Not Disarmed"
             else:
                 d = (
                     "✅ Armed-Idle"

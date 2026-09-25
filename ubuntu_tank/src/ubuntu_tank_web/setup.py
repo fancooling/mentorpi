@@ -16,6 +16,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
     ],
     install_requires=[
+        "ubuntu_tank_protocol",
         "fastapi",
         "uvicorn",
         "pydantic",

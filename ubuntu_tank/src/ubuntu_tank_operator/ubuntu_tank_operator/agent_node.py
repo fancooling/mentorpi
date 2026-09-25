@@ -41,14 +41,15 @@ except ImportError:
     String = None
     SetBool = None
 
-from .authority_lock import acquire_authority_lock, release_authority_lock
-from .constants import (
+from ubuntu_tank_protocol.constants import (
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     FIRST_COMMAND_DEADLINE_NS,
     LEASE_CHECK_INTERVAL_SEC,
 )
-from .enums import OperatorState, WebControlErrorCode
+from ubuntu_tank_protocol.enums import OperatorState, WebControlErrorCode
+
+from .authority_lock import acquire_authority_lock, release_authority_lock
 from .ipc_server import OperatorIpcServer
 from .state_machine import OperatorStateMachine
 

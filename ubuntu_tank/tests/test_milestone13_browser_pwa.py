@@ -43,15 +43,20 @@ DIST_DIR = os.path.join(WEB_DIR, "dist")
 WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 
-for p in [UBUNTU_TANK_DIR, WEB_PKG_DIR, OPERATOR_PKG_DIR]:
+for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
+    UBUNTU_TANK_DIR,
+    WEB_PKG_DIR,
+    OPERATOR_PKG_DIR,
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.enums import MotionDirection, OperatorState
 from ubuntu_tank_operator.ipc_server import OperatorIpcServer
-from ubuntu_tank_operator.schemas import TelemetrySnapshot
 from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.enums import MotionDirection, OperatorState
+from ubuntu_tank_protocol.schemas import TelemetrySnapshot
 from ubuntu_tank_web.app import create_app
 from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
 

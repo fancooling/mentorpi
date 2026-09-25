@@ -1215,7 +1215,7 @@ class BenchAcceptanceOrchestrator:
                     ipc_client = getattr(bench_node, "_ipc_client", None)
                     if ipc_client is not None:
                         try:
-                            from ubuntu_tank_operator.ipc_client import (
+                            from ubuntu_tank_protocol.ipc_client import (
                                 OperatorIpcClient,
                             )
 

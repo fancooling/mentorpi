@@ -17,7 +17,7 @@ import yaml
 
 import uvicorn
 
-from ubuntu_tank_operator.config import WebControlConfig
+from ubuntu_tank_protocol.config import WebControlConfig
 
 from .app import create_app
 from .tls import ensure_tls_certificate

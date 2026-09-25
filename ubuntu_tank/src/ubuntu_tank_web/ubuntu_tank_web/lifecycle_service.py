@@ -27,10 +27,13 @@ import threading
 import time
 from typing import Any, Callable
 
+from ubuntu_tank_protocol.constants import (
+    DEFAULT_LIFECYCLE_SOCKET_PATH,
+    MAX_LIFECYCLE_MESSAGE_BYTES,
+)
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_LIFECYCLE_SOCKET_PATH = "/run/ubuntu_tank/lifecycle.sock"
-MAX_LIFECYCLE_MESSAGE_BYTES = 65536
 TARGET_SERVICE_NAME = "mentorpi-tank.service"
 RECOVERY_PENDING_FILE = "/var/opt/ubuntu_tank/deployment/recovery_pending"
 DEPLOYMENT_LOCK_FILE = "/run/lock/ubuntu_tank/deploy.lock"

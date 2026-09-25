@@ -521,3 +521,11 @@ After the Pi reboots, resume and complete the certified run with
 web-configuration identity and confirms host reboot via kernel boot ID. The JSON and Markdown
 reports are written under `dist/` by default. The physical Pi 5, connected robot, motors, installed
 clients, fault injections, and measurement instruments are required for final acceptance.
+
+### Shared protocol package (container refactor C1)
+
+Web and runtime now consume `ubuntu_tank_protocol` directly. It contains the
+ROS-free message contracts, web configuration validation, operator IPC client,
+lifecycle wire limits, and API generator. See
+[dependency and generation instructions](docs/WEB_DEPENDENCY_CLOSURE.md#3-protocol--api-compatibility-specification).
+C1 preserves native service behavior; Docker delivery follows in C2–C6.

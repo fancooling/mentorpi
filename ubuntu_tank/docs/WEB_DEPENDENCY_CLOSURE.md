@@ -61,6 +61,25 @@ The workstation build dependencies are pinned and locked in `ubuntu_tank/web/pac
 
 ## 3. Protocol & API Compatibility Specification
 
+`src/ubuntu_tank_protocol/` is the installable, standard-library-only shared
+package for constants, enums, schemas, web configuration validation, operator
+IPC client, lifecycle wire limits, and API generation. Web depends on this
+package, without importing ROS or the operator implementation. Runtime authority
+and state transitions remain in `ubuntu_tank_operator`. The lifecycle client
+imports shared wire limits; the native server remains in place until C2.
+
+Regenerate the unchanged public artifacts from the repository root:
+
+```bash
+.venv/bin/python ubuntu_tank/src/ubuntu_tank_protocol/ubuntu_tank_protocol/openapi_generator.py
+.venv/bin/python ubuntu_tank/tests/test_container_protocol.py -v
+```
+
+The tests build and install protocol/web wheels into a temporary directory,
+serve API requests with runtime imports forbidden, and compare generated
+OpenAPI/TypeScript output with the committed artifacts.
+
+
 The web UI/API has no user authentication or login. HTTPS supports the PWA;
 connection ownership and short motion leases arbitrate control. Obsolete M10
 login/logout schemas, generated API artifacts, and credential configurations were

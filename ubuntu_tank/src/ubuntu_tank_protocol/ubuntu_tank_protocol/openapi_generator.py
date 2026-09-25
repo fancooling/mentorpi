@@ -12,12 +12,12 @@ from typing import Any
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    from ubuntu_tank_operator.constants import (
+    from ubuntu_tank_protocol.constants import (
         API_VERSION,
         PROTOCOL_VERSION,
         SCHEMA_VERSION,
     )
-    from ubuntu_tank_operator.enums import (
+    from ubuntu_tank_protocol.enums import (
         ControllerServiceState,
         MotionDirection,
         OperatorState,

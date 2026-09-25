@@ -20,9 +20,9 @@ bin_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
 src_dir = os.path.join(workspace_root, "src")
 web_pkg_dir = os.path.join(src_dir, "ubuntu_tank_web")
-operator_pkg_dir = os.path.join(src_dir, "ubuntu_tank_operator")
+protocol_pkg_dir = os.path.join(src_dir, "ubuntu_tank_protocol")
 
-for p in (web_pkg_dir, operator_pkg_dir, src_dir):
+for p in (web_pkg_dir, protocol_pkg_dir, src_dir):
     if p not in sys.path:
         sys.path.insert(0, p)
 

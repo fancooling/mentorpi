@@ -1,9 +1,27 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-20
+Last updated: 2026-09-24
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Container refactor C1 (2026-09-24)
+
+- Extracted `ubuntu_tank_protocol`: schemas, enums, constants, web config,
+  operator IPC client, lifecycle wire limits, and API generation. Consumers,
+  package dependencies, source launchers, and closure checks use it directly.
+  Operator authority stays in runtime; native lifecycle operations await C2.
+- Web imports no operator/ROS implementation or lifecycle server. Tests build
+  protocol/web wheels and serve API requests with runtime imports forbidden.
+  Generated OpenAPI and TypeScript remain byte-for-byte unchanged.
+- Development computer validation: `./ubuntu_tank/deploy.sh test` passes,
+  including browser tests and `test_container_protocol.py`; frontend
+  `npm run type-check`, shell lint, and `git diff --check` pass. Python lint has
+  existing diagnostics; comparison against original files finds none introduced.
+  Native DDS and live udev checks skipped on the development computer.
+  Independent critical-only review: `review.md` is `PASS`.
+- C2–C6, ARM64 image integration, Pi deployment, and real robot testing remain
+  pending. No cutover or motor operation performed. No push made.
 
 ## Milestone 15 Raised-track web movement and failure acceptance (2026-09-20)
 

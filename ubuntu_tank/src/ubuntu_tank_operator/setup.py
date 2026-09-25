@@ -1,4 +1,4 @@
-"""Install the ubuntu_tank_operator Python package and its schemas."""
+"""Install the ubuntu_tank_operator runtime authority package."""
 
 from setuptools import setup
 
@@ -15,11 +15,11 @@ setup(
         ),
         ("share/" + package_name, ["package.xml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["ubuntu_tank_protocol", "setuptools"],
     zip_safe=True,
     maintainer="Ubuntu Tank Maintainers",
     maintainer_email="dev@mentorpi.local",
-    description="Shared operator agent, leases, arbitration, and web control schemas",
+    description="Operator agent, leases, and arbitration",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [

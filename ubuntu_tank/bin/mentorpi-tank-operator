@@ -66,6 +66,7 @@ os.environ["ROS_LOG_DIR"] = os.environ.get(
 for cand in [
     os.path.join(workspace_root, "scripts"),
     os.path.join(workspace_root, "src", "ubuntu_tank_operator"),
+    os.path.join(workspace_root, "src", "ubuntu_tank_protocol"),
 ]:
     if os.path.isdir(cand) and cand not in sys.path:
         sys.path.insert(0, cand)

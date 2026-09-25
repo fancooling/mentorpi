@@ -38,19 +38,25 @@ UBUNTU_TANK_DIR = os.path.join(REPO_ROOT, "ubuntu_tank")
 WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 
-for p in [REPO_ROOT, UBUNTU_TANK_DIR, WEB_PKG_DIR, OPERATOR_PKG_DIR]:
+for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
+    REPO_ROOT,
+    UBUNTU_TANK_DIR,
+    WEB_PKG_DIR,
+    OPERATOR_PKG_DIR,
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
 from fastapi.testclient import TestClient
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.enums import (
+from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.enums import (
     MotionDirection,
     OperatorState,
     WebControlErrorCode,
 )
-from ubuntu_tank_operator.schemas import TelemetrySnapshot
-from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.schemas import TelemetrySnapshot
 from ubuntu_tank_web.app import create_app
 from ubuntu_tank_web.lifecycle_client import LifecycleClient
 from ubuntu_tank_web.operator_relay import OperatorRelay
@@ -111,7 +117,7 @@ class TestLauncherSourceImmutability(unittest.TestCase):
         """Run actual launchers without cached bytecode or inherited -B settings."""
         with tempfile.TemporaryDirectory(prefix="mentorpi-launcher-source-") as root:
             os.makedirs(os.path.join(root, "bin"))
-            for package in ("ubuntu_tank_web", "ubuntu_tank_operator"):
+            for package in ("ubuntu_tank_web", "ubuntu_tank_protocol"):
                 shutil.copytree(
                     os.path.join(UBUNTU_TANK_DIR, "src", package),
                     os.path.join(root, "src", package),

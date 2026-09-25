@@ -31,6 +31,7 @@ for pkg in [
     "ros_robot_controller",
     "ubuntu_tank_bringup",
     "ubuntu_tank_operator",
+    "ubuntu_tank_protocol",
 ]:
     pkg_path = os.path.join(SRC_DIR, pkg)
     if pkg_path not in sys.path:

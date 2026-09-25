@@ -23,18 +23,16 @@ bin_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.abspath(os.path.join(bin_dir, ".."))
 src_dir = os.path.join(workspace_root, "src")
 web_pkg_dir = os.path.join(src_dir, "ubuntu_tank_web")
-operator_pkg_dir = os.path.join(src_dir, "ubuntu_tank_operator")
+protocol_pkg_dir = os.path.join(src_dir, "ubuntu_tank_protocol")
 
-for p in (web_pkg_dir, operator_pkg_dir, src_dir):
+for p in (web_pkg_dir, protocol_pkg_dir, src_dir):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 
 def main(argv: list[str] | None = None) -> int:
-    from ubuntu_tank_web.lifecycle_service import (
-        DEFAULT_LIFECYCLE_SOCKET_PATH,
-        LifecycleHelperService,
-    )
+    from ubuntu_tank_protocol.constants import DEFAULT_LIFECYCLE_SOCKET_PATH
+    from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
 
     parser = argparse.ArgumentParser(
         description="MentorPi Tank Restricted Lifecycle Helper Service"

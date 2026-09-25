@@ -599,6 +599,7 @@ internal_workspace_pkgs = {
     "ubuntu_tank_supervisor",
     "ubuntu_tank_teleop",
     "ubuntu_tank_operator",
+    "ubuntu_tank_protocol",
     "ubuntu_tank_web",
 }
 

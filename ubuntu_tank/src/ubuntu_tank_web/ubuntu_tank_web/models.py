@@ -12,13 +12,13 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
-from ubuntu_tank_operator.constants import (
+from ubuntu_tank_protocol.constants import (
     API_VERSION,
     PROTOCOL_VERSION,
     SCHEMA_VERSION,
     SUPPORTED_PROTOCOL_VERSIONS,
 )
-from ubuntu_tank_operator.enums import (
+from ubuntu_tank_protocol.enums import (
     ControllerServiceState,
     MotionDirection,
     OperatorState,

@@ -227,7 +227,7 @@ def main(args=None):
     else:
         # Route through shared Operator Agent IPC
         try:
-            from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+            from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
             client = OperatorIpcClient()
             try:

@@ -22,12 +22,12 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
 
-from ubuntu_tank_operator.constants import (
+from ubuntu_tank_protocol.constants import (
     CHALLENGE_INTERVAL_SEC,
     MAX_IPC_MESSAGE_BYTES,
 )
-from ubuntu_tank_operator.enums import MotionDirection, WebControlErrorCode
-from ubuntu_tank_operator.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.enums import MotionDirection, WebControlErrorCode
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
 logger = logging.getLogger(__name__)
 

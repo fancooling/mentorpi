@@ -70,3 +70,7 @@ DEFAULT_OPERATOR_SOCKET_PATH: Final[str] = "/run/ubuntu_tank/operator.sock"
 ENV_OPERATOR_SOCKET_PATH: Final[str] = "UBUNTU_TANK_OPERATOR_SOCKET"
 ENV_OPERATOR_LOCK_PATH: Final[str] = "UBUNTU_TANK_OPERATOR_LOCK"
 MAX_IPC_MESSAGE_BYTES: Final[int] = 65536
+
+# Lifecycle newline-delimited JSON requests share these limits across client/server.
+DEFAULT_LIFECYCLE_SOCKET_PATH: Final[str] = "/run/ubuntu_tank/lifecycle.sock"
+MAX_LIFECYCLE_MESSAGE_BYTES: Final[int] = 65536

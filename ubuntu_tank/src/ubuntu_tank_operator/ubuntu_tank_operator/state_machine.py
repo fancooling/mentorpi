@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from .constants import (
+from ubuntu_tank_protocol.constants import (
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     FIRST_COMMAND_DEADLINE_NS,
@@ -27,13 +27,13 @@ from .constants import (
     MAX_PERMISSIBLE_LINEAR_SPEED,
     PROTOCOL_VERSION,
 )
-from .enums import (
+from ubuntu_tank_protocol.enums import (
     ControllerServiceState,
     MotionDirection,
     OperatorState,
     WebControlErrorCode,
 )
-from .schemas import (
+from ubuntu_tank_protocol.schemas import (
     Challenge,
     ChallengeResponse,
     StatusResponse,

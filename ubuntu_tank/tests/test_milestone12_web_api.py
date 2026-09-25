@@ -36,26 +36,32 @@ REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
 UBUNTU_TANK_DIR = os.path.join(REPO_ROOT, "ubuntu_tank")
 WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
+PROTOCOL_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_protocol")
 
-for p in [UBUNTU_TANK_DIR, WEB_PKG_DIR, OPERATOR_PKG_DIR]:
+for p in [
+    PROTOCOL_PKG_DIR,
+    UBUNTU_TANK_DIR,
+    WEB_PKG_DIR,
+    OPERATOR_PKG_DIR,
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from ubuntu_tank_operator.config import WebControlConfig
-from ubuntu_tank_operator.constants import (
+from ubuntu_tank_operator.ipc_server import OperatorIpcServer
+from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.constants import (
     API_VERSION,
     PROTOCOL_VERSION,
     SCHEMA_VERSION,
 )
-from ubuntu_tank_operator.enums import (
+from ubuntu_tank_protocol.enums import (
     MotionDirection,
     OperatorState,
     WebControlErrorCode,
 )
-from ubuntu_tank_operator.ipc_client import OperatorIpcClient
-from ubuntu_tank_operator.ipc_server import OperatorIpcServer
-from ubuntu_tank_operator.schemas import TelemetrySnapshot
-from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.schemas import TelemetrySnapshot
 from ubuntu_tank_web.app import create_app
 from ubuntu_tank_web.lifecycle_client import LifecycleClient
 from ubuntu_tank_web.lifecycle_service import LifecycleHelperService
@@ -1113,7 +1119,7 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
             (
                 "import sys\n"
                 f"sys.path.insert(0, '{WEB_PKG_DIR}')\n"
-                f"sys.path.insert(0, '{OPERATOR_PKG_DIR}')\n"
+                f"sys.path.insert(0, {PROTOCOL_PKG_DIR!r})\n"
                 "from ubuntu_tank_web.lifecycle_service import LifecycleHelperService\n"
                 "assert 'fastapi' not in sys.modules, 'fastapi was imported eagerly!'\n"
             ),

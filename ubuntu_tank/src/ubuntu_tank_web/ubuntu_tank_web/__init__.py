@@ -6,7 +6,6 @@ telemetry, and system lifecycle operations.
 """
 
 from .lifecycle_client import LifecycleClient
-from .lifecycle_service import LifecycleHelperService
 from .operator_relay import OperatorRelay
 from .tls import ensure_tls_certificate, generate_self_signed_cert
 
@@ -15,7 +14,6 @@ __all__ = [
     "ensure_tls_certificate",
     "generate_self_signed_cert",
     "LifecycleClient",
-    "LifecycleHelperService",
     "OperatorRelay",
 ]
 

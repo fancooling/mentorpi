@@ -30,7 +30,14 @@ SCRIPTS_DIR = os.path.join(UBUNTU_TANK_DIR, "scripts")
 WEB_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_web")
 OPERATOR_PKG_DIR = os.path.join(UBUNTU_TANK_DIR, "src/ubuntu_tank_operator")
 
-for p in [REPO_ROOT, UBUNTU_TANK_DIR, SCRIPTS_DIR, WEB_PKG_DIR, OPERATOR_PKG_DIR]:
+for p in [
+    os.path.join(os.path.dirname(OPERATOR_PKG_DIR), "ubuntu_tank_protocol"),
+    REPO_ROOT,
+    UBUNTU_TANK_DIR,
+    SCRIPTS_DIR,
+    WEB_PKG_DIR,
+    OPERATOR_PKG_DIR,
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -541,7 +548,7 @@ class TestTargetTestOrchestratorLogic(unittest.TestCase):
     def test_web_control_config_from_dict_and_listen_address(self):
         """WebControlConfig parses YAML data through from_dict and exposes listen_address."""
         import yaml
-        from ubuntu_tank_operator.config import WebControlConfig
+        from ubuntu_tank_protocol.config import WebControlConfig
 
         # 1. Ensure obsolete .load() and .host do not exist
         self.assertFalse(hasattr(WebControlConfig, "load"))
