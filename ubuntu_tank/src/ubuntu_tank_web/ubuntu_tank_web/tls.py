@@ -12,13 +12,30 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import os
-from typing import Sequence
+import ssl
+from collections.abc import Sequence
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+
+def validate_tls_certificate(cert_path: str, key_path: str) -> tuple[str, str]:
+    """Validate a mounted, current TLS identity without writing either file.
+
+    Raise on missing, malformed, expired, not-yet-valid or mismatched material.
+    Certificate provisioning is a separate owner operation.
+    """
+    with open(cert_path, "rb") as stream:
+        cert = x509.load_pem_x509_certificate(stream.read())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
+        raise ValueError("Mounted TLS certificate is outside its validity period")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    return cert_path, key_path
 
 
 def generate_self_signed_cert(

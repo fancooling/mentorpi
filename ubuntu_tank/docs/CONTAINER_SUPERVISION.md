@@ -2,8 +2,9 @@
 
 C2 replaces the controller runner and lifecycle server with container process
 supervision. Native service startup is no longer supported by these entrypoints.
-Images, Compose, host ownership checks and deployment follow in C3/C4; this
-checkout is not ready for a Pi cutover. Historical native acceptance does not
+Images and Compose are defined in the [C3 image guide](../../docker/ubuntu_tank/README.md).
+Host ownership checks and deployment remain C4 work; this checkout is not ready
+for a Pi cutover. Historical native acceptance does not
 certify the container runtime.
 
 ## Processes and interfaces

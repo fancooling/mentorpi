@@ -108,7 +108,7 @@ IMPORT_TO_PKG_MAP = {
 }
 
 STDLIB = {
-    'os', 'sys', 'time', 'math', 'signal', 'threading', 'socket', 'http', 'xmlrpc', 'struct',
+    'os', 'sys', 'time', 'math', 'signal', 'threading', 'socket', 'ssl', 'http', 'xmlrpc', 'struct',
     'select', 'enum', 'queue', 'termios', 'tty', 'typing', 'unittest', 'glob',
     'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json', 'secrets',
     'uuid', 'fcntl', 'pathlib', 're', 'logging', 'dataclasses', 'contextlib',

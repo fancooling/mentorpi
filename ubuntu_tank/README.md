@@ -1,5 +1,7 @@
 # MentorPi Native Tank Controller
 
+Container refactor C3 image build and verification: [container guide](../docker/ubuntu_tank/README.md). Host cutover and robot validation remain C4/C5 work.
+
 Current checkout: container refactor C1/C2 is implemented. The runner and lifecycle
 adapter now require Supervisor; native startup commands below describe the
 previous delivery. Images and Pi deployment remain pending in C3/C4. See

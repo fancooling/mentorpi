@@ -1,9 +1,34 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Container refactor C3 (2026-09-25)
+
+- Added paired ARM64 runtime/web images, Compose, allowlisted build staging,
+  dependency manifests and a release identity binding both image digests.
+  Runtime installs the C2 ROS/Supervisor workspace; web contains only installed
+  protocol/web wheels and compiled frontend. Both run as UID/GID 10001.
+- Reused native package hashes with dated Ubuntu/ROS repositories and the
+  separate ROS snapshot signing key. TLS startup validates retained certificates
+  without mutation; invalid TLS/configuration fails startup.
+- Both images built on the x86 development computer with BuildKit ARM64
+  emulation. Installed imports/CLI checks and the paired image smoke test pass:
+  HTTPS/static assets, ROS-free web, mode-0600 same-UID IPC over a read-only web
+  mount, and reconnect after runtime fixture replacement. The fixture rejects
+  controller mutations; these results do not certify ROS/DDS or motor behavior.
+- Reproduce with `.venv/bin/python docker/ubuntu_tank/build.py --output NEW_DIR`
+  and `.venv/bin/python docker/ubuntu_tank/smoke.py NEW_DIR/release.json`.
+  Builder/emulator options and mounts: `docker/ubuntu_tank/README.md`.
+  Local evidence: `ubuntu_tank/.work/c3-build-9/release.json`, release ID
+  `8bb3fc6d640889530c61654aebdacf38b77e19281145466f68622e7ed4e1e694`.
+- Development/browser suites, three TLS/configuration tests, frontend types,
+  new-code Python lint, shell lint and whitespace checks pass. Independent
+  critical-only review: `PASS`. Native ROS/DDS and live RRC checks skip locally.
+- C4–C6 and real Pi 5/robot validation remain pending. No robot deployment,
+  motor operation, commit or push performed.
 
 ## Container refactor C2 (2026-09-24)
 

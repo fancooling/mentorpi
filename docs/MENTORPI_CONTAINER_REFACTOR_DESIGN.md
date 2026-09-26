@@ -1,7 +1,7 @@
 # MentorPi Ubuntu Tank Container Refactor
 
-Status: C1/C2 implemented and verified on the development computer; C3–C6 and physical validation pending. No robot cutover authorized.
-Date: 2026-09-24.
+Status: C1–C3 complete; ARM64 images and cross-container IPC verified under emulation on the development computer. C4–C6 and physical validation pending. No robot cutover authorized.
+Date: 2026-09-25.
 
 ## 1. Purpose and scope
 
@@ -438,12 +438,14 @@ These phases are local to this document; existing milestone numbering is intact.
 |---|---|---|
 | C1 (complete) | Shared protocol package | Installed protocol/web wheel test passes with runtime imports forbidden; generated OpenAPI/TypeScript unchanged; existing product and browser tests pass |
 | C2 (complete) | Supervisor integration, lifecycle adapter, existing robot supervisor adaptation | Numeric monitor deadlines set; process tests cover each monitored failure, start/stop races, stopped boot |
-| C3 | Two final image targets and Compose definition | ARM64 images build; installed entrypoints work; shared IPC and ROS-free web verified |
+| C3 (complete) | Two final image targets and Compose definition | Both ARM64 images build under emulation; installed CLI/import checks, HTTPS/static assets, shared IPC permissions and server replacement pass; web has no ROS |
 | C4 | Host ownership and Docker deployment tooling | Real-Pi deployment/redeployment checks pass; manual Git fallback steps documented |
 | C5 | Container-specific failure and physical campaign | Real robot elevated-track observations and instrumented stop bounds pass |
 | C6 | Operator documentation and release handoff | Reproducible build/deploy/recovery commands and exact evidence identities recorded |
 
-Choose the shared UID and supported Docker/Compose versions in C3; measure
-resource limits and set new fault-acceptance bounds before C5.
+C3 uses shared UID/GID 10001 and initially supports rootful Docker Engine 29.8
+and Compose 5.5 without user-namespace remapping. See the
+[image build guide](../docker/ubuntu_tank/README.md). Measure resource limits and
+set new fault-acceptance bounds before C5.
 
 Complete C1–C6 and remove obsolete native deployment paths before release.

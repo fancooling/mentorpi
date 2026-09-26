@@ -2,7 +2,7 @@
 CLI entrypoint for running the MentorPi Pi 5 Web Control Service.
 
 Invoked directly or by bin/mentorpi-tank-web / systemd service.
-Loads configuration, provisions TLS certificates if missing, and runs
+Loads configuration, validates externally provisioned TLS certificates, and runs
 the single-worker Uvicorn ASGI server.
 """
 
@@ -13,14 +13,13 @@ import json
 import logging
 import os
 import sys
-import yaml
 
 import uvicorn
-
+import yaml
 from ubuntu_tank_protocol.config import WebControlConfig
 
 from .app import create_app
-from .tls import ensure_tls_certificate
+from .tls import validate_tls_certificate
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,17 +30,11 @@ logger = logging.getLogger("mentorpi-tank-web")
 
 def load_config_from_yaml(config_path: str) -> WebControlConfig:
     """Load and validate WebControlConfig from a YAML file."""
-    if not os.path.isfile(config_path):
-        return WebControlConfig()
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return WebControlConfig.from_dict(data)
-    except Exception as exc:
-        logger.warning(
-            "Failed to load config from %s: %s; using defaults", config_path, exc
-        )
-        return WebControlConfig()
+    with open(config_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise TypeError("Web configuration must be a YAML mapping")
+    return WebControlConfig.from_dict(data)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    cfg = load_config_from_yaml(args.config)
+    # Artifact generation does not require host-specific configuration or TLS.
+    cfg = (
+        WebControlConfig()
+        if args.export_openapi
+        else load_config_from_yaml(args.config)
+    )
 
     if args.export_openapi:
         app = create_app(config=cfg)
@@ -102,11 +100,12 @@ def main(argv: list[str] | None = None) -> int:
     ssl_cert: str | None = None
     ssl_key: str | None = None
 
-    if not args.no_tls and cfg.tls_cert_path and cfg.tls_key_path:
-        cert_p, key_p = ensure_tls_certificate(
+    if not args.no_tls:
+        if not cfg.tls_cert_path or not cfg.tls_key_path:
+            raise ValueError("TLS certificate and key paths are required")
+        cert_p, key_p = validate_tls_certificate(
             cert_path=cfg.tls_cert_path,
             key_path=cfg.tls_key_path,
-            hostnames_or_ips=[host, "127.0.0.1", "localhost"],
         )
         ssl_cert = cert_p
         ssl_key = key_p
