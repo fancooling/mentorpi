@@ -1,9 +1,93 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## C4 owner-scoped Pi verification complete (2026-09-26)
+
+- Owner explicitly dropped USB reconnect, competing-owner and interrupted-update
+  tests after completing shutdown/power-on. These are waived/unverified, not passed.
+  C4 verification is complete for the reduced owner-requested scope; C5 physical
+  acceptance remains pending. Implementation fixes are folded into the C4 commit.
+- Evidence is under `ubuntu_tank/.work/c4-pi-evidence/`; the second transfer placed
+  the complete set in its nested `evidence/` directory. Initial, redeploy,
+  after-reboot and after-poweron reports all show PASS_STOPPED_INTEGRATION for
+  release `3ac501e52612b5b2a5b0352e5f5285e5fa6481dd304d6a4add7a75ae57c64b05`.
+- Reports match the release and actual transport archive; all 40 configuration
+  hashes are unchanged. Both containers were replaced on redeploy. Boot-ID chains
+  agree with the reboot and power-cycle reports; each run/deployment identity is
+  distinct. Physical power cycling is owner-observed, not proved by boot IDs alone.
+- Every report shows lifecycle inactive, NO_OWNER, no active owner or reported
+  fault. Guard/battery telemetry is null while stopped; no physical disarm or
+  stop-timing certification is inferred. No push performed.
+
+## C4 explicit HTTPS setup (2026-09-26)
+
+- Owner-reported identity fix passed Pi image verification; staging then found an
+  empty TLS directory. `setup-tls` was proposed before it existed; it is now added
+  to the host CLI with repeatable `--hostname`/`--ip` and optional `--release`
+  (default `./release.json`). It uses the verified existing web image; no rebuild.
+- Creates a missing pair and exact browser origins, preserves valid covered
+  identities, rejects partial/invalid/uncovered pairs, and requires applications
+  stopped. Browser certificate trust remains a client operation.
+- Host bundles now include `tls_setup.py`; `prepare-host` checks required source
+  files before cutover. Five TLS/HTTPS product tests, installed ARM64 web-image
+  certificate checks, lint/format, whitespace and independent review passed.
+  Host provisioning was not simulated; new Pi command execution remains pending.
+
+## C4 first Pi deployment attempt (2026-09-26)
+
+- C4 committed as `73884ad`; image-store compatibility and TLS changes are
+  included in the amended C4 commit. Release `ubuntu_tank/.work/c4-release-2/release.json` built and
+  passed the motor-free ARM64 smoke test; release ID
+  `3ac501e52612b5b2a5b0352e5f5285e5fa6481dd304d6a4add7a75ae57c64b05`.
+- Owner-reported Pi 5: Ubuntu 26.04.1 ARM64, Docker 29.8.1/Compose 5.5.1 with
+  containerd image storage. Configuration backup exists and both images loaded.
+  Staging failed before deployment because it looked up classic-store config IDs.
+- The exported OCI manifests match the Pi-reported image IDs and reference the
+  exact expected config digests. Host tooling now verifies portable config identity
+  and deploys using immutable local Docker IDs. Build metadata supplies config IDs
+  independently of the builder's store; smoke uses the same resolver.
+- Local checks passed: actual archive manifest/config hash linkage, Docker export
+  config verification and wrong-digest rejection, installed-image ARM64 smoke,
+  Python lint/format, whitespace and independent review. No Pi mutation was run
+  from the development computer.
+- Copy the complete current host-tool bundle to the Pi; rerun
+  `prepare-host` to install both, then `stage`. No image rebuild or release-manifest
+  edit is required. Successful Pi staging/deployment and C4 exit checks remain pending.
+
+## Container refactor C4 implementation (2026-09-25)
+
+- Removed the redundant container shell wrapper. Run `build.py`/`smoke.py` with
+  the development `.venv`; run `deploy.py` with system Python on the Pi.
+  Pi host operations require no `.venv`.
+
+- Added the Docker host CLI, immutable image/configuration verification, native
+  service cutover masks, recorded host undo steps, stable ownership/deployment
+  locks, paired stop-and-replace and boot/shutdown integration. Configuration,
+  TLS and SROS2 identities are retained; no automatic rollback or controller Start.
+- Host admission binds release, deployment generation and boot ID. Missing or
+  stale approval blocks Start/Arm, cancels pending Arm and revokes authority.
+  Image startup rejects obsolete generations/builds. The serial bridge uses
+  exclusive open; host checks still verify actual device holders. Paused runtime
+  shutdown uses direct SIGKILL, verified against local Docker without hardware.
+- Development/browser suites, 13 real-process supervision tests, three admission
+  tests, frontend types, Compose acceptance, new-code lint, shell lint and
+  whitespace checks pass. Independent critical-only review: `PASS`.
+- Both final ARM64 images built under emulation. Installed-image HTTPS/static
+  assets, ROS-free web, shared IPC, server replacement and obsolete-generation
+  rejection pass. Release manifest: `ubuntu_tank/.work/c4-build-final/release.json`,
+  release ID `5e0dea917ebe31451dd918c855b403c72c0f3c91bef72f62a25aea77869c618e`.
+  This is packaging evidence, not Pi DDS or physical-stop evidence.
+- `docker/ubuntu_tank/README.md` documents preparation, staging, deployment,
+  stopped-pair `target-test [--redeploy]`, serial recovery and manual Git fallback.
+  Native shell commands are retired; obsolete dispatch checks were removed while
+  product safety/client coverage remains. Historical native helper cleanup is
+  still required before C6 release.
+- C4 real-Pi ownership/cutover/redeployment/reboot evidence and C5 physical
+  acceptance remain pending. No Pi deployment, motor operation, commit or push.
 
 ## Container refactor C3 (2026-09-25)
 

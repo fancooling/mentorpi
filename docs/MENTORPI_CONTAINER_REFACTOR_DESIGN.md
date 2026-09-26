@@ -1,7 +1,7 @@
 # MentorPi Ubuntu Tank Container Refactor
 
-Status: C1–C3 complete; ARM64 images and cross-container IPC verified under emulation on the development computer. C4–C6 and physical validation pending. No robot cutover authorized.
-Date: 2026-09-25.
+Status: C1–C4 implemented. C4 owner-scoped Pi deployment, redeployment, reboot and power-on verification passed; other C4 fault tests were waived, not passed. C5–C6 and container physical acceptance remain pending.
+Date: 2026-09-26.
 
 ## 1. Purpose and scope
 
@@ -326,20 +326,22 @@ process that does not use it, so verify actual device ownership as well.
 
 ## 7. Deployment, update, and Git fallback
 
-Use one host CLI at `docker/ubuntu_tank/deploy.sh` for Docker deployment.
-Replace the native application deployment commands rather than maintaining both.
-Proposed operations and side effects:
+Use `docker/ubuntu_tank/deploy.py` with system Python for Pi host operations;
+no Pi virtual environment is required. Build images separately with
+`docker/ubuntu_tank/build.py` using the development repository `.venv`.
+These Python entrypoints replace native application deployment commands.
+Operations and side effects:
 
 | Command | Contract |
 |---|---|
-| `build` | Build the two images and release manifest; never open hardware |
+| `build.py --output DIR` | Build the two images and release manifest; never open hardware |
 | `stage RELEASE` | Pull/load and verify both digests and configuration compatibility without changing running processes |
 | `prepare-host` | Explicit host provisioning; report changes and recovery instructions |
 | `deploy RELEASE` | Under the deployment lock, stop/disarm and verify old ownership release, replace the pair, verify new stopped/disarmed readiness |
 | `status` / `logs` | Read observed state and bounded diagnostics without mutation |
 | `stop` | Stop/disarm and shut down both containers; preserve persistent data |
 | `target-test` | Verify an already built and deployed release on the real Pi; no implicit build/install |
-| `web-acceptance` | Run explicit raised-track, image-bound physical acceptance |
+| `web-acceptance` (planned C5) | Run explicit raised-track, image-bound physical acceptance |
 
 Start/Stop controller remains available through browser and terminal; deployment
 itself does not arm or start the controller. Document registry
@@ -439,7 +441,7 @@ These phases are local to this document; existing milestone numbering is intact.
 | C1 (complete) | Shared protocol package | Installed protocol/web wheel test passes with runtime imports forbidden; generated OpenAPI/TypeScript unchanged; existing product and browser tests pass |
 | C2 (complete) | Supervisor integration, lifecycle adapter, existing robot supervisor adaptation | Numeric monitor deadlines set; process tests cover each monitored failure, start/stop races, stopped boot |
 | C3 (complete) | Two final image targets and Compose definition | Both ARM64 images build under emulation; installed CLI/import checks, HTTPS/static assets, shared IPC permissions and server replacement pass; web has no ROS |
-| C4 | Host ownership and Docker deployment tooling | Real-Pi deployment/redeployment checks pass; manual Git fallback steps documented |
+| C4 (owner-scoped verification passed) | Host ownership and Docker deployment tooling | Pi deployment/redeployment, reboot and power-on passed; USB, competing-owner and interrupted-update tests waived by owner; manual Git fallback documented |
 | C5 | Container-specific failure and physical campaign | Real robot elevated-track observations and instrumented stop bounds pass |
 | C6 | Operator documentation and release handoff | Reproducible build/deploy/recovery commands and exact evidence identities recorded |
 
@@ -447,5 +449,12 @@ C3 uses shared UID/GID 10001 and initially supports rootful Docker Engine 29.8
 and Compose 5.5 without user-namespace remapping. See the
 [image build guide](../docker/ubuntu_tank/README.md). Measure resource limits and
 set new fault-acceptance bounds before C5.
+
+C4 adds the host CLI, retained host-change record, lifetime device lock,
+boot-bound deployment admission and stopped-pair target checks. Native operations
+are removed from `ubuntu_tank/deploy.sh`; historical helper modules/fixtures remain
+for existing product tests and must be cleaned up before C6 release. The owner
+accepted a reduced C4 gate: deployment, redeployment, reboot and power-on recovery.
+USB reconnect, competing-owner and interrupted-update tests remain unverified. See the [host guide](../docker/ubuntu_tank/README.md).
 
 Complete C1–C6 and remove obsolete native deployment paths before release.

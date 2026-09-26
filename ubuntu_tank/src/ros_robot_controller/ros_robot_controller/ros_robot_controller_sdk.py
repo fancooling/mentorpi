@@ -9,7 +9,7 @@ mentorpi/src/driver/ros_robot_controller/ros_robot_controller/ros_robot_controll
 
 Local adaptations: Added mock mode for hardware-free testing; parameterized bounded
 read/write and receive-silence timeouts; exposed fatal serial read/write/silence errors;
-added zero_motors helper; implemented signal-safe close.
+added zero_motors helper; implemented signal-safe close and exclusive serial open.
 """
 
 import enum
@@ -436,7 +436,11 @@ class Board:
                 )
             try:
                 self.port = serial.Serial(
-                    device, baudrate, timeout=timeout, write_timeout=self.write_timeout
+                    device,
+                    baudrate,
+                    timeout=timeout,
+                    write_timeout=self.write_timeout,
+                    exclusive=True,  # Cooperating serial owners must not share the chassis.
                 )
                 try:
                     self.port.dtr = True

@@ -68,6 +68,23 @@ class RuntimeProcesses(unittest.TestCase):
             ROS_LOG_DIR=str(self.directory / "ros-log"),
             _UBUNTU_TANK_TEST_CHILD_CMD=f"{sys.executable} {TANK / 'tests/fixtures/runtime_graph.py'}",
         )
+        self.approval = self.directory / "ready.json"
+        self.approval.write_text(
+            json.dumps(
+                {
+                    "token": "test-generation",
+                    "release_id": "test-pair",
+                    "boot_id": Path("/proc/sys/kernel/random/boot_id")
+                    .read_text()
+                    .strip(),
+                }
+            )
+        )
+        self.env.update(
+            UBUNTU_TANK_DEPLOYMENT_DIR=str(self.directory),
+            UBUNTU_TANK_DEPLOYMENT_TOKEN="test-generation",
+            UBUNTU_TANK_RELEASE_ID="test-pair",
+        )
         self.patch = patch.dict(os.environ, {"UBUNTU_TANK_PRIVATE_DIR": self.tmp.name})
         self.patch.start()
         self.output = (self.directory / "output.log").open("w")
@@ -120,6 +137,17 @@ class RuntimeProcesses(unittest.TestCase):
             logs = {p.name: p.read_text()[-4000:] for p in self.directory.glob("*.log")}
             self.fail(f"Start failed: {result}: {logs}")
         return progress.read_record("controller")
+
+    def test_deployment_revocation_blocks_start_and_stops_running_graph(self):
+        record = self.start_controller()
+        saved = self.approval.read_text()
+        self.approval.unlink()
+        wait_for(lambda: dead(record["graph_pid"]))
+        self.assertFalse(self.client.start_controller(timeout_sec=3)[0])
+        self.assertTrue(self.client.stop_controller()[0])
+        self.approval.write_text(saved)
+        wait_for(lambda: self.client.get_status()[1] == "inactive")
+        self.start_controller()
 
     def test_stopped_boot_start_stop_and_logs(self):
         self.assertEqual(self.client.get_status()[1], "inactive")

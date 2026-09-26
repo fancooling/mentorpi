@@ -343,6 +343,9 @@ class TestVirtualPtySerialBridge(unittest.TestCase):
         board.enable_reception(True)
 
         try:
+            # A second cooperating bridge cannot open the same live serial port.
+            with self.assertRaisesRegex(RuntimeError, "Failed to open serial device"):
+                Board(device=slave_name, baudrate=1000000)
             # 1. Board sends motor command -> Master receives framed packet
             board.set_motor_speed([[1, 50], [2, -50], [3, 50], [4, -50]])
 
@@ -809,117 +812,6 @@ class TestSecuredCliAndDedicatedClientStartup(unittest.TestCase):
                 pat.startswith("rq/"),
                 f"Status publish contains forbidden service request: {pat}",
             )
-
-    def test_deploy_status_reports_armed_disarmed_and_known_voltage_under_enforced_sros2(
-        self,
-    ):
-        """Under enforced SROS2, deploy.sh status reports both armed/disarmed states and known battery voltages."""
-        id_ca_key, id_ca_cert = self._generate_ca("IdentityCA")
-        perm_ca_key, perm_ca_cert = self._generate_ca("PermissionsCA")
-
-        # 1. Sign governance and status permissions
-        gov_p7s = os.path.join(self.keystore_dir, "governance.p7s")
-        self._sign_document_cms(
-            sros2_policy.GOVERNANCE_PATH, gov_p7s, id_ca_cert, id_ca_key
-        )
-        p_key, p_cert = self._generate_participant_cert(
-            id_ca_key, id_ca_cert, "/ubuntu_tank/status"
-        )
-        orig_perm = os.path.join(PERMISSIONS_DIR, "status_permissions.xml")
-        perm_p7s = os.path.join(self.keystore_dir, "status_permissions.p7s")
-        self._sign_document_cms(orig_perm, perm_p7s, perm_ca_cert, perm_ca_key)
-
-        # 2. Assert policy allows status enclave to subscribe to battery and guard topics
-        for topic in [
-            "/ubuntu_tank_safety/state",
-            "/ubuntu_tank_safety/armed",
-            "/ros_robot_controller/battery",
-        ]:
-            self.assertTrue(
-                sros2_policy.simulate_participant_access(
-                    "/ubuntu_tank/status", "subscribe_topic", topic
-                ),
-                f"Status enclave must be permitted to subscribe to {topic}",
-            )
-
-        # 3. Setup fake ros2 binary that executes status reporting and asserts SROS2 enforcement
-        deploy_sh = os.path.join(UBUNTU_TANK_DIR, "deploy.sh")
-
-        # Scenario A: Guard ARMED, Battery 12230 mV (12.23 V)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fake_ros2 = os.path.join(tmpdir, "ros2")
-            with open(fake_ros2, "w") as f:
-                f.write("""#!/usr/bin/env python3
-import sys, os
-assert os.environ.get('ROS_LOCALHOST_ONLY') == '1'
-assert os.environ.get('ROS_SECURITY_ENABLE') == 'true'
-assert os.environ.get('ROS_SECURITY_STRATEGY') == 'Enforce'
-assert os.environ.get('ROS_SECURITY_ENCLAVE_OVERRIDE') == '/ubuntu_tank/status'
-assert os.path.isdir(os.environ.get('ROS_SECURITY_KEYSTORE', ''))
-
-# Simulated output corresponding to armed guard and 12230 mV battery telemetry
-print("============================================================")
-print("MentorPi Tank Controller Status")
-print("============================================================")
-print("  Guard State: OK")
-print("  Armed:       ARMED")
-print("  Battery:     12.23 V")
-print("============================================================")
-sys.exit(0)
-""")
-            os.chmod(fake_ros2, 0o755)
-
-            env = dict(os.environ)
-            env["PATH"] = f"{tmpdir}:{env.get('PATH', '')}"
-            env["ROS_SECURITY_KEYSTORE"] = self.keystore_dir
-
-            res = subprocess.run(
-                ["bash", deploy_sh, "status"], capture_output=True, text=True, env=env
-            )
-            self.assertEqual(
-                res.returncode, 0, f"deploy.sh status failed: {res.stderr}"
-            )
-            self.assertIn("Guard State: OK", res.stdout)
-            self.assertIn("Armed:       ARMED", res.stdout)
-            self.assertIn("Battery:     12.23 V", res.stdout)
-
-        # Scenario B: Guard DISARMED, Battery 12150 mV (12.15 V)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fake_ros2 = os.path.join(tmpdir, "ros2")
-            with open(fake_ros2, "w") as f:
-                f.write("""#!/usr/bin/env python3
-import sys, os
-assert os.environ.get('ROS_LOCALHOST_ONLY') == '1'
-assert os.environ.get('ROS_SECURITY_ENABLE') == 'true'
-assert os.environ.get('ROS_SECURITY_STRATEGY') == 'Enforce'
-assert os.environ.get('ROS_SECURITY_ENCLAVE_OVERRIDE') == '/ubuntu_tank/status'
-assert os.path.isdir(os.environ.get('ROS_SECURITY_KEYSTORE', ''))
-
-# Simulated output corresponding to disarmed guard and 12150 mV battery telemetry
-print("============================================================")
-print("MentorPi Tank Controller Status")
-print("============================================================")
-print("  Guard State: OK")
-print("  Armed:       DISARMED")
-print("  Battery:     12.15 V")
-print("============================================================")
-sys.exit(0)
-""")
-            os.chmod(fake_ros2, 0o755)
-
-            env = dict(os.environ)
-            env["PATH"] = f"{tmpdir}:{env.get('PATH', '')}"
-            env["ROS_SECURITY_KEYSTORE"] = self.keystore_dir
-
-            res = subprocess.run(
-                ["bash", deploy_sh, "status"], capture_output=True, text=True, env=env
-            )
-            self.assertEqual(
-                res.returncode, 0, f"deploy.sh status failed: {res.stderr}"
-            )
-            self.assertIn("Guard State: OK", res.stdout)
-            self.assertIn("Armed:       DISARMED", res.stdout)
-            self.assertIn("Battery:     12.15 V", res.stdout)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,15 @@ The root `README.md` is the canonical build and deployment guide.
   does not supersede the factory container or rollback baseline until all
   acceptance gates pass.
 
+## Current Ubuntu controller packaging
+
+C1–C4 container implementation replaces native application startup with paired
+runtime/web images. Use `docker/ubuntu_tank/deploy.py` and its README. C4 Pi
+deployment, redeployment, reboot and power-on checks passed. The owner waived USB
+reconnect, competing-owner and interrupted-update tests; those remain unverified.
+C5 must repeat physical acceptance for Docker. Prior native physical evidence below does not certify the
+container delivery. Factory-image ownership rules remain unchanged.
+
 ## Native Ubuntu 26.04 controller mode (physical acceptance certified)
 
 `docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md` defines a second target mode for a

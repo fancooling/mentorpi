@@ -11,6 +11,7 @@ import threading
 
 from ubuntu_tank_operator.ipc_server import OperatorIpcServer
 from ubuntu_tank_operator.state_machine import OperatorStateMachine
+from ubuntu_tank_protocol.deployment import validate_identity
 from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
 
 
@@ -23,6 +24,7 @@ def stopped_controller(command):
 
 def main():
     """Run the real socket services until container shutdown."""
+    validate_identity()
     os.environ["UBUNTU_TANK_PRIVATE_DIR"] = "/tmp/private"
     ended = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: ended.set())

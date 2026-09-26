@@ -17,6 +17,11 @@ sys.path.insert(0, "/opt/ubuntu_tank/current/scripts")
 
 def main() -> None:
     """Fail closed on invalid mounts/configuration, then exec stopped supervision."""
+    from ubuntu_tank_protocol.deployment import validate_identity
+
+    if "UBUNTU_TANK_DEPLOYMENT_DIR" not in os.environ:
+        raise RuntimeError("Production runtime requires host deployment admission")
+    validate_identity()
     import yaml
     from config_migration import validate_config
     from fastdds_setup import apply_loopback_env

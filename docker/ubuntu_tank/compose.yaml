@@ -1,4 +1,4 @@
-# C3 image contract. C4 must prepare host paths and verify exclusive device ownership.
+# Paired deployment; deploy.py supplies immutable images and verified host identity.
 name: ubuntu-tank
 x-common: &common
   platform: linux/arm64
@@ -7,6 +7,13 @@ x-common: &common
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
+  environment:
+    UBUNTU_TANK_DEPLOYMENT_DIR: /run/ubuntu_tank-deployment
+    UBUNTU_TANK_DEPLOYMENT_TOKEN: ${DEPLOYMENT_TOKEN:?Deploy through deploy.py}
+    UBUNTU_TANK_RELEASE_ID: ${RELEASE_ID:?Set the verified release}
+    UBUNTU_TANK_CONTEXT_SHA256: ${CONTEXT_SHA256:?Set the verified build}
+  labels:
+    org.mentorpi.release: ${RELEASE_ID:?Set the verified release}
   restart: unless-stopped
   stop_grace_period: 5s
   tmpfs:
@@ -27,6 +34,11 @@ services:
       - /tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=1777
       - /run/ubuntu_tank-private:rw,nosuid,nodev,noexec,size=16m,uid=10001,gid=10001,mode=0700
     volumes:
+      - type: bind
+        source: /var/lib/ubuntu_tank-container/control
+        target: /run/ubuntu_tank-deployment
+        read_only: true
+        bind: {create_host_path: false}
       - type: bind
         source: /run/ubuntu_tank-container/ipc
         target: /run/ubuntu_tank
@@ -55,6 +67,11 @@ services:
     image: ${WEB_IMAGE:?Set the web image digest from the release manifest}
     ports: ["8443:8443"]
     volumes:
+      - type: bind
+        source: /var/lib/ubuntu_tank-container/control
+        target: /run/ubuntu_tank-deployment
+        read_only: true
+        bind: {create_host_path: false}
       - type: bind
         source: /run/ubuntu_tank-container/ipc
         target: /run/ubuntu_tank

@@ -24,6 +24,7 @@ from ubuntu_tank_protocol.constants import (
     DEFAULT_LIFECYCLE_SOCKET_PATH,
     MAX_LIFECYCLE_MESSAGE_BYTES,
 )
+from ubuntu_tank_protocol.deployment import admitted
 
 from . import progress
 from .supervisor_api import controller_logs, controller_operation
@@ -140,6 +141,8 @@ class LifecycleHelperService:
             if action == "stop":
                 return self._stop_controller()
             if action == "start":
+                if not admitted():
+                    return {"success": False, "error": "DEPLOYMENT_BUSY"}
                 generation = req.get("_generation", self._generation)
                 with self._start_lock:
                     if self._custom_preflight:
@@ -152,7 +155,11 @@ class LifecycleHelperService:
                             }
                     _, initial_state, _ = self._operation("is-active")
                     with self._state_lock:
-                        if generation != self._generation or self._stopping:
+                        if (
+                            not admitted()
+                            or generation != self._generation
+                            or self._stopping
+                        ):
                             return {
                                 "success": False,
                                 "error": "ABORTED_BY_STOP",
@@ -182,7 +189,11 @@ class LifecycleHelperService:
                     code, _, error = self._operation("start")
                     deadline = time.monotonic() + progress.STARTUP_DEADLINE
                     while True:
-                        if generation != self._generation or self._stopping:
+                        if (
+                            not admitted()
+                            or generation != self._generation
+                            or self._stopping
+                        ):
                             self._operation("stop")
                             return {
                                 "success": False,

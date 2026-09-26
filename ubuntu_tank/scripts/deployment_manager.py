@@ -3335,4 +3335,5 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.exit("Native deployment is retired; use docker/ubuntu_tank/deploy.py")
     main()

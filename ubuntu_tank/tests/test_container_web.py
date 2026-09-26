@@ -16,12 +16,67 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 for package in ("ubuntu_tank_protocol", "ubuntu_tank_web"):
     sys.path.insert(0, str(WORKSPACE / "src" / package))
 
+sys.path.insert(0, str(WORKSPACE.parent / "docker/ubuntu_tank"))
+
+from tls_setup import prepare as prepare_tls
+from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_web.entrypoint import load_config_from_yaml
 from ubuntu_tank_web.tls import generate_self_signed_cert, validate_tls_certificate
 
 
 class MountedTlsTest(unittest.TestCase):
     """Use real certificates and HTTPS; never substitute source/config assertions."""
+
+    def test_first_use_tls_preserves_identity_and_adds_exact_origins(self):
+        """Generated TLS is valid, reusable and covers IPv4, IPv6 and DNS names."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "web.yaml"
+            config.write_text(
+                json.dumps(WebControlConfig().to_dict() | {"linear_speed_cap": 0.12})
+            )
+            names, ips = ["rpitank", "rpitank.local"], ["192.0.2.4", "2001:db8::4"]
+            result = prepare_tls(root, names, ips)
+            self.assertEqual(len(result["created"]), 2)
+            cert, key = root / "certs/server.crt", root / "certs/server.key"
+            validate_tls_certificate(str(cert), str(key))
+            before = [path.read_bytes() for path in (cert, key, config)]
+            self.assertEqual(prepare_tls(root, names, ips)["created"], [])
+            self.assertEqual(
+                [path.read_bytes() for path in (cert, key, config)], before
+            )
+            parsed = load_config_from_yaml(str(config))
+            self.assertEqual(parsed.linear_speed_cap, 0.12)
+            self.assertIn("https://[2001:db8::4]:8443", parsed.allowed_origins)
+            self.assertIn("https://rpitank:8443", parsed.allowed_origins)
+
+    def test_first_use_tls_rejects_existing_identity_problems(self):
+        """Invalid pairs and uncovered names are rejected without silent rotation."""
+        for failure in ("partial", "corrupt", "expired", "mismatch", "name"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config = root / "web.yaml"
+                config.write_text(json.dumps(WebControlConfig().to_dict()))
+                cert, key = root / "certs/server.crt", root / "certs/server.key"
+                generate_self_signed_cert(
+                    str(cert),
+                    str(key),
+                    ["rpitank"],
+                    validity_days=0 if failure == "expired" else 1,
+                )
+                if failure == "partial":
+                    key.unlink()
+                elif failure == "corrupt":
+                    cert.write_text("invalid PEM")
+                elif failure == "mismatch":
+                    generate_self_signed_cert(str(root / "other.crt"), str(key))
+                paths = [path for path in (cert, key, config) if path.exists()]
+                before = [path.read_bytes() for path in paths]
+                with self.assertRaises((ValueError, ssl.SSLError)):
+                    prepare_tls(
+                        root, ["other.invalid" if failure == "name" else "rpitank"], []
+                    )
+                self.assertEqual([path.read_bytes() for path in paths], before)
 
     def test_rejects_invalid_identity_without_replacing_files(self):
         """Missing, corrupt, expired and mismatched identities fail without mutation."""

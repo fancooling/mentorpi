@@ -1,11 +1,13 @@
 # MentorPi Native Tank Controller
 
-Container refactor C3 image build and verification: [container guide](../docker/ubuntu_tank/README.md). Host cutover and robot validation remain C4/C5 work.
+Current operations use the [Docker container guide](../docker/ubuntu_tank/README.md).
+C1–C4 implementation is present. C4 Pi deployment, redeployment, reboot and
+power-on checks passed; other C4 fault tests were waived by the owner and remain
+unverified. C5 physical acceptance remains pending. `./deploy.sh test` runs development checks; native
+build/deploy/start/arm commands have been removed from this CLI.
 
-Current checkout: container refactor C1/C2 is implemented. The runner and lifecycle
-adapter now require Supervisor; native startup commands below describe the
-previous delivery. Images and Pi deployment remain pending in C3/C4. See
-[C2 supervision and local tests](docs/CONTAINER_SUPERVISION.md).
+The native instructions below are historical acceptance context and manual Git
+fallback documentation. They do not describe the current deployment path.
 
 Status: Milestones 1–9 implemented and certified ACCEPTED on live target hardware (5-stage software delivery, live battery telemetry, owner-observed 4-direction motion, accepted physical stop latencies across all 9 failure modes, and STM32 command-loss watchdog verified on elevated tracks).
 Target: Hiwonder MentorPi Tank (Raspberry Pi 5 ARM64 + STM32 RRC chassis controller)

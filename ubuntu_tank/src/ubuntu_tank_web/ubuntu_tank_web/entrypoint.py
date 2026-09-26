@@ -17,6 +17,7 @@ import sys
 import uvicorn
 import yaml
 from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.deployment import validate_identity
 
 from .app import create_app
 from .tls import validate_tls_certificate
@@ -94,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(spec, f, indent=2)
         logger.info("Exported OpenAPI spec to %s", args.export_openapi)
         return 0
+    validate_identity()
     host = args.host if args.host is not None else cfg.listen_address
     port = args.port if args.port is not None else cfg.port
 

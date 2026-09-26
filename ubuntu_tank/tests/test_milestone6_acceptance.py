@@ -448,38 +448,6 @@ class TestMilestone6Acceptance(unittest.TestCase):
             self.assertTrue(success)
             self.assertEqual(msg, "Armed")
 
-    # 22. deploy.sh bench CLI integration
-    def test_deploy_bench_cli_invocation(self):
-        """Verify ./deploy.sh bench passes with --ack-tracks-raised and fails without it."""
-        deploy_sh = os.path.join(UBUNTU_TANK_DIR, "deploy.sh")
-
-        # Missing acknowledgment fails
-        res_fail = subprocess.run(
-            ["bash", deploy_sh, "bench"], capture_output=True, text=True
-        )
-        self.assertNotEqual(res_fail.returncode, 0)
-        self.assertIn(
-            "physical safety acknowledgment: --ack-tracks-raised", res_fail.stderr
-        )
-
-        # With acknowledgment and mock mode
-        env = dict(os.environ)
-        env["UBUNTU_TANK_MOCK_DOCKER_PS"] = "EMPTY"
-        res_pass = subprocess.run(
-            ["bash", deploy_sh, "bench", "--ack-tracks-raised", "--mock"],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        self.assertEqual(
-            res_pass.returncode,
-            0,
-            f"bench failed: {res_pass.stderr}\n{res_pass.stdout}",
-        )
-        self.assertIn(
-            "Milestone 6 Acceptance Result: SIMULATION_PASSED", res_pass.stdout
-        )
-
     # --- Review Remediation Tests (Findings 1 & 2) ---
 
     def test_finding2_live_battery_preflight_fails_when_ros_unavailable(self):

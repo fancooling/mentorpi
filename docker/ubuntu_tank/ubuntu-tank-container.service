@@ -1,0 +1,18 @@
+# Host boot and shutdown sequencing only; application supervision stays in runtime.
+[Unit]
+Description=MentorPi paired Docker containers
+Requires=docker.service
+After=docker.service systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+RequiresMountsFor=/var/lib/ubuntu_tank-container /var/opt/ubuntu_tank /etc/opt/ubuntu_tank
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /opt/ubuntu_tank-container/deploy.py boot
+ExecStop=/usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stop
+TimeoutStartSec=180
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

@@ -173,19 +173,6 @@ class TestTargetTestCliGuards(unittest.TestCase):
         self.assertEqual(res.returncode, 1, "Must exit 1 when --require-target fails")
         self.assertIn("Target platform mismatch", res.stdout)
 
-    def test_deploy_sh_target_test_command_integration(self):
-        """./deploy.sh target-test forwards CLI options cleanly to target_test.py."""
-        res = subprocess.run(
-            ["bash", self.deploy_sh, "target-test", "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(
-            res.returncode, 0, f"deploy.sh target-test --help failed: {res.stderr}"
-        )
-        self.assertIn("Milestone 14.1 Real Pi 5 Installation & Deployment", res.stdout)
-
 
 class TestTargetTestOrchestratorLogic(unittest.TestCase):
     """Unit tests for TargetIntegrationOrchestrator methods and safety checks."""

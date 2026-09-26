@@ -81,6 +81,10 @@ def stage(destination: Path) -> dict:
     candidates = {Path(p) for p in tracked if p}
     # Include newly authored C3 inputs before the user commits this implementation.
     candidates.update(p.relative_to(ROOT) for p in CONTAINER.iterdir() if p.is_file())
+    # Required C4 package addition is allowlisted before its first commit.
+    candidates.add(
+        Path("ubuntu_tank/src/ubuntu_tank_protocol/ubuntu_tank_protocol/deployment.py")
+    )
     hashes = {}
     for relative in sorted(candidates):
         if not allowed(relative):
@@ -184,7 +188,9 @@ def main() -> None:
         image = json.loads(run("docker", "image", "inspect", tag))[0]
         if image["Architecture"] != "arm64" or image["Os"] != "linux":
             raise RuntimeError(f"{target} is not Linux ARM64")
-        digest = json.loads(metadata.read_text())["containerimage.digest"]
+        build_metadata = json.loads(metadata.read_text())
+        digest = build_metadata["containerimage.digest"]
+        config_digest = build_metadata["containerimage.config.digest"]
         # create/cp reads image files without executing code or attaching hardware.
         container = run("docker", "create", "--entrypoint", "/bin/true", tag)
         manifest_dir = output / target
@@ -202,7 +208,7 @@ def main() -> None:
         }
         release["images"][target] = {
             "digest": digest,
-            "image_id": image["Id"],
+            "image_id": config_digest,
             "local_tag": tag,
             "dependencies": manifests,
         }

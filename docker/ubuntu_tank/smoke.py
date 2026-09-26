@@ -16,6 +16,8 @@ import time
 import uuid
 from pathlib import Path
 
+from image_identity import resolve_image
+
 ROOT = Path(__file__).resolve().parents[2]
 
 INIT = r"""
@@ -24,6 +26,10 @@ from ubuntu_tank_web.tls import generate_self_signed_cert
 root = pathlib.Path('/smoke')
 (root / 'ipc').mkdir(mode=0o700)
 (root / 'certs').mkdir(mode=0o700)
+(root / 'deployment').mkdir(mode=0o755)
+selected = dict(token=os.environ['UBUNTU_TANK_DEPLOYMENT_TOKEN'], release_id=os.environ['UBUNTU_TANK_RELEASE_ID'])
+(root / 'deployment/selected.json').write_text(json.dumps(selected))
+(root / 'deployment/ready.json').write_text(json.dumps(dict(selected, boot_id=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip())))
 cert, key = generate_self_signed_cert('/smoke/certs/server.crt', '/smoke/certs/server.key')
 (root / 'web.yaml').write_text(json.dumps(dict(tls_cert_path=cert, tls_key_path=key,
     operator_socket_path='/smoke/ipc/operator.sock', lifecycle_socket_path='/smoke/ipc/lifecycle.sock')))
@@ -34,6 +40,8 @@ import importlib.util, json, os, ssl, stat, urllib.request
 assert importlib.util.find_spec('rclpy') is None
 assert importlib.util.find_spec('ubuntu_tank_operator') is None
 from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.deployment import admitted
+assert admitted()
 from ubuntu_tank_web.lifecycle_client import LifecycleClient
 for name in ('operator', 'lifecycle'):
     assert stat.S_IMODE(os.stat('/smoke/ipc/' + name + '.sock').st_mode) == 0o600
@@ -54,7 +62,7 @@ for path in ('/', '/api/v1/version', '/api/v1/status'):
 def docker(*args: str) -> str:
     """Execute Docker and preserve diagnostics for any failed smoke operation."""
     return subprocess.check_output(
-        ["docker", *args], text=True, stderr=subprocess.STDOUT
+        ["docker", *args], text=True, stderr=subprocess.STDOUT, timeout=90
     ).strip()
 
 
@@ -67,8 +75,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     release = json.loads(args.release.read_text())
-    images = {key: value["image_id"] for key, value in release["images"].items()}
-    name = "mentorpi-c3-smoke-" + uuid.uuid4().hex[:12]
+    images = {key: resolve_image(value) for key, value in release["images"].items()}
+    name = "mentorpi-c4-smoke-" + uuid.uuid4().hex[:12]
     runtime, web = name + "-runtime", name + "-web"
     mounts = []
     prefix = []
@@ -78,7 +86,16 @@ def main() -> None:
             f"type=bind,src={args.emulator.resolve()},dst=/emulator,readonly",
         ]
         prefix = ["/emulator"]
+    admission_env = []
+    for key, value in {
+        "UBUNTU_TANK_DEPLOYMENT_DIR": "/smoke/deployment",
+        "UBUNTU_TANK_DEPLOYMENT_TOKEN": name,
+        "UBUNTU_TANK_RELEASE_ID": release["release_id"],
+        "UBUNTU_TANK_CONTEXT_SHA256": release["context_sha256"],
+    }.items():
+        admission_env += ["--env", f"{key}={value}"]
     common = [
+        *admission_env,
         "--platform",
         "linux/arm64",
         "--network",
@@ -135,11 +152,36 @@ def main() -> None:
                 "none",
                 "--user",
                 "0:0",
+                *admission_env,
                 *mounts,
                 "-v",
                 f"{name}:/smoke",
             ],
         )
+        # Production web must reject an old generation even with valid TLS.
+        try:
+            command(
+                images["web"],
+                [
+                    "/bin/bash",
+                    "/usr/local/bin/web-entrypoint",
+                    "--config",
+                    "/smoke/web.yaml",
+                ],
+                [
+                    *common,
+                    "--rm",
+                    "-v",
+                    f"{name}:/smoke:ro",
+                    "--env",
+                    "UBUNTU_TANK_DEPLOYMENT_TOKEN=obsolete",
+                ],
+            )
+        except subprocess.CalledProcessError as exc:
+            if "obsolete deployment" not in exc.output:
+                raise
+        else:
+            raise RuntimeError("Web accepted an obsolete deployment generation")
         start_runtime()
         command(
             images["web"],
@@ -165,7 +207,7 @@ def main() -> None:
                 docker("rm", "-f", runtime)
                 start_runtime()
         print(
-            "PASS: ARM64 installed web, HTTPS/static assets, ROS-free imports, same-UID IPC over read-only mounts, server recreation"
+            "PASS: ARM64 installed web, HTTPS/static assets, ROS-free imports, same-UID IPC over read-only mounts, server recreation, obsolete pair rejection"
         )
     except subprocess.CalledProcessError as exc:
         print(exc.output)

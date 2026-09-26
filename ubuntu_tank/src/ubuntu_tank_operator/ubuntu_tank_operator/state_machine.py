@@ -8,6 +8,7 @@ hold cap, 30 s idle timeout, telemetry freshness gating, and fail-closed stop pr
 
 from __future__ import annotations
 
+import os
 import secrets
 import threading
 from collections.abc import Callable
@@ -27,6 +28,7 @@ from ubuntu_tank_protocol.constants import (
     MAX_PERMISSIBLE_LINEAR_SPEED,
     PROTOCOL_VERSION,
 )
+from ubuntu_tank_protocol.deployment import admitted
 from ubuntu_tank_protocol.enums import (
     ControllerServiceState,
     MotionDirection,
@@ -51,7 +53,7 @@ class OperatorStateMachine:
         angular_speed_cap: float = DEFAULT_WEB_ANGULAR_SPEED,
         lock: threading.RLock | None = None,
     ) -> None:
-        self.release_id = release_id
+        self.release_id = os.environ.get("UBUNTU_TANK_RELEASE_ID", release_id)
         self.linear_speed_cap = min(linear_speed_cap, MAX_PERMISSIBLE_LINEAR_SPEED)
         self.angular_speed_cap = min(angular_speed_cap, MAX_PERMISSIBLE_ANGULAR_SPEED)
         self.active_linear_speed = self.linear_speed_cap
@@ -213,6 +215,12 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Initiate arming sequence. Requires exact boolean tracks_raised=True."""
         with self._lock:
+            if not admitted():
+                return (
+                    False,
+                    WebControlErrorCode.DEPLOYMENT_BUSY,
+                    "Deployment is not admitted",
+                )
             # Safety Invariant: require exact boolean True
             if type(tracks_raised) is not bool or tracks_raised is not True:
                 return (
@@ -290,6 +298,8 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Confirm arming response and downstream zero within first-command deadline."""
         with self._lock:
+            if not admitted():
+                self.stop(current_monotonic_ns)
             if self.state != OperatorState.ARMING:
                 if guard_confirmed:
                     self.compensating_disarm_required = True
@@ -570,6 +580,18 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Periodic deadline and telemetry freshness monitor (run at >= 50 Hz)."""
         with self._lock:
+            if not admitted():
+                if self.owner_id is not None:
+                    self.release(self.owner_id, self.epoch, current_monotonic_ns)
+                elif self.state != OperatorState.NO_OWNER:
+                    self.stop(current_monotonic_ns)
+                else:
+                    return True, None, None
+                return (
+                    False,
+                    WebControlErrorCode.DEPLOYMENT_BUSY,
+                    "Deployment is not admitted",
+                )
             # 1. Telemetry health and freshness check
             healthy, err_code, msg = self.telemetry.is_healthy(current_monotonic_ns)
             if not healthy and self.state in (

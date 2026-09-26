@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
 import yaml
 
 # Import configuration validation helper
@@ -353,16 +354,23 @@ def main():
 
     # Installed imports are available after sourcing ROS below. Source checkout
     # execution uses the same package, not a second supervisor implementation.
-    package_root = os.path.join(current_dir, "src", "ubuntu_tank_supervisor")
-    if os.path.isdir(package_root):
-        sys.path.insert(0, package_root)
+    for package in ("ubuntu_tank_supervisor", "ubuntu_tank_protocol"):
+        package_root = os.path.join(current_dir, "src", package)
+        if os.path.isdir(package_root):
+            sys.path.insert(0, package_root)
+    from ubuntu_tank_protocol.deployment import admitted
     from ubuntu_tank_supervisor import progress
 
     permit = progress.read_record("permit").get("token")
     if (
         not args.check
         and not args.dry_run
-        and (not progress.enabled() or not permit or not progress.fresh("monitor"))
+        and (
+            not admitted()
+            or not progress.enabled()
+            or not permit
+            or not progress.fresh("monitor")
+        )
     ):
         sys.stderr.write("Runtime Start admission or safety monitor unavailable\n")
         return 1
@@ -564,8 +572,10 @@ def main():
         )
         sys.stdout.flush()
 
-        if progress.read_record("permit").get("token") != permit or not progress.fresh(
-            "monitor"
+        if (
+            not admitted()
+            or progress.read_record("permit").get("token") != permit
+            or not progress.fresh("monitor")
         ):
             raise RuntimeError("Start was revoked before ROS launch")
         for pid_file in (guard_pid_file, bridge_pid_file):
@@ -596,9 +606,11 @@ def main():
         poll_descriptors = [guard_sock, bridge_sock]
 
         while running:
-            if progress.read_record("permit").get(
-                "token"
-            ) != permit or not progress.fresh("monitor"):
+            if (
+                not admitted()
+                or progress.read_record("permit").get("token") != permit
+                or not progress.fresh("monitor")
+            ):
                 sys.stderr.write(
                     "Controller admission revoked or safety monitor stale\n"
                 )

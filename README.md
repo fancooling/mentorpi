@@ -15,13 +15,12 @@ The custom image contains only Nginx and a static browser dashboard. It has no
 ROS runtime, controller, navigation, teleoperation, hardware driver, actuator
 API, device mount, or privileged capability.
 
-A second target for a clean Ubuntu 26.04 Pi 5 and native ROS 2 Lyrical is
-specified in
-[`docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md`](docs/MENTORPI_FRESH_CONTROLLER_DESIGN.md).
-Its hardware-free Milestone 1 scaffold exists, but native installation, full
-controller bringup, and physical deployment are not implemented. It must use
-separate boot media and must never coexist with the factory-image, sidecar, or
-replacement modes on a running robot.
+The clean Ubuntu 26.04 Pi 5 controller uses the paired runtime/web containers
+in [the container guide](docker/ubuntu_tank/README.md). C1–C4 implementation is
+present; C4 deployment, redeployment, reboot and power-on checks passed on the Pi.
+The owner waived other C4 fault tests; C5 physical acceptance remains pending. This
+mode uses separate boot media and must never coexist with the factory stack,
+sidecar or replacement mode on a running robot.
 
 ## Architecture
 
