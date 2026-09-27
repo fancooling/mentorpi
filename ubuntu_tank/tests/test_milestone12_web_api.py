@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from cryptography import x509
 from fastapi.testclient import TestClient
@@ -689,6 +690,72 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
             stop_ack = ws.receive_json()
             self.assertEqual(stop_ack["type"], "ack")
             self.assertTrue(stop_ack["payload"]["disarmed"])
+
+    def test_challenge_processing_does_not_add_an_extra_interval(self):
+        """IPC response latency must not add a full interval to every renewal."""
+        headers = {"Origin": "https://127.0.0.1:8443"}
+        acquired = self.client.post(
+            "/api/v1/control/acquire",
+            json={"operator_id": "delayed-ipc", "request_id": "acquire-delayed"},
+            headers=headers,
+        ).json()
+        self.assertTrue(acquired["success"])
+        owner = self.app.state.operator_relay.get_owner_client()
+        original = owner.request_challenge
+
+        def delayed_challenge(*args):
+            result = original(*args)
+            # Model delay delivering a challenge already issued by the agent.
+            time.sleep(0.06)
+            return result
+
+        with self.client.websocket_connect("/api/v1/control", headers=headers) as ws:
+            ws.send_json(
+                {
+                    "action": "bind",
+                    "payload": {
+                        "operator_id": "delayed-ipc",
+                        "epoch": acquired["epoch"],
+                        "bind_token": acquired["bind_token"],
+                    },
+                }
+            )
+            self.assertTrue(ws.receive_json()["payload"]["success"])
+            armed = self.client.post(
+                "/api/v1/control/arm",
+                json={
+                    "epoch": acquired["epoch"],
+                    "tracks_raised": True,
+                    "request_id": "arm-delayed",
+                },
+                headers=headers,
+            ).json()
+            self.assertTrue(armed["success"])
+            with patch.object(
+                owner, "request_challenge", side_effect=delayed_challenge
+            ):
+                sequence = 0
+                acknowledged = 0
+                while acknowledged < 5:
+                    frame = ws.receive_json()
+                    self.assertNotEqual(frame["type"], "error", frame)
+                    if frame["type"] == "challenge":
+                        sequence += 1
+                        challenge = frame["payload"]
+                        ws.send_json(
+                            {
+                                "action": "intent",
+                                "payload": {
+                                    "token": challenge["token"],
+                                    "epoch": challenge["epoch"],
+                                    "sequence": sequence,
+                                    "direction": "neutral",
+                                },
+                            }
+                        )
+                    elif frame["payload"].get("action") == "intent":
+                        acknowledged += 1
+                self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
     def test_websocket_disconnect_disarms(self):
         """Closing WebSocket connection drops dedicated IPC socket, triggering immediate disarm."""

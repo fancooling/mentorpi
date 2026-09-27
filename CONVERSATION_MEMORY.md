@@ -5,6 +5,18 @@ Last updated: 2026-09-26
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## Web control lease recovery correction (2026-09-26)
+
+- Live read-only Pi status showed repeated 150 ms input-lease expiry. Local
+  browser code invalidated its owner binding on expiry, preventing Arm recovery.
+  Preserve that binding while retaining input reset and Stop; `NOT_OWNER` still
+  invalidates it. The relay now includes processing time in its 50 ms cadence
+  and yields after overruns. Safety deadlines remain unchanged.
+- The delayed-IPC regression fails on the original relay and passes locally;
+  all 13 browser tests pass, including expiry recovery and held-key suppression.
+  Initial Pi latency cause is not measured. No deployment or motor commands.
+  See `docs/BUG_WEB_CONTROL_LEASE_EXPIRY.md`; Pi verification remains pending.
+
 ## C4 owner-scoped Pi verification complete (2026-09-26)
 
 - Owner explicitly dropped USB reconnect, competing-owner and interrupted-update

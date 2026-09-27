@@ -391,4 +391,59 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await expect(page.locator('.safety-checkbox')).toBeDisabled();
     await expect(page.locator('button.btn-arm')).toBeDisabled();
   });
+
+  test('13. Arm recovers after lease expiry without resuming held input', async ({ page }) => {
+    let injectedExpiry = false;
+    const intents: string[] = [];
+    await page.routeWebSocket('**/api/v1/control', (socket) => {
+      const server = socket.connectToServer();
+      socket.onMessage((message) => {
+        const frame = JSON.parse(message.toString());
+        if (frame.action === 'intent') intents.push(frame.payload.direction);
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        const frame = JSON.parse(message.toString());
+        // Exercise the real UI stop and explicit Arm paths after a protocol fault.
+        if (!injectedExpiry && frame.type === 'ack' &&
+            frame.payload.action === 'intent' && frame.payload.direction === 'forward') {
+          injectedExpiry = true;
+          socket.send(JSON.stringify({
+            type: 'error',
+            payload: { error: 'LEASE_EXPIRED', message: 'Injected input lease expiry' },
+          }));
+        } else {
+          socket.send(message);
+        }
+      });
+    });
+
+    await armRobot(page);
+    await page.locator('.drive-panel').focus();
+    await page.keyboard.down('KeyW');
+    await expect.poll(() => injectedExpiry).toBe(true);
+    const forward = page.locator('button[aria-label^="Drive Forward"]');
+    await expect(forward).toBeDisabled();
+    await expect(page.locator('.guard-disarmed')).toBeVisible();
+
+    const recoveryStart = intents.length;
+    await page.locator('button.btn-arm').click();
+    await expect(forward).toBeEnabled();
+    await expect.poll(() => intents.length - recoveryStart).toBeGreaterThan(6);
+    expect(intents.slice(recoveryStart).every((direction) => direction === 'neutral')).toBe(true);
+    await page.keyboard.up('KeyW');
+
+    for (const [label, direction] of [['Drive Forward', 'forward'], ['Drive Reverse', 'reverse']]) {
+      const button = page.locator(`button[aria-label^="${label}"]`);
+      await button.hover();
+      const start = intents.length;
+      await page.mouse.down();
+      await expect.poll(() => intents.slice(start).includes(direction)).toBe(true);
+      await page.mouse.up();
+      await expect.poll(() => intents.at(-1)).toBe('neutral');
+      await expect(button).toBeEnabled();
+    }
+    await expect(page.locator('.guard-armed')).toBeVisible();
+  });
+
 });

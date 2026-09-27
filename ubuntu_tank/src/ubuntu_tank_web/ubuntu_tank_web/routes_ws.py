@@ -100,6 +100,7 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
         """Periodic loop relaying cryptographic challenges to the browser."""
         nonlocal bound_epoch
         while running:
+            cycle_started = asyncio.get_running_loop().time()
             try:
                 if session_ipc is not None:
                     # Yield immediately if an intent or stop is queued or requested
@@ -130,7 +131,12 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                                 "issued_monotonic_ns": c["issued_monotonic_ns"],
                             },
                         )
-                await asyncio.sleep(CHALLENGE_INTERVAL_SEC)
+                # Processing consumes the interval; adding a full sleep after
+                # IPC work needlessly spends the browser's 150 ms lease budget.
+                elapsed = asyncio.get_running_loop().time() - cycle_started
+                # After an overrun, yield to incoming intents/Stop rather than
+                # issuing catch-up challenges that compete for the IPC lock.
+                await asyncio.sleep(max(0.01, CHALLENGE_INTERVAL_SEC - elapsed))
             except asyncio.CancelledError:
                 break
             except Exception as exc:

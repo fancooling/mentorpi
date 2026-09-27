@@ -186,7 +186,10 @@ export class WsControlClient {
     } else if (msg.type === 'error') {
       const errCode = msg.payload?.error || 'UNKNOWN_ERROR';
       const errMsg = msg.payload?.message || 'WebSocket error';
-      if (errCode === 'NOT_OWNER' || errCode === 'LEASE_EXPIRED') {
+      this.pendingIntent = false;
+      // Lease expiry revokes motion authority, not the WebSocket's owner binding.
+      // Keep answering challenges after an explicit Arm restores authority.
+      if (errCode === 'NOT_OWNER') {
         this.isBound = false;
       }
       if (this.onErrorCallback) {
