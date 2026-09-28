@@ -21,7 +21,6 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
-
 from ubuntu_tank_protocol.constants import (
     CHALLENGE_INTERVAL_SEC,
     MAX_IPC_MESSAGE_BYTES,
@@ -139,7 +138,7 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                             },
                         )
                 # Processing consumes the interval; adding a full sleep after
-                # IPC work needlessly spends the browser's 150 ms lease budget.
+                # IPC work needlessly spends the configured input lease budget.
                 elapsed = asyncio.get_running_loop().time() - cycle_started
                 # After an overrun, yield to incoming intents/Stop rather than
                 # issuing catch-up challenges that compete for the IPC lock.
@@ -336,6 +335,7 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                         {
                             "error": err or WebControlErrorCode.LEASE_EXPIRED.value,
                             "message": f"Intent submission rejected: {err}",
+                            "sequence": sequence,
                             "input_generation": session_ipc.last_intent_result.get(
                                 "input_generation"
                             ),

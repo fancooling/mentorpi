@@ -1,7 +1,7 @@
 # Web controls disable after brief movement; Arm does not recover
 
 Status: original binding fix deployed; M14.3 backend redesign implemented locally.
-M14.4 browser recovery and M15 robot validation remain pending.
+M14.4 browser recovery is implemented locally; M15 robot validation remains pending.
 Reported and deployed 2026-09-26.
 
 ## Environment and impact
@@ -168,3 +168,12 @@ documentation, review and release handoff. All are pending. Network
 stalls remain a separate reliability issue. The longer lease increases possible
 motion after lost input. M15 must validate the proposed 1.2-second physical-rest
 target and measure stopping distance; no new stopping behavior is certified.
+
+## M14.4 browser recovery
+
+The local browser now uses one Take control operation, explicit Arm without the
+checkbox, and the protocol-2 pause handshake. It retains physical release state,
+waits for neutral acknowledgment and requires a new press. A dropped neutral
+response retries on a fresh challenge instead of leaving the UI stuck.
+Startup cancellation and socket replacement cannot automatically Arm or resume.
+These changes are not deployed; real network and physical-stop acceptance remain M15.

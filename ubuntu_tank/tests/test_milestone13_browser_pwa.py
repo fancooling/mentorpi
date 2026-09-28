@@ -6,9 +6,8 @@ Verifies:
 2. PWA manifest compliance: standalone display, 192x192 and 512x512 icons, start URL, theme color.
 3. Service worker cache safety: asset-only precache, explicit /api/ denylist, NetworkOnly for API requests,
    no background sync for motion commands, and explicit SKIP_WAITING update handling.
-4. Playwright checks that the protocol-1 browser cannot control protocol-2 runtime.
-   Full driving scenarios remain in browser_control.spec.ts and must be migrated
-   and re-enabled with the M14.4 browser recovery implementation.
+4. Playwright exercises protocol-2 acquisition, browser driving, input recovery,
+   cancellation, stale clients and fail-closed lifecycle events.
 """
 
 from __future__ import annotations
@@ -47,6 +46,7 @@ from ubuntu_tank_operator.ipc_server import OperatorIpcServer
 from ubuntu_tank_operator.state_machine import OperatorStateMachine
 from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_protocol.enums import MotionDirection, OperatorState
+from ubuntu_tank_protocol.lifecycle_client import LifecycleClient
 from ubuntu_tank_protocol.schemas import TelemetrySnapshot
 from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
 from ubuntu_tank_web.app import create_app
@@ -175,6 +175,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             odom_angular_z=0.0,
             odom_monotonic_ns=time.monotonic_ns(),
         )
+        cls.guard_failure = False
         cls.telemetry_running = True
 
         def _telemetry_refresher():
@@ -183,10 +184,15 @@ class TestRealBrowserInteractions(unittest.TestCase):
                 is_armed = cls.sm.state in (
                     OperatorState.ARMED_IDLE,
                     OperatorState.DRIVING,
+                    OperatorState.INPUT_PAUSED,
                 )
-                cls.sm.update_guard_telemetry(is_armed, now_ns)
+                cls.sm.update_guard_telemetry(
+                    is_armed and not cls.guard_failure, now_ns
+                )
                 cls.sm.update_battery_telemetry(12.2, now_ns)
                 cls.sm.update_odom_telemetry(0.0, 0.0, now_ns)
+                cls.sm.confirm_zero_delivery(now_ns)
+                cls.sm.check_deadlines(now_ns)
                 time.sleep(0.05)
 
         cls.telemetry_thread = threading.Thread(
@@ -203,6 +209,8 @@ class TestRealBrowserInteractions(unittest.TestCase):
 
         # 5. Initialize Lifecycle Helper Service
         cls.service_active = True
+        cls.start_delay = 0
+        cls.start_fail = False
 
         def _mock_systemctl(args):
             cmd = args[0]
@@ -213,6 +221,9 @@ class TestRealBrowserInteractions(unittest.TestCase):
                     "",
                 )
             elif cmd == "start":
+                time.sleep(cls.start_delay)
+                if cls.start_fail:
+                    return 1, "failed", "Injected startup failure"
                 cls.service_active = True
                 return 0, "", ""
             elif cmd == "stop":
@@ -229,6 +240,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             ],
         )
         cls.lc_service.start()
+        cls.op_server.acquisition.lifecycle = LifecycleClient(cls.lc_sock)
 
         # 6. Initialize FastAPI application serving dist/
         cls.config = WebControlConfig(
@@ -245,8 +257,13 @@ class TestRealBrowserInteractions(unittest.TestCase):
 
         @cls.app.post("/api/v1/test/reset")
         def reset_operator_state():
+            cls.service_active = True
+            cls.start_delay = 0
+            cls.start_fail = False
+            cls.guard_failure = False
             now_ns = time.monotonic_ns()
             with cls.sm._lock:
+                cls.sm.stop(now_ns)
                 cls.sm.owner_id = None
                 cls.sm.state = OperatorState.NO_OWNER
                 cls.sm.disarm_pending = False
@@ -261,6 +278,14 @@ class TestRealBrowserInteractions(unittest.TestCase):
             except (OSError, RuntimeError):
                 pass
             return {"reset": True}
+
+        @cls.app.post("/api/v1/test/lifecycle")
+        def configure_lifecycle(data: dict):
+            cls.service_active = data.get("active", cls.service_active)
+            cls.start_delay = data.get("delay", 0)
+            cls.start_fail = data.get("fail", False)
+            cls.guard_failure = data.get("guard_failure", False)
+            return {"configured": True}
 
         # 7. Start Uvicorn in background thread
         uv_config = uvicorn.Config(
@@ -289,18 +314,18 @@ class TestRealBrowserInteractions(unittest.TestCase):
     def tearDownClass(cls):
         cls.uv_server.should_exit = True
         cls.server_thread.join(timeout=3.0)
+        cls.telemetry_running = False
+        cls.telemetry_thread.join(timeout=1)
         cls.lc_service.stop()
         cls.op_server.stop()
         cls.tmp_dir.cleanup()
 
     def test_playwright_browser_control_suite(self):
-        """Verify the old UI fails closed against protocol 2 until M14.4."""
+        """Exercise protocol-2 setup, driving, recovery and fault handling in Chrome."""
         env = os.environ.copy()
         env["TEST_BASE_URL"] = self.base_url
 
-        # Protocol-1 interaction scenarios remain in browser_control.spec.ts;
-        # migrate and re-enable them in M14.4 before browser release acceptance.
-        cmd = ["npx", "playwright", "test", "protocol_fence.spec.ts"]
+        cmd = ["npx", "playwright", "test"]
         proc = subprocess.run(
             cmd, cwd=WEB_DIR, env=env, capture_output=True, text=True, check=False
         )

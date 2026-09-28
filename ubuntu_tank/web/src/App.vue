@@ -20,14 +20,13 @@
         :is-owner="isOwner"
         :is-armed="isArmed"
         :is-controller-running="isControllerRunning"
-        v-model:tracks-raised-confirmed="tracksRaisedConfirmed"
+        :is-bound="isBound"
         :is-operating="isOperating"
         :is-protocol-compatible="telemetry.isProtocolCompatible"
         :feedback="feedback"
-        @start-controller="startController"
-        @stop-controller="stopController"
+        @stop-controller="handleStopController"
         @take-control="takeControl"
-        @release-control="releaseControl"
+        @release-control="handleReleaseControl"
         @arm="arm"
         @disarm="handleDisarm"
         @clear-feedback="clearFeedback"
@@ -38,6 +37,8 @@
         :is-owner="isOwner"
         :is-armed="isArmed"
         :active-direction="driveState.activeDirection"
+        :recovery-message="recoveryMessage"
+        :is-ready="recovery === 'ready' && isBound"
         @pointer-down="onPointerDown"
         @pointer-up="onPointerUp"
         @pointer-cancel="onPointerCancel"
@@ -91,7 +92,7 @@ const operatorId = 'web-tab-' + Math.random().toString(36).substring(2, 10);
 const { telemetry, isOwner, isArmed, isControllerRunning, pollStatus } = useRobotState(operatorId);
 
 const {
-  tracksRaisedConfirmed,
+  isBound,
   isOperating,
   feedback,
   clearFeedback,
@@ -100,13 +101,13 @@ const {
   arm,
   disarm,
   emergencyStop,
-  startController,
   stopController,
 } = useControlSession(
   operatorId,
   pollStatus,
   () => telemetry.isProtocolCompatible,
-  () => telemetry.currentEpoch
+  () => telemetry.currentEpoch,
+  () => telemetry.activeOwner
 );
 
 async function handleEmergencyStop(): Promise<boolean> {
@@ -114,6 +115,14 @@ async function handleEmergencyStop(): Promise<boolean> {
   return emergencyStop();
 }
 
+async function handleStopController(): Promise<boolean> {
+  resetAllInput();
+  return stopController();
+}
+async function handleReleaseControl(): Promise<boolean> {
+  resetAllInput();
+  return releaseControl();
+}
 async function handleDisarm(): Promise<boolean> {
   resetAllInput();
   return disarm();
@@ -122,6 +131,8 @@ async function handleDisarm(): Promise<boolean> {
 const {
   state: driveState,
   isDriving,
+  recovery,
+  recoveryMessage,
   onPointerDown,
   onPointerUp,
   onPointerCancel,

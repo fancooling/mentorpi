@@ -1,8 +1,8 @@
 # MentorPi Pi 5 Web Control Design
 
 Status: Existing implementation and acceptance status are recorded per milestone.
-M14.3 is implemented and locally validated. M14.4 browser recovery,
-M15 acceptance, and M16 release handoff are pending.
+M14.3 and M14.4 are implemented locally. M15 robot acceptance and M16 release
+handoff remain pending; M14.4 is committed locally, not deployed.
 
 Date: 2026-09-27
 
@@ -277,7 +277,7 @@ devices; desktop emulation alone does not establish mobile acceptance.
 This revised contract separates permission to remain armed from permission to
 publish nonzero motion. It is approved design, not deployed behavior: commit
 `b45dfdd` still disarms on input expiry. M14.3 implements the backend change;
-M14.4 browser recovery and M15 robot validation remain pending.
+M14.4 implements browser recovery locally; M15 robot validation remains pending.
 The [bug report](BUG_WEB_CONTROL_LEASE_EXPIRY.md) records the deployed evidence.
 
 ### 4.1 States and deadlines
@@ -929,7 +929,7 @@ to additional candidates.
 ### Milestone 14.3 — Separate input expiry from controller disarm
 
 Status: implemented and committed locally (2026-09-27); not deployed.
-Protocol 2 intentionally blocks the existing protocol-1 browser until M14.4.
+Protocol 2 rejects browsers predating the M14.4 migration.
 Local validation: 217 runtime/API/tooling tests, four browser build/PWA/fence
 checks, source/dependency gates and Compose parsing. A final 66-test API/recovery
 rerun covers readiness timeout and Stop retaining ownership until Release. Physical zero delivery,
@@ -988,35 +988,38 @@ pass. No physical stopping claim follows from these tests.
 
 ### Milestone 14.4 — Browser and relay recovery without rearming
 
-Status: pending; depends on M14.3.
+Status: implemented and committed locally (2026-09-27); not deployed.
+Browser/API validation and independent review are recorded in `CHANGES.md`.
+The local fixture uses real HTTP, WebSocket, operator IPC and lifecycle services
+with simulated controller health/zero delivery; it does not certify robot stops.
 
-- [ ] Replace separate Start controller and Take control buttons with one Take
+- [x] Replace separate Start controller and Take control buttons with one Take
   control flow using the combined `control/acquire` API, awaiting its completed
   result before binding the socket. Do not issue a separate start request or
   duplicate lifecycle orchestration in the browser; never automatically Arm.
   Show progress, reject duplicate attempts, and keep Stop available to cancel.
-- [ ] Handle startup/acquisition/binding failure and timeout without enabling
+- [x] Handle startup/acquisition/binding failure and timeout without enabling
   motion or taking another owner's slot. Stop/release/cancellation invalidates
   pending setup; late completions cannot reacquire or restore a canceled session.
-- [ ] Remove the tracks-raised checkbox, its state, styles and Arm gate. Use the
+- [x] Remove the tracks-raised checkbox, its state, styles and Arm gate. Use the
   revised M14.3 Arm schema without sending a fabricated affirmation; do not add
   a replacement confirmation dialog.
-- [ ] Test the combined flow from stopped and running states, busy ownership,
+- [x] Test the combined flow from stopped and running states, busy ownership,
   startup failure/timeout, bind failure, double-click and Stop during setup.
   Verify Take control never arms or moves, and explicit Arm works without the
   removed checkbox while other preflight gates remain enforced.
-- [ ] Relay pause/recovery on the existing bound socket without blocking Stop
+- [x] Relay pause/recovery on the existing bound socket without blocking Stop
   or deadline checks. Preserve bounded queues and the corrected challenge cadence.
-- [ ] Show “Input paused — release controls,” then recovery readiness and armed
+- [x] Show “Input paused — release controls,” then recovery readiness and armed
   idle distinctly from disarmed/faulted state. Keep Stop available throughout.
-- [ ] Track actual input release across pauses for keyboard, pointer and touch.
+- [x] Track actual input release across pauses for keyboard, pointer and touch.
   Send fresh neutral, wait for its acknowledgment, then require a new press.
   Do not send automatic Arm or funnel ordinary pause through emergency Stop.
-- [ ] Exercise the real browser and API with delays above/below 1 second, including
+- [x] Exercise the real browser and API with delays above/below 1 second, including
   400–450 ms bursts within the lease and 1.1–1.5 second expiry gaps, dropped
   responses, delayed acknowledgments, repeated pauses,
   held keys/key-repeat, release while stalled, mixed input and pointer cancellation.
-- [ ] Verify focus loss, socket replacement, PWA suspension/resume, stale cached
+- [x] Verify focus loss, socket replacement, PWA suspension/resume, stale cached
   clients, explicit Stop and concurrent faults retain their disarm behavior.
   Recovery cannot reuse a press made before readiness acknowledgment.
 

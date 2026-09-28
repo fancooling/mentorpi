@@ -108,6 +108,8 @@
       </div>
     </div>
 
+    <p v-if="recoveryMessage" class="recovery-status" role="status">{{ recoveryMessage }}</p>
+
     <!-- Instruction Subtext -->
     <div class="panel-footer" aria-live="polite">
       <p class="instruction-text">
@@ -125,6 +127,8 @@ const props = defineProps<{
   isOwner: boolean;
   isArmed: boolean;
   activeDirection: MotionDirection;
+  isReady: boolean;
+  recoveryMessage: string;
 }>();
 
 const emit = defineEmits<{
@@ -139,7 +143,7 @@ const emit = defineEmits<{
 const isFocused = ref(false);
 
 const canDrive = computed(() => {
-  return props.isOwner && props.isArmed;
+  return props.isOwner && props.isArmed && props.isReady;
 });
 
 function onFocus() {

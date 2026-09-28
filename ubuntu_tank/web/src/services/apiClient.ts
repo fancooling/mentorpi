@@ -106,13 +106,6 @@ export class ApiClient {
     return this.request<LogsResponse>(`/api/v1/logs?limit=${lim}`, { method: 'GET' });
   }
 
-  async startController(requestId: string): Promise<OperationStatusResponse> {
-    return this.request<OperationStatusResponse>('/api/v1/controller/start', {
-      method: 'POST',
-      body: JSON.stringify({ request_id: requestId, action: 'start' }),
-    });
-  }
-
   async stopController(requestId: string): Promise<OperationStatusResponse> {
     return this.request<OperationStatusResponse>('/api/v1/controller/stop', {
       method: 'POST',
@@ -120,8 +113,8 @@ export class ApiClient {
     });
   }
 
-  async getOperation(id: string): Promise<OperationStatusResponse> {
-    return this.request<OperationStatusResponse>(`/api/v1/operations/${encodeURIComponent(id)}`, {
+  async getOperation(id: string, token?: string): Promise<OperationStatusResponse> {
+    return this.request<OperationStatusResponse>(`/api/v1/operations/${encodeURIComponent(id)}${token ? "?operation_token=" + encodeURIComponent(token) : ""}`, {
       method: 'GET',
     });
   }

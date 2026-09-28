@@ -1,234 +1,166 @@
-// Real-time WebSocket Control Client for MentorPi Pi 5
-import type {
-  Challenge,
-  MotionDirection,
-  WebControlErrorCode,
-  WsClientMessage,
-  WsServerMessage,
-} from '../types/api';
-
-export type ChallengeHandler = (challenge: Challenge) => MotionDirection;
-export type ErrorHandler = (code: WebControlErrorCode | string, message: string) => void;
-export type DisconnectHandler = (event: CloseEvent | Event) => void;
-export type BoundHandler = (epoch: number, operatorId: string) => void;
-
+// Bound control transport: one outstanding intent, generation fencing, bounded setup.
+import type { Challenge, MotionDirection, WsServerMessage } from '../types/api';
 export class WsControlClient {
-  private ws: WebSocket | null = null;
-  private sequence: number = 1;
-  private isBound: boolean = false;
-  private activeEpoch: number | null = null;
-  private activeOperatorId: string | null = null;
-  private pendingIntent: boolean = false;
-
-  private onChallengeCallback: ChallengeHandler | null = null;
-  private onErrorCallback: ErrorHandler | null = null;
-  private onDisconnectCallback: DisconnectHandler | null = null;
-  private onBoundCallback: BoundHandler | null = null;
-
-  constructor(
-    private urlProvider: () => string = () => {
-      const loc = window.location;
-      const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${loc.host}/api/v1/control`;
+    private ws: WebSocket | null = null;
+    private bound = false;
+    private epoch: number | null = null;
+    private sequence = 0;
+    private generation = -1;
+    private pending: {
+        sentAt: number;
+        sequence: number;
+        challenge: Challenge;
+        direction: MotionDirection;
+    } | null = null;
+    private rejectSetup: ((error: Error) => void) | null = null;
+    private resolveBind: (() => void) | null = null;
+    private handlers: {
+        onChallenge?: (challenge: Challenge) => MotionDirection | null;
+        onAck?: (payload: any, challenge: Challenge, direction: MotionDirection) => void;
+        onError?: (code: string, message: string, payload: any) => void;
+        onDisconnect?: (event: Event) => void;
+    } = {};
+    constructor(private urlProvider = () => `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/v1/control`) { }
+    /** Register consumer callbacks without removing other consumers' handlers. */
+    setHandlers(handlers: typeof this.handlers) {
+        const prior = this.handlers.onDisconnect;
+        const next = handlers.onDisconnect;
+        Object.assign(this.handlers, handlers);
+        if (prior && next)
+            this.handlers.onDisconnect = event => { prior(event); next(event); };
     }
-  ) {}
-
-  setHandlers(handlers: {
-    onChallenge?: ChallengeHandler;
-    onError?: ErrorHandler;
-    onDisconnect?: DisconnectHandler;
-    onBound?: BoundHandler;
-  }) {
-    if (handlers.onChallenge) this.onChallengeCallback = handlers.onChallenge;
-    if (handlers.onError) this.onErrorCallback = handlers.onError;
-    if (handlers.onDisconnect) this.onDisconnectCallback = handlers.onDisconnect;
-    if (handlers.onBound) this.onBoundCallback = handlers.onBound;
-  }
-
-  get isConnected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
-  }
-
-  get isSessionBound(): boolean {
-    return this.isBound;
-  }
-
-  get hasPendingIntent(): boolean {
-    return this.pendingIntent;
-  }
-
-  connect(): Promise<void> {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      return Promise.resolve();
+    get isConnected() { return this.ws?.readyState === WebSocket.OPEN; }
+    get isSessionBound() { return this.bound; }
+    get hasPendingIntent() { return this.pending !== null; }
+    /** Open a new socket; superseded socket callbacks cannot affect its state. */
+    connect(): Promise<void> {
+        this.disconnect();
+        const socket = new WebSocket(this.urlProvider());
+        this.ws = socket;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { reject(new Error('Control connection timed out')); this.disconnect(); }, 3000);
+            this.rejectSetup = error => { clearTimeout(timer); reject(error); };
+            socket.onopen = () => {
+                if (this.ws !== socket)
+                    return;
+                clearTimeout(timer);
+                this.rejectSetup = null;
+                resolve();
+            };
+            socket.onerror = () => { if (this.ws === socket)
+                this.rejectSetup?.(new Error('Control connection failed')); };
+            socket.onclose = event => {
+                if (this.ws !== socket)
+                    return;
+                this.rejectSetup?.(new Error('Control connection closed'));
+                this.ws = null;
+                this.bound = false;
+                this.pending = null;
+                this.handlers.onDisconnect?.(event);
+            };
+            socket.onmessage = event => { if (this.ws === socket)
+                this.handleMessage(event.data); };
+        });
     }
-
-    return new Promise((resolve, reject) => {
-      try {
-        const url = this.urlProvider();
-        this.ws = new WebSocket(url);
-
-        this.ws.onopen = () => {
-          this.pendingIntent = false;
-          resolve();
-        };
-
-        this.ws.onerror = (err) => {
-          if (!this.isBound) {
-            reject(err);
-          }
-        };
-
-        this.ws.onclose = (event) => {
-          this.isBound = false;
-          this.activeEpoch = null;
-          this.activeOperatorId = null;
-          this.pendingIntent = false;
-          if (this.onDisconnectCallback) {
-            this.onDisconnectCallback(event);
-          }
-        };
-
-        this.ws.onmessage = (event) => {
-          this.handleMessage(event.data);
-        };
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
-
-  bind(operatorId: string, epoch: number, bindToken: string): void {
-    if (!this.isConnected) {
-      throw new Error('WebSocket is not connected');
+    /** Resolve only after the runtime acknowledges the single-use binding. */
+    bind(operatorId: string, epoch: number, token: string): Promise<void> {
+        this.epoch = epoch;
+        this.sequence = 0;
+        this.generation = -1;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { this.rejectSetup?.(new Error('Control binding timed out')); }, 3000);
+            this.rejectSetup = error => { clearTimeout(timer); this.resolveBind = null; this.rejectSetup = null; reject(error); };
+            this.resolveBind = () => { clearTimeout(timer); this.rejectSetup = null; this.resolveBind = null; resolve(); };
+            if (!this.isConnected) {
+                this.rejectSetup(new Error('Control socket is closed'));
+                return;
+            }
+            this.send({ action: 'bind', payload: { operator_id: operatorId, epoch, bind_token: token } });
+        });
     }
-
-    this.activeOperatorId = operatorId;
-    this.activeEpoch = epoch;
-    this.sequence = 1;
-
-    const bindMsg: WsClientMessage = {
-      action: 'bind',
-      payload: {
-        operator_id: operatorId,
-        epoch: epoch,
-        bind_token: bindToken,
-      },
-    };
-
-    this.sendJson(bindMsg);
-  }
-
-  updateEpoch(newEpoch: number): void {
-    this.activeEpoch = newEpoch;
-  }
-
-  sendStop(requestId: string = 'ws-stop', epoch?: number | null): void {
-    if (!this.isConnected) return;
-
-    this.pendingIntent = false;
-    const stopMsg: WsClientMessage = {
-      action: 'stop',
-      payload: {
-        request_id: requestId,
-        epoch: epoch ?? this.activeEpoch,
-      },
-    };
-    this.sendJson(stopMsg);
-  }
-
-  disconnect(): void {
-    this.isBound = false;
-    this.activeEpoch = null;
-    this.activeOperatorId = null;
-    this.pendingIntent = false;
-    if (this.ws) {
-      try {
-        this.ws.close();
-      } catch {
-        // Ignore errors during disconnect
-      }
-      this.ws = null;
-    }
-  }
-
-  private sendJson(data: any): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try {
-        this.ws.send(JSON.stringify(data));
-      } catch (err) {
-        console.error('Failed to send WebSocket frame:', err);
-      }
-    }
-  }
-
-  private handleMessage(raw: string): void {
-    let msg: WsServerMessage;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
-    }
-
-    if (msg.type === 'challenge') {
-      const challenge: Challenge = msg.payload as Challenge;
-      this.handleChallenge(challenge);
-    } else if (msg.type === 'ack') {
-      const payload = msg.payload || {};
-      if (payload.action === 'bind' && payload.success) {
-        this.isBound = true;
-        if (this.onBoundCallback && this.activeEpoch !== null && this.activeOperatorId !== null) {
-          this.onBoundCallback(this.activeEpoch, this.activeOperatorId);
+    updateEpoch(epoch: number) {
+        if (this.epoch !== epoch) {
+            this.pending = null;
+            this.generation = -1;
         }
-      }
-      if (payload.action === 'intent') {
-        this.pendingIntent = false;
-      }
-    } else if (msg.type === 'error') {
-      const errCode = msg.payload?.error || 'UNKNOWN_ERROR';
-      const errMsg = msg.payload?.message || 'WebSocket error';
-      this.pendingIntent = false;
-      // Lease expiry revokes motion authority, not the WebSocket's owner binding.
-      // Keep answering challenges after an explicit Arm restores authority.
-      if (errCode === 'NOT_OWNER') {
-        this.isBound = false;
-      }
-      if (this.onErrorCallback) {
-        this.onErrorCallback(errCode, errMsg);
-      }
+        this.epoch = epoch;
     }
-  }
-
-  private handleChallenge(challenge: Challenge): void {
-    if (!this.isBound || this.activeEpoch === null) return;
-
-    // Accept challenge if epoch matches or has advanced on the server
-    if (challenge.epoch > this.activeEpoch) {
-      this.activeEpoch = challenge.epoch;
-    } else if (challenge.epoch !== this.activeEpoch) {
-      return;
+    sendStop(requestId = 'ws-stop', epoch?: number | null) {
+        this.pending = null;
+        this.send({ action: 'stop', payload: { request_id: requestId, epoch: epoch ?? this.epoch } });
     }
-
-    // Query active direction from callback
-    let direction: MotionDirection = 'neutral';
-    if (this.onChallengeCallback) {
-      direction = this.onChallengeCallback(challenge);
+    disconnect() {
+        this.rejectSetup?.(new Error('Control setup cancelled'));
+        const socket = this.ws;
+        this.ws = null;
+        this.bound = false;
+        this.pending = null;
+        this.epoch = null;
+        this.generation = -1;
+        socket?.close();
     }
-
-    // Submit intent response
-    const intentMsg: WsClientMessage = {
-      action: 'intent',
-      payload: {
-        token: challenge.token,
-        epoch: challenge.epoch,
-        sequence: this.sequence++,
-        direction: direction,
-        client_timestamp_ms: Date.now(),
-      },
-    };
-
-    this.pendingIntent = true;
-    this.sendJson(intentMsg);
-  }
+    private send(message: unknown) {
+        if (this.isConnected)
+            this.ws!.send(JSON.stringify(message));
+    }
+    private handleMessage(raw: string) {
+        let message: WsServerMessage;
+        try {
+            message = JSON.parse(raw);
+        }
+        catch {
+            return;
+        }
+        const payload = message.payload;
+        if (message.type === 'ack' && payload.action === 'bind' && payload.success) {
+            this.bound = true;
+            this.resolveBind?.();
+            return;
+        }
+        if (message.type === 'error') {
+            this.rejectSetup?.(new Error(payload.message || 'Control binding rejected'));
+            if (payload.sequence === this.pending?.sequence)
+                this.pending = null;
+            this.handlers.onError?.(payload.error, payload.message, payload);
+            return;
+        }
+        if (message.type === 'ack' && payload.action === 'intent') {
+            const sent = this.pending;
+            if (!sent || sent.sequence !== payload.sequence || sent.challenge.epoch !== this.epoch || payload.input_generation < this.generation)
+                return;
+            this.pending = null;
+            this.generation = payload.input_generation;
+            this.handlers.onAck?.(payload, sent.challenge, sent.direction);
+            return;
+        }
+        if (message.type !== 'challenge' || !this.bound || this.epoch === null)
+            return;
+        const challenge = payload as Challenge;
+        if (challenge.epoch < this.epoch)
+            return;
+        if (challenge.epoch > this.epoch)
+            this.updateEpoch(challenge.epoch);
+        if (challenge.input_generation < this.generation)
+            return;
+        if (challenge.input_generation > this.generation) {
+            this.generation = challenge.input_generation;
+            this.pending = null;
+        }
+        // Observe every challenge so a pause is visible even with an outstanding reply.
+        const direction = this.handlers.onChallenge?.(challenge) ?? null;
+        // A lost neutral response while paused cannot advance the server generation.
+        // Retry only fresh neutral challenges; never replay a buffered motion intent.
+        if (this.pending && challenge.recovery_required && direction === 'neutral' &&
+            performance.now() - this.pending.sentAt >= 500)
+            this.pending = null;
+        if (this.pending || direction === null)
+            return;
+        const sequence = ++this.sequence;
+        this.pending = { sentAt: performance.now(), sequence, challenge, direction };
+        this.send({ action: 'intent', payload: {
+                token: challenge.token, epoch: challenge.epoch, input_generation: challenge.input_generation,
+                sequence, direction, client_timestamp_ms: Date.now(),
+            } });
+    }
 }
-
 export const wsControlClient = new WsControlClient();

@@ -5,6 +5,22 @@ Last updated: 2026-09-27
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## M14.4 browser recovery implemented locally (2026-09-27)
+
+- M14.4 browser changes use combined Take control and bounded private
+  operation polling/socket binding. Start controller and the tracks-raised
+  checkbox are removed; Arm stays explicit and Stop cancels pending setup.
+- Protocol-2 input recovery retains physical key/pointer release tracking,
+  sends fresh neutral, waits for acknowledgment and requires a new press.
+  Lost neutral responses retry on fresh challenges; no buffered motion replay.
+- Full browser driving tests are restored. New cases exercise 450 ms delays,
+  1.1–1.5 s expiry gaps, lost responses/acks, late setup, faults, connection
+  replacement and PWA hide/resume. See `CHANGES.md` for final validation.
+- Validation: full suite passed 555 Python tests and 27 Playwright scenarios;
+  independent review PASS. Source/dependency gates and formatting checks pass.
+- Runtime M14.3 is commit `2c26015`; M14.4 is committed locally, not deployed.
+  M15 real-robot stopping and network acceptance remain pending.
+
 ## M14.3 backend implemented locally (2026-09-27)
 
 - M14.3 runtime/protocol/API implementation (one milestone commit): configurable `web.yaml`
@@ -13,9 +29,8 @@ current architecture and safety constraints; use `README.md` for commands.
 - Runtime owns combined Take control startup/acquisition, operation deduplication,
   binding timeout and cancellation. Public controller/start and web Arm affirmation
   removed. CLI/bench Stop and require explicit Arm after input pause.
-- Protocol 2 deliberately blocks the current protocol-1 browser. M14.4 must finish
-  browser recovery/UI and re-enable migrated `browser_control.spec.ts` scenarios;
-  current browser tests cover build/PWA and the incompatibility gate only.
+- Protocol 2 rejects older browser contracts. M14.4 above migrates the browser
+  and restores the full driving suite.
 - Local validation: full `./ubuntu_tank/deploy.sh test` passed 555 tests plus
   source/dependency gates; focused API/recovery passed 71 tests, final recovery
   passed 28 (overlapping counts). No Pi deployment or physical motion validation.

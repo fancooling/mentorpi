@@ -254,8 +254,8 @@ application processes remain supervised inside runtime. A manual first deploy
 activates that unit, which verifies/redeploys the selected pair once more.
 Every boot or container restart leaves the controller stopped. Only explicit
 Take control (start if needed, then acquire) followed by explicit Arm can enable
-motion. Protocol-2 browser support remains pending M14.4; do not deploy M14.3
-alone as a completed web-driving release. See the
+motion. M14.4 provides protocol-2 browser recovery and a single Take control
+flow; robot deployment and physical acceptance remain M15. See the
 [control contract and timeout configuration](../../ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md#m143-control-contract).
 
 The host keeps the original deployment-lock inode and a separate lifetime

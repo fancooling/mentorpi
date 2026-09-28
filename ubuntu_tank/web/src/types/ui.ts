@@ -41,7 +41,6 @@ export interface DriveControlState {
   activeDirection: MotionDirection;
   drivingStatus: DrivingStatus;
   isPanelFocused: boolean;
-  tracksRaisedConfirmed: boolean;
   continuousHoldDurationMs: number;
   idleDurationMs: number;
   inputConflict: boolean;

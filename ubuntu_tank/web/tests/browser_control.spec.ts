@@ -18,10 +18,6 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await takeControlBtn.click();
     await expect(page.locator('.owner-self')).toBeVisible();
 
-    const checkbox = page.locator('.safety-checkbox');
-    await expect(checkbox).toBeEnabled();
-    await checkbox.check();
-
     const armBtn = page.locator('button.btn-arm');
     await expect(armBtn).toBeEnabled();
     await armBtn.click();
@@ -95,24 +91,15 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await context.close();
   });
 
-  test('3. Safety gate: Arm requires tracks-raised confirmation checkbox', async ({ page }) => {
+  test('3. Explicit Arm works without a tracks-raised checkbox', async ({ page }) => {
     await page.goto('/');
 
     // Acquire control
     await page.locator('button', { hasText: 'Take control' }).click();
     await expect(page.locator('.owner-self')).toBeVisible();
 
-    // Arm button is disabled initially because checkbox is unchecked
     const armBtn = page.locator('button.btn-arm');
-    await expect(armBtn).toBeDisabled();
-
-    // Check the tracks-raised checkbox
-    const checkbox = page.locator('.safety-checkbox');
-    await expect(checkbox).toBeEnabled();
-    await checkbox.check();
-    await expect(checkbox).toBeChecked();
-
-    // Now Arm button should be enabled
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
     await expect(armBtn).toBeEnabled();
 
     // Click Arm
@@ -254,7 +241,6 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await page.goto('/');
     await page.locator('button', { hasText: 'Take control' }).click();
     await expect(page.locator('.owner-self')).toBeVisible();
-    await page.locator('.safety-checkbox').check();
 
     const drivePanel = page.locator('.drive-panel');
     await drivePanel.focus();
@@ -287,7 +273,6 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await expect(page.locator('.command-status-row .status-v').first()).toHaveText('zero');
 
     // Re-arm while KeyW remains physically held
-    await page.locator('.safety-checkbox').check();
     await page.locator('button.btn-arm').click();
     await expect(page.locator('.guard-armed')).toBeVisible();
 
@@ -371,11 +356,11 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          protocol_version: '2.0.0',
+          protocol_version: '3.0.0',
           api_version: 'v2',
           schema_version: 2,
           release_id: 'future-release',
-          supported_protocols: ['2.0.0'],
+          supported_protocols: ['3.0.0'],
         }),
       });
     });
@@ -385,65 +370,10 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     // Incompatible banner must be visible
     await expect(page.locator('.banner-incompatible')).toBeVisible();
 
-    // Take control button, safety checkbox, and arm button must be strictly disabled
+    // Take control and Arm must remain disabled for incompatible clients
     const takeControlBtn = page.locator('button', { hasText: 'Take control' });
     await expect(takeControlBtn).toBeDisabled();
-    await expect(page.locator('.safety-checkbox')).toBeDisabled();
     await expect(page.locator('button.btn-arm')).toBeDisabled();
-  });
-
-  test('13. Arm recovers after lease expiry without resuming held input', async ({ page }) => {
-    let injectedExpiry = false;
-    const intents: string[] = [];
-    await page.routeWebSocket('**/api/v1/control', (socket) => {
-      const server = socket.connectToServer();
-      socket.onMessage((message) => {
-        const frame = JSON.parse(message.toString());
-        if (frame.action === 'intent') intents.push(frame.payload.direction);
-        server.send(message);
-      });
-      server.onMessage((message) => {
-        const frame = JSON.parse(message.toString());
-        // Exercise the real UI stop and explicit Arm paths after a protocol fault.
-        if (!injectedExpiry && frame.type === 'ack' &&
-            frame.payload.action === 'intent' && frame.payload.direction === 'forward') {
-          injectedExpiry = true;
-          socket.send(JSON.stringify({
-            type: 'error',
-            payload: { error: 'LEASE_EXPIRED', message: 'Injected input lease expiry' },
-          }));
-        } else {
-          socket.send(message);
-        }
-      });
-    });
-
-    await armRobot(page);
-    await page.locator('.drive-panel').focus();
-    await page.keyboard.down('KeyW');
-    await expect.poll(() => injectedExpiry).toBe(true);
-    const forward = page.locator('button[aria-label^="Drive Forward"]');
-    await expect(forward).toBeDisabled();
-    await expect(page.locator('.guard-disarmed')).toBeVisible();
-
-    const recoveryStart = intents.length;
-    await page.locator('button.btn-arm').click();
-    await expect(forward).toBeEnabled();
-    await expect.poll(() => intents.length - recoveryStart).toBeGreaterThan(6);
-    expect(intents.slice(recoveryStart).every((direction) => direction === 'neutral')).toBe(true);
-    await page.keyboard.up('KeyW');
-
-    for (const [label, direction] of [['Drive Forward', 'forward'], ['Drive Reverse', 'reverse']]) {
-      const button = page.locator(`button[aria-label^="${label}"]`);
-      await button.hover();
-      const start = intents.length;
-      await page.mouse.down();
-      await expect.poll(() => intents.slice(start).includes(direction)).toBe(true);
-      await page.mouse.up();
-      await expect.poll(() => intents.at(-1)).toBe('neutral');
-      await expect(button).toBeEnabled();
-    }
-    await expect(page.locator('.guard-armed')).toBeVisible();
   });
 
 });

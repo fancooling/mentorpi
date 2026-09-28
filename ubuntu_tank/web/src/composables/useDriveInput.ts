@@ -1,4 +1,5 @@
-import { computed, onMounted, onUnmounted, reactive, watch } from 'vue';
+// Track physical release independently of active motion so paused or held input cannot replay.
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { wsControlClient } from '../services/wsClient';
 import type { MotionDirection } from '../types/api';
 import type { DriveControlState } from '../types/ui';
@@ -6,6 +7,7 @@ import type { DriveControlState } from '../types/ui';
 const CONTINUOUS_HOLD_CAP_MS = 5000;
 const IDLE_TIMEOUT_MS = 30000;
 
+/** Bind keyboard/pointer control to armed ownership and acknowledged neutral recovery. */
 export function useDriveInput(
   isArmed: () => boolean,
   isOwner: () => boolean,
@@ -15,7 +17,6 @@ export function useDriveInput(
     activeDirection: 'neutral',
     drivingStatus: 'idle',
     isPanelFocused: false,
-    tracksRaisedConfirmed: false,
     continuousHoldDurationMs: 0,
     idleDurationMs: 0,
     inputConflict: false,
@@ -23,6 +24,21 @@ export function useDriveInput(
     heldKeys: new Set<string>(),
     activePointerId: null,
   });
+
+  const recovery = ref<'ready' | 'release' | 'confirm'>('ready');
+  const recovered = ref(false);
+  const physicalPointers = new Set<number>();
+  let observedGeneration = -1;
+  const recoveryMessage = computed(() => recovery.value === 'release'
+    ? 'Input paused — release controls'
+    : recovery.value === 'confirm' ? 'Input paused — confirming neutral' : recovered.value ? 'Armed idle — ready for a new press' : '');
+  function released() { return physicallyDepressedKeys.size === 0 && physicalPointers.size === 0; }
+  function pauseInput() {
+    clearDirection(); state.heldKeys.clear(); state.activePointerId = null;
+    physicallyDepressedKeys.forEach(key => keysHeldBeforeArm.add(key));
+    recovered.value = false;
+    recovery.value = released() ? 'confirm' : 'release';
+  }
 
   const keysHeldBeforeArm = new Set<string>();
   const physicallyDepressedKeys = new Set<string>();
@@ -34,22 +50,35 @@ export function useDriveInput(
 
   // Register challenge handler with WebSocket client
   wsControlClient.setHandlers({
-    onChallenge: (_challenge) => {
-      // If conflict or hold capped, return neutral
-      if (state.inputConflict || state.holdCapped) {
+    onChallenge: (challenge) => {
+      if (challenge.recovery_required && recovery.value === 'ready') pauseInput();
+      observedGeneration = Math.max(observedGeneration, challenge.input_generation);
+      if (!isArmed() || !isOwner()) return null;
+      if (recovery.value !== 'ready') {
+        if (!released()) { recovery.value = 'release'; return null; }
+        recovery.value = 'confirm';
         return 'neutral';
       }
-      return state.activeDirection;
+      return state.inputConflict || state.holdCapped ? 'neutral' : state.activeDirection;
     },
-    onError: (code, msg) => {
-      console.warn(`WebSocket control error [${code}]: ${msg}`);
-      resetAllInput();
-      onEmergencyStop();
+    onAck: (payload, _challenge, direction) => {
+      if (recovery.value !== 'ready' && direction === 'neutral' &&
+          payload.operator_state === 'ARMED_IDLE' && payload.input_generation >= observedGeneration) {
+        observedGeneration = payload.input_generation;
+        clearDirection(); state.heldKeys.clear(); state.activePointerId = null;
+        physicallyDepressedKeys.forEach(key => keysHeldBeforeArm.add(key));
+        recovery.value = 'ready'; recovered.value = true;
+      }
     },
-    onDisconnect: () => {
-      resetAllInput();
-      onEmergencyStop();
+    onError: (code, _message, payload) => {
+      if (!wsControlClient.isSessionBound) return;
+      if (payload.operator_state === 'INPUT_PAUSED') { pauseInput(); return; }
+      if (['CHALLENGE_EXPIRED', 'STALE_TRANSACTION', 'LEASE_EXPIRED'].includes(code)) {
+        pauseInput(); return;
+      }
+      resetAllInput(); void onEmergencyStop();
     },
+    onDisconnect: () => { resetAllInput(); },
   });
 
   function clearDirection() {
@@ -68,6 +97,9 @@ export function useDriveInput(
     state.activePointerId = null;
     state.inputConflict = false;
     state.drivingStatus = 'idle';
+    recovery.value = 'ready';
+    observedGeneration = -1; recovered.value = false;
+    physicallyDepressedKeys.forEach(key => keysHeldBeforeArm.add(key));
   }
 
   function handleConflict() {
@@ -107,7 +139,7 @@ export function useDriveInput(
   }
 
   function setDirection(dir: MotionDirection) {
-    if (!isArmed() || !isOwner()) {
+    if (!isArmed() || !isOwner() || recovery.value !== 'ready') {
       clearDirection();
       state.drivingStatus = 'disabled';
       return;
@@ -118,6 +150,7 @@ export function useDriveInput(
     }
 
     state.activeDirection = dir;
+    if (dir !== 'neutral') recovered.value = false;
     state.drivingStatus = dir === 'neutral' ? 'idle' : 'driving';
     lastDirectionalInputTime = Date.now();
 
@@ -158,9 +191,10 @@ export function useDriveInput(
   // Pointer event handlers
   function onPointerDown(e: PointerEvent, dir: MotionDirection) {
     e.preventDefault();
-    if (!isArmed() || !isOwner()) return;
+    physicalPointers.add(e.pointerId);
+    if (!isArmed() || !isOwner() || recovery.value !== 'ready') return;
 
-    if (state.activePointerId !== null || state.heldKeys.size > 0) {
+    if (physicalPointers.size > 1 || state.activePointerId !== null || state.heldKeys.size > 0) {
       handleConflict();
       return;
     }
@@ -180,6 +214,7 @@ export function useDriveInput(
 
   function onPointerUp(e: PointerEvent) {
     e.preventDefault();
+    physicalPointers.delete(e.pointerId);
     if (state.activePointerId === e.pointerId) {
       state.activePointerId = null;
       const target = e.currentTarget as HTMLElement | null;
@@ -197,6 +232,7 @@ export function useDriveInput(
 
   function onPointerCancel(e: PointerEvent) {
     e.preventDefault();
+    physicalPointers.delete(e.pointerId);
     if (state.activePointerId === e.pointerId) {
       state.activePointerId = null;
       checkInputIntegrity();
@@ -242,6 +278,7 @@ export function useDriveInput(
 
     // Track physically depressed directional keys regardless of arming or panel focus
     physicallyDepressedKeys.add(e.code);
+    if (recovery.value !== 'ready') { keysHeldBeforeArm.add(e.code); return; }
 
     // Key held before Arm cannot start motion until released
     if (keysHeldBeforeArm.has(e.code)) {
@@ -270,7 +307,7 @@ export function useDriveInput(
     e.preventDefault();
 
     // Detect repeat
-    if (e.repeat && state.heldKeys.has(e.code)) {
+    if (e.repeat) {
       return;
     }
 
@@ -300,6 +337,15 @@ export function useDriveInput(
         clearDirection();
       }
     }
+  }
+
+  // Releases must still arrive when the paused button is disabled or capture is lost.
+  function physicalPointerDown(e: PointerEvent) {
+    if ((e.target as Element)?.closest?.('.btn-dir')) physicalPointers.add(e.pointerId);
+  }
+  function physicalPointerUp(e: PointerEvent) {
+    physicalPointers.delete(e.pointerId);
+    if (state.activePointerId === e.pointerId) onPointerUp(e);
   }
 
   // Lifecycle blur & visibility change handlers
@@ -348,6 +394,10 @@ export function useDriveInput(
       window.addEventListener('keyup', onKeyUp, { capture: true });
       window.addEventListener('blur', onBlur);
       document.addEventListener('visibilitychange', onVisibilityChange);
+      window.addEventListener('pointerdown', physicalPointerDown, true);
+      window.addEventListener('pointerup', physicalPointerUp, true);
+      window.addEventListener('pointercancel', physicalPointerUp, true);
+      window.addEventListener('pagehide', onBlur);
     }
   });
 
@@ -362,11 +412,17 @@ export function useDriveInput(
       window.removeEventListener('keyup', onKeyUp, { capture: true });
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pointerdown', physicalPointerDown, true);
+      window.removeEventListener('pointerup', physicalPointerUp, true);
+      window.removeEventListener('pointercancel', physicalPointerUp, true);
+      window.removeEventListener('pagehide', onBlur);
     }
   });
 
   return {
     state,
+    recovery,
+    recoveryMessage,
     isDriving,
     onPointerDown,
     onPointerUp,

@@ -1,332 +1,195 @@
-// Composable managing operator control authority, safety acknowledgment, and arming
+// Own one cancellable startup/acquisition/binding transaction; Arm is always explicit.
 import { ref, watch } from 'vue';
 import { apiClient } from '../services/apiClient';
 import { wsControlClient } from '../services/wsClient';
-import type {
-  ControlAcquireResponse,
-  ControlArmResponse,
-  ControlReleaseResponse,
-  ControlStopResponse,
-  OperationStatusResponse,
-} from '../types/api';
 import type { OperationFeedback } from '../types/ui';
-
-function generateUuid(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'req-' + Math.random().toString(36).substring(2, 12) + '-' + Date.now();
-}
-
-export function useControlSession(
-  operatorId: string,
-  pollStatus: () => Promise<void>,
-  isProtocolCompatible?: () => boolean,
-  getCurrentEpoch?: () => number | null
-) {
-  const currentEpoch = ref<number | null>(null);
-  const bindToken = ref<string | null>(null);
-  const tracksRaisedConfirmed = ref(false);
-  const isOperating = ref(false);
-  const feedback = ref<OperationFeedback | null>(null);
-
-  function syncEpochFromTelemetry() {
-    if (getCurrentEpoch && currentEpoch.value !== null) {
-      const ep = getCurrentEpoch();
-      if (ep !== null && ep !== undefined && ep !== currentEpoch.value) {
-        currentEpoch.value = ep;
-        wsControlClient.updateEpoch(ep);
-      }
-    }
-  }
-
-  if (getCurrentEpoch) {
-    watch(getCurrentEpoch, (newEp) => {
-      if (newEp !== null && newEp !== undefined && currentEpoch.value !== null) {
-        currentEpoch.value = newEp;
-        wsControlClient.updateEpoch(newEp);
-      }
-    });
-  }
-
-  function setFeedback(
-    type: 'info' | 'success' | 'warning' | 'error',
-    message: string,
-    code?: any
-  ) {
-    feedback.value = {
-      type,
-      message,
-      code,
-      timestamp: Date.now(),
+const uuid = () => crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random()}`;
+/** Coordinate one tab's setup/Arm commands; stale asynchronous results never restore control. */
+export function useControlSession(operatorId: string, pollStatus: () => Promise<void>, isProtocolCompatible = () => false, getCurrentEpoch = () => null as number | null, getActiveOwner = () => null as string | null) {
+    const currentEpoch = ref<number | null>(null);
+    const isOperating = ref(false);
+    const isBound = ref(false);
+    const feedback = ref<OperationFeedback | null>(null);
+    let generation = 0;
+    let setup: {
+        operation_id: string;
+        operation_token: string;
+    } | null = null;
+    const setFeedback = (type: OperationFeedback['type'], message: string, code?: any) => {
+        feedback.value = { type, message, code, timestamp: Date.now() };
     };
-  }
-
-  function clearFeedback() {
-    feedback.value = null;
-  }
-
-  async function takeControl(): Promise<boolean> {
-    if (isProtocolCompatible && !isProtocolCompatible()) {
-      setFeedback(
-        'error',
-        'Control acquisition disabled: client protocol is incompatible with the robot. Please reload to update.'
-      );
-      return false;
-    }
-
-    isOperating.value = true;
-    clearFeedback();
-    try {
-      const reqId = generateUuid();
-      const res: ControlAcquireResponse = await apiClient.acquireControl({
-        request_id: reqId,
-        operator_id: operatorId,
-        protocol_version: "2.0.0",
-      });
-
-      if (!res.success || res.epoch === null || !res.bind_token) {
-        setFeedback(
-          'error',
-          res.message || 'Failed to acquire control slot',
-          res.error
-        );
-        await pollStatus();
-        return false;
-      }
-
-      currentEpoch.value = res.epoch;
-      bindToken.value = res.bind_token;
-
-      // Connect and bind WebSocket
-      await wsControlClient.connect();
-      wsControlClient.bind(operatorId, res.epoch, res.bind_token);
-
-      setFeedback('success', `Control acquired (Epoch ${res.epoch})`);
-      await pollStatus();
-      syncEpochFromTelemetry();
-      return true;
-    } catch (err: any) {
-      setFeedback('error', err.message || 'Error acquiring control');
-      return false;
-    } finally {
-      isOperating.value = false;
-    }
-  }
-
-  async function releaseControl(): Promise<boolean> {
-    isOperating.value = true;
-    try {
-      wsControlClient.sendStop(generateUuid(), currentEpoch.value);
-      if (currentEpoch.value !== null) {
-        syncEpochFromTelemetry();
-        const reqId = generateUuid();
-        const res: ControlReleaseResponse = await apiClient.releaseControl({
-          request_id: reqId,
-          epoch: currentEpoch.value,
-        });
-        if (!res.success) {
-          setFeedback('warning', 'Release returned failure from server');
+    const clearFeedback = () => { feedback.value = null; };
+    watch(getCurrentEpoch, epoch => {
+        if (epoch !== null && currentEpoch.value !== null) {
+            currentEpoch.value = epoch;
+            wsControlClient.updateEpoch(epoch);
         }
-      }
-
-      wsControlClient.disconnect();
-      currentEpoch.value = null;
-      bindToken.value = null;
-      tracksRaisedConfirmed.value = false;
-
-      setFeedback('info', 'Control released');
-      await pollStatus();
-      return true;
-    } catch (err: any) {
-      setFeedback('error', err.message || 'Error releasing control');
-      return false;
-    } finally {
-      isOperating.value = false;
-    }
-  }
-
-  async function arm(): Promise<boolean> {
-    if (isProtocolCompatible && !isProtocolCompatible()) {
-      setFeedback(
-        'error',
-        'Arming disabled: client protocol is incompatible with the robot. Please reload to update.'
-      );
-      return false;
-    }
-
-    if (!tracksRaisedConfirmed.value) {
-      setFeedback(
-        'error',
-        'Physical safety acknowledgment required: confirm tracks are raised clear of ground'
-      );
-      return false;
-    }
-
-    syncEpochFromTelemetry();
-
-    if (currentEpoch.value === null) {
-      setFeedback('error', 'Must acquire control authority before arming');
-      return false;
-    }
-
-    isOperating.value = true;
-    clearFeedback();
-    try {
-      const reqId = generateUuid();
-      const res: ControlArmResponse = await apiClient.armControl({
-        request_id: reqId,
-        epoch: currentEpoch.value,
-      });
-
-      if (!res.success) {
-        setFeedback('error', res.message || 'Failed to arm chassis', res.error);
-        await pollStatus();
-        syncEpochFromTelemetry();
-        return false;
-      }
-
-      setFeedback('success', 'Chassis armed. Ready to drive.');
-      await pollStatus();
-      syncEpochFromTelemetry();
-      return true;
-    } catch (err: any) {
-      setFeedback('error', err.message || 'Error during chassis arming');
-      return false;
-    } finally {
-      isOperating.value = false;
-    }
-  }
-
-  async function disarm(): Promise<boolean> {
-    const ok = await emergencyStop();
-    syncEpochFromTelemetry();
-    return ok;
-  }
-
-  async function emergencyStop(): Promise<boolean> {
-    const reqId = generateUuid();
-    // 1. Immediate WebSocket stop priority
-    wsControlClient.sendStop(reqId, currentEpoch.value);
-
-    // 2. HTTP stop fallback
-    try {
-      const res: ControlStopResponse = await apiClient.stopControl({
-        request_id: reqId,
-        epoch: currentEpoch.value,
-      });
-      await pollStatus();
-      syncEpochFromTelemetry();
-      return res.success;
-    } catch (err: any) {
-      console.warn('Fallback HTTP stop failed:', err);
-      return false;
-    }
-  }
-
-  async function startController(): Promise<boolean> {
-    isOperating.value = true;
-    clearFeedback();
-    try {
-      const reqId = generateUuid();
-      const op: OperationStatusResponse = await apiClient.startController(reqId);
-      if (op.status === 'failed') {
-        setFeedback('error', op.error || 'Failed to start controller service');
-        return false;
-      }
-
-      // Poll operation status up to 10 seconds
-      const opId = op.operation_id;
-      let completed = false;
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const status = await apiClient.getOperation(opId);
-        if (status.status === 'completed') {
-          completed = true;
-          break;
+    });
+    watch(getActiveOwner, owner => {
+        if (isBound.value && owner !== operatorId) {
+            void invalidateSetup();
+            wsControlClient.disconnect();
+            isBound.value = false;
+            currentEpoch.value = null;
         }
-        if (status.status === 'failed') {
-          setFeedback('error', status.error || 'Controller start failed');
-          return false;
-        }
-      }
-
-      await pollStatus();
-      if (completed) {
-        setFeedback('success', 'Controller service started');
-        return true;
-      } else {
-        setFeedback('warning', 'Controller start timed out awaiting completion');
-        return false;
-      }
-    } catch (err: any) {
-      setFeedback('error', err.message || 'Error starting controller');
-      return false;
-    } finally {
-      isOperating.value = false;
+    });
+    async function cancelOperation(operation: typeof setup) {
+        if (operation)
+            await apiClient.releaseControl({ request_id: uuid(), ...operation }).catch(() => { });
     }
-  }
-
-  async function stopController(): Promise<boolean> {
-    isOperating.value = true;
-    clearFeedback();
-    try {
-      // Always stop motion and disarm first
-      await emergencyStop();
-
-      const reqId = generateUuid();
-      const op: OperationStatusResponse = await apiClient.stopController(reqId);
-      if (op.status === 'failed') {
-        setFeedback('error', op.error || 'Failed to stop controller');
-        return false;
-      }
-
-      const opId = op.operation_id;
-      let completed = false;
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const status = await apiClient.getOperation(opId);
-        if (status.status === 'completed') {
-          completed = true;
-          break;
-        }
-        if (status.status === 'failed') {
-          setFeedback('error', status.error || 'Controller stop failed');
-          return false;
-        }
-      }
-
-      await pollStatus();
-      if (completed) {
-        setFeedback('info', 'Controller service stopped');
-        return true;
-      } else {
-        setFeedback('warning', 'Controller stop timed out awaiting confirmation');
-        return false;
-      }
-    } catch (err: any) {
-      setFeedback('error', err.message || 'Error stopping controller');
-      return false;
-    } finally {
-      isOperating.value = false;
+    function invalidateSetup() {
+        generation++;
+        const previous = setup;
+        setup = null;
+        if (isOperating.value && !isBound.value)
+            wsControlClient.disconnect();
+        isOperating.value = false;
+        return cancelOperation(previous);
     }
-  }
-
-  return {
-    currentEpoch,
-    bindToken,
-    tracksRaisedConfirmed,
-    isOperating,
-    feedback,
-    setFeedback,
-    clearFeedback,
-    takeControl,
-    releaseControl,
-    arm,
-    disarm,
-    emergencyStop,
-    startController,
-    stopController,
-  };
+    async function takeControl() {
+        if (isOperating.value || isBound.value || !isProtocolCompatible())
+            return false;
+        const transaction = ++generation;
+        isOperating.value = true;
+        setFeedback('info', 'Starting controller and taking control…');
+        let operation: typeof setup = null;
+        try {
+            const result = await apiClient.acquireControl({ request_id: uuid(), operator_id: operatorId, protocol_version: '2.0.0' });
+            if (!result.success || !result.operation_id || !result.operation_token)
+                throw new Error(result.message || result.error || 'Control acquisition failed');
+            operation = { operation_id: result.operation_id, operation_token: result.operation_token };
+            if (transaction !== generation) {
+                await cancelOperation(operation);
+                return false;
+            }
+            setup = operation;
+            const deadline = performance.now() + 22000;
+            while (transaction === generation && performance.now() < deadline) {
+                const status = await apiClient.getOperation(operation.operation_id, operation.operation_token);
+                if (transaction !== generation)
+                    break;
+                if (status.status === 'failed')
+                    throw new Error(status.message || status.error || 'Controller setup failed');
+                if (status.status === 'completed') {
+                    if (status.epoch == null || !status.bind_token)
+                        throw new Error('Control binding unavailable');
+                    currentEpoch.value = status.epoch;
+                    setFeedback('info', 'Connecting control…');
+                    await wsControlClient.connect();
+                    if (transaction !== generation)
+                        break;
+                    await wsControlClient.bind(operatorId, status.epoch, status.bind_token);
+                    if (transaction !== generation)
+                        break;
+                    isBound.value = true;
+                    setup = null;
+                    setFeedback('success', 'Control ready. Arm to enable movement.');
+                    await pollStatus();
+                    return true;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            if (transaction === generation)
+                throw new Error('Control setup timed out');
+            return false;
+        }
+        catch (error: any) {
+            if (transaction === generation)
+                setFeedback('error', error.message || 'Control setup failed');
+            return false;
+        }
+        finally {
+            if (!isBound.value)
+                await cancelOperation(operation);
+            if (transaction === generation) {
+                setup = null;
+                isOperating.value = false;
+                if (!isBound.value) {
+                    wsControlClient.disconnect();
+                    currentEpoch.value = null;
+                }
+            }
+        }
+    }
+    async function emergencyStop() {
+        const cancellation = invalidateSetup();
+        const request_id = uuid();
+        wsControlClient.sendStop(request_id, currentEpoch.value);
+        try {
+            const result = await apiClient.stopControl({ request_id, epoch: currentEpoch.value });
+            await cancellation;
+            await pollStatus();
+            return result.success;
+        }
+        catch {
+            return false;
+        }
+    }
+    async function releaseControl() {
+        await invalidateSetup();
+        try {
+            if (currentEpoch.value !== null)
+                await apiClient.releaseControl({ request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
+            setFeedback('info', 'Control released');
+            return true;
+        }
+        catch (error: any) {
+            setFeedback('error', error.message || 'Release failed');
+            return false;
+        }
+        finally {
+            wsControlClient.disconnect();
+            isBound.value = false;
+            currentEpoch.value = null;
+            await pollStatus();
+        }
+    }
+    async function arm() {
+        if (!isBound.value || isOperating.value || !isProtocolCompatible() || currentEpoch.value === null)
+            return false;
+        const transaction = generation;
+        isOperating.value = true;
+        try {
+            const result = await apiClient.armControl({ request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
+            if (transaction !== generation)
+                return false;
+            setFeedback(result.success ? 'success' : 'error', result.success ? 'Chassis armed. Ready to drive.' : result.message || 'Arming failed');
+            await pollStatus();
+            return result.success;
+        }
+        catch (error: any) {
+            if (transaction === generation)
+                setFeedback('error', error.message || 'Arming failed');
+            return false;
+        }
+        finally {
+            if (transaction === generation)
+                isOperating.value = false;
+        }
+    }
+    async function stopController() {
+        void emergencyStop();
+        try {
+            const result = await apiClient.stopController(uuid());
+            setFeedback(result.status === 'completed' ? 'info' : 'error', result.status === 'completed' ? 'Controller stopped' : result.error || 'Controller stop failed');
+            return result.status === 'completed';
+        }
+        catch (error: any) {
+            setFeedback('error', error.message || 'Controller stop failed');
+            return false;
+        }
+        finally {
+            wsControlClient.disconnect();
+            isBound.value = false;
+            currentEpoch.value = null;
+            await pollStatus();
+        }
+    }
+    wsControlClient.setHandlers({ onDisconnect: () => {
+            isBound.value = false;
+            currentEpoch.value = null;
+            void emergencyStop();
+        } });
+    return { currentEpoch, isOperating, isBound, feedback, setFeedback, clearFeedback,
+        takeControl, releaseControl, arm, disarm: emergencyStop, emergencyStop, stopController };
 }
-

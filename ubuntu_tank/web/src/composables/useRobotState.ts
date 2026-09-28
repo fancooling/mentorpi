@@ -21,8 +21,8 @@ export function useRobotState(myOperatorId: string) {
     freshness: {},
     lastFault: null,
     releaseId: 'unknown',
-    protocolVersion: '1.0.0',
-    isProtocolCompatible: true,
+    protocolVersion: '2.0.0',
+    isProtocolCompatible: false,
     lastUpdateTimestamp: null,
   });
 
@@ -36,7 +36,7 @@ export function useRobotState(myOperatorId: string) {
   const isArmed = computed(() => {
     return (
       telemetry.guardArmed &&
-      (telemetry.operatorState === 'ARMED_IDLE' || telemetry.operatorState === 'DRIVING')
+      (telemetry.operatorState === 'ARMED_IDLE' || telemetry.operatorState === 'DRIVING' || telemetry.operatorState === 'INPUT_PAUSED')
     );
   });
 
@@ -51,10 +51,10 @@ export function useRobotState(myOperatorId: string) {
       telemetry.protocolVersion = v.protocol_version;
 
       const major = parseInt(v.protocol_version.split('.')[0] || '1', 10);
-      telemetry.isProtocolCompatible = major === 1;
+      telemetry.isProtocolCompatible = major === 2;
       return telemetry.isProtocolCompatible;
     } catch {
-      telemetry.isProtocolCompatible = true;
+      telemetry.isProtocolCompatible = false;
       return false;
     }
   }

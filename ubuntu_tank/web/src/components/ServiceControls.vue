@@ -5,15 +5,7 @@
       <div class="button-group" role="group" aria-label="Controller Service Actions">
         <button
           class="btn btn-secondary"
-          :disabled="isOperating || isControllerRunning"
-          @click="onStartController"
-          aria-label="Start Controller Service"
-        >
-          Start controller
-        </button>
-        <button
-          class="btn btn-secondary"
-          :disabled="isOperating || !isControllerRunning"
+          :disabled="false"
           @click="onStopController"
           aria-label="Stop Controller Service"
         >
@@ -25,11 +17,11 @@
         <button
           v-if="!isOwner"
           class="btn btn-primary"
-          :disabled="isOperating || !isControllerRunning || !isProtocolCompatible"
+          :disabled="isOperating || !isProtocolCompatible"
           @click="onTakeControl"
           aria-label="Take Control Authority"
         >
-          Take control
+          {{ isOperating ? 'Taking control…' : 'Take control' }}
         </button>
         <button
           v-else
@@ -40,26 +32,6 @@
         >
           Release control
         </button>
-      </div>
-    </div>
-
-    <!-- Row 2: Physical Safety Gate Checkbox -->
-    <div class="safety-gate-card">
-      <label class="safety-checkbox-label">
-        <input
-          type="checkbox"
-          class="safety-checkbox"
-          :checked="tracksRaisedConfirmed"
-          :disabled="!isOwner || isArmed || !isProtocolCompatible"
-          @change="onToggleTracksRaised(($event.target as HTMLInputElement).checked)"
-          aria-describedby="safety-desc"
-        />
-        <span class="safety-text">
-          I confirm the tracks are raised clear of ground and the power disconnect is accessible
-        </span>
-      </label>
-      <div id="safety-desc" class="sr-only">
-        Physical bench testing requirement: tracks must be elevated to prevent uncontrolled movement.
       </div>
     </div>
 
@@ -109,7 +81,7 @@ const props = withDefaults(
     isOwner: boolean;
     isArmed: boolean;
     isControllerRunning: boolean;
-    tracksRaisedConfirmed: boolean;
+    isBound: boolean;
     isOperating: boolean;
     isProtocolCompatible?: boolean;
     feedback: OperationFeedback | null;
@@ -120,11 +92,9 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (e: 'start-controller'): void;
   (e: 'stop-controller'): void;
   (e: 'take-control'): void;
   (e: 'release-control'): void;
-  (e: 'update:tracksRaisedConfirmed', value: boolean): void;
   (e: 'arm'): void;
   (e: 'disarm'): void;
   (e: 'clear-feedback'): void;
@@ -134,7 +104,7 @@ const canArm = computed(() => {
   return (
     props.isOwner &&
     props.isControllerRunning &&
-    props.tracksRaisedConfirmed &&
+    props.isBound &&
     props.isProtocolCompatible &&
     !props.isArmed &&
     !props.isOperating
@@ -144,10 +114,6 @@ const canArm = computed(() => {
 const canDisarm = computed(() => {
   return props.isArmed && !props.isOperating;
 });
-
-function onStartController() {
-  emit('start-controller');
-}
 
 function onStopController() {
   emit('stop-controller');
@@ -159,10 +125,6 @@ function onTakeControl() {
 
 function onReleaseControl() {
   emit('release-control');
-}
-
-function onToggleTracksRaised(checked: boolean) {
-  emit('update:tracksRaisedConfirmed', checked);
 }
 
 function onArm() {
@@ -253,35 +215,6 @@ function onClearFeedback() {
   background: #b45309;
 }
 
-.safety-gate-card {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  border-radius: 0.375rem;
-  padding: 0.65rem 0.75rem;
-}
-
-.safety-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #f1f5f9;
-}
-
-.safety-checkbox {
-  width: 1.25rem;
-  height: 1.25rem;
-  accent-color: #f59e0b;
-  cursor: pointer;
-}
-
-.safety-checkbox:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
 .arm-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -350,16 +283,5 @@ function onClearFeedback() {
   line-height: 1;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
 </style>
 

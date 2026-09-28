@@ -179,9 +179,17 @@ acknowledgment and a new physical press before sending a direction.
 
 Terminal and bench clients do not infer physical release after a stall. They
 explicitly stop and require a new Arm instead of recovering from cached input.
-The current browser still targets protocol 1 and is deliberately blocked by the
-compatibility check. M14.4 must implement the new interaction flow and restore
-its full browser suite before deployment for web driving.
+The M14.4 browser targets protocol 2. Take control polls the private operation
+and waits for socket binding before enabling explicit Arm. Setup cancellation
+invalidates late responses; Stop remains available during startup and recovery.
+The tracks-raised checkbox and separate Start controller button are removed.
+
+Input pause clears direction while retaining actual held-key/pointer tracking.
+Release all controls, acknowledge fresh neutral, then press again. Only neutral
+recovery responses are retried after loss; buffered motion is never replayed.
+Focus loss, page suspension, disconnect and hard faults still disarm. Cached
+protocol-1 clients remain blocked. Browser tests cover the full migrated driving
+suite and recovery; deployment and physical acceptance remain M15.
 
 Both containers read `/etc/opt/ubuntu_tank/web/web.yaml`; the runtime receives a
 read-only mount. `lease_duration_sec` must be finite, between 0.050 and 1.000

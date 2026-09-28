@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-// M14.3 changes the wire contract. Browser recovery and setup migrate in M14.4.
-test('protocol-1 browser cannot acquire or arm the protocol-2 runtime', async ({ page, request }) => {
+// Old cached clients must be rejected before receiving ownership.
+test('protocol-1 acquisition is rejected by the protocol-2 runtime', async ({ page, request }) => {
   const version = await (await request.get('/api/v1/version')).json();
   expect(version.protocol_version).toBe('2.0.0');
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Take Control Authority' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Take Control Authority' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Arm Chassis Motors', exact: true })).toBeDisabled();
   const response = await request.post('/api/v1/control/acquire', {
     headers: { Origin: new URL(page.url()).origin },
