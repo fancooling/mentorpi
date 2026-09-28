@@ -1,5 +1,5 @@
 // Auto-generated TypeScript definitions for MentorPi Pi 5 Web Control.
-// Protocol Version: 1.0.0, API Version: v1, Schema Version: 1
+// Protocol Version: 2.0.0, API Version: v1, Schema Version: 2
 
 export type OperatorState =
   | 'NO_OWNER'
@@ -7,6 +7,7 @@ export type OperatorState =
   | 'ARMING'
   | 'ARMED_IDLE'
   | 'DRIVING'
+  | 'INPUT_PAUSED'
   | 'FAULT';
 
 export type MotionDirection =
@@ -53,6 +54,9 @@ export interface VersionResponse {
 }
 
 export interface StatusResponse {
+  input_generation?: number;
+  pause_reason?: string | null;
+  recovery_ready?: boolean;
   service_state: ControllerServiceState;
   operator_state: OperatorState;
   active_owner: string | null;
@@ -81,17 +85,25 @@ export interface ControllerOperationRequest {
 }
 
 export interface OperationStatusResponse {
+  epoch?: number | null;
+  bind_token?: string | null;
+  success?: boolean;
+  message?: string | null;
   operation_id: string;
   status: 'pending' | 'completed' | 'failed';
   error: string | null;
 }
 
 export interface ControlAcquireRequest {
+  protocol_version: "2.0.0";
   request_id: string;
   operator_id: string;
 }
 
 export interface ControlAcquireResponse {
+  operation_id?: string | null;
+  operation_token?: string | null;
+  status?: "pending" | "completed" | "failed";
   success: boolean;
   epoch: number | null;
   bind_token?: string | null;
@@ -102,7 +114,9 @@ export interface ControlAcquireResponse {
 
 export interface ControlReleaseRequest {
   request_id: string;
-  epoch: number;
+  epoch?: number | null;
+  operation_id?: string;
+  operation_token?: string;
 }
 
 export interface ControlReleaseResponse {
@@ -113,7 +127,6 @@ export interface ControlReleaseResponse {
 export interface ControlArmRequest {
   request_id: string;
   epoch: number;
-  tracks_raised: true; // Strictly exact boolean true
 }
 
 export interface ControlArmResponse {
@@ -133,6 +146,8 @@ export interface ControlStopResponse {
 }
 
 export interface Challenge {
+  input_generation: number;
+  recovery_required: boolean;
   token: string;
   epoch: number;
   deadline_monotonic_ns: number;
@@ -140,6 +155,7 @@ export interface Challenge {
 }
 
 export interface ChallengeResponse {
+  input_generation: number;
   token: string;
   epoch: number;
   sequence: number;

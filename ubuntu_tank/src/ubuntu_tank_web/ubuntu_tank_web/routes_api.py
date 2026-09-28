@@ -5,7 +5,6 @@ Implements all endpoints defined in docs/MENTORPI_WEB_CONTROL_DESIGN.md:
   GET  /api/v1/version
   GET  /api/v1/status
   GET  /api/v1/logs
-  POST /api/v1/controller/start
   POST /api/v1/controller/stop
   POST /api/v1/control/acquire
   POST /api/v1/control/release
@@ -68,11 +67,11 @@ async def get_version(request: Request) -> VersionResponseModel:
     relay = request.app.state.operator_relay
     ver_dict = await asyncio.to_thread(relay.get_version)
     return VersionResponseModel(
-        protocol_version=ver_dict.get("protocol_version", "1.0.0"),
+        protocol_version=ver_dict.get("protocol_version", "2.0.0"),
         api_version=ver_dict.get("api_version", "v1"),
-        schema_version=ver_dict.get("schema_version", 1),
+        schema_version=ver_dict.get("schema_version", 2),
         release_id=ver_dict.get("release_id", "unknown"),
-        supported_protocols=ver_dict.get("supported_protocols", ["1.0.0"]),
+        supported_protocols=ver_dict.get("supported_protocols", ["2.0.0"]),
     )
 
 
@@ -100,6 +99,9 @@ async def get_status(request: Request) -> StatusResponseModel:
         active_owner=st.get("active_owner"),
         current_epoch=st.get("current_epoch"),
         guard_armed=st.get("guard_armed"),
+        input_generation=st.get("input_generation", 0),
+        pause_reason=st.get("pause_reason"),
+        recovery_ready=st.get("recovery_ready", False),
         disarm_pending=st.get("disarm_pending", False),
         battery_voltage=st.get("battery_voltage"),
         linear_speed=st.get("linear_speed", 0.0),
@@ -138,27 +140,6 @@ async def get_logs(
 
 
 @router.post(
-    "/controller/start",
-    response_model=OperationStatusResponseModel,
-    summary="Start the motion controller systemd service",
-)
-async def controller_start(
-    req: ControllerOperationRequestModel, request: Request
-) -> OperationStatusResponseModel:
-    """Start mentorpi-tank.service via the restricted lifecycle helper."""
-    lifecycle = request.app.state.lifecycle_client
-    op_id = f"op-{uuid.uuid4().hex[:8]}"
-    success, _state, err_msg = await asyncio.to_thread(lifecycle.start_controller)
-    op_status = OperationStatusResponseModel(
-        operation_id=op_id,
-        status="completed" if success else "failed",
-        error=err_msg if not success else None,
-    )
-    _store_operation(op_status)
-    return op_status
-
-
-@router.post(
     "/controller/stop",
     response_model=OperationStatusResponseModel,
     summary="Stop the motion controller systemd service",
@@ -170,6 +151,11 @@ async def controller_stop(
     relay = request.app.state.operator_relay
     lifecycle = request.app.state.lifecycle_client
 
+    # Cancel late startup before requesting Stop; fallback remains available.
+    try:
+        await asyncio.to_thread(relay.cancel_all_setups)
+    except (OSError, RuntimeError, ValueError):
+        logger.warning("Operator unavailable while cancelling setup")
     # Invalidate driving first
     await asyncio.to_thread(relay.stop, request_id=req.request_id)
 
@@ -180,6 +166,7 @@ async def controller_stop(
         status="completed" if success else "failed",
         error=err_msg if not success else None,
     )
+    await asyncio.to_thread(relay.close)
     _store_operation(op_status)
     return op_status
 
@@ -207,21 +194,14 @@ async def control_acquire(
         else config.angular_speed_cap,
         config.angular_speed_cap,
     )
-    success, epoch, bind_token_or_err, msg = await asyncio.to_thread(
-        relay.acquire,
+    result = await asyncio.to_thread(
+        relay.take_control,
         operator_id=req.operator_id,
         request_id=req.request_id,
         max_linear_speed=max_linear_speed,
         max_angular_speed=max_angular_speed,
     )
-    return ControlAcquireResponseModel(
-        success=success,
-        epoch=epoch,
-        bind_token=bind_token_or_err if success else None,
-        active_owner=req.operator_id if success else None,
-        error=None if success else bind_token_or_err,
-        message=msg,
-    )
+    return ControlAcquireResponseModel(**result)
 
 
 @router.post(
@@ -234,6 +214,17 @@ async def control_release(
 ) -> ControlReleaseResponseModel:
     """Relinquish operator control authority and disarm."""
     relay = request.app.state.operator_relay
+    if req.operation_id is not None:
+        ok = await asyncio.to_thread(
+            relay.cancel_setup, req.operation_id, req.operation_token or ""
+        )
+        return ControlReleaseResponseModel(
+            success=ok, error=None if ok else "NOT_OWNER"
+        )
+    if req.epoch is None:
+        raise HTTPException(
+            status_code=422, detail="epoch or private operation credentials required"
+        )
     success, err, msg = await asyncio.to_thread(
         relay.release,
         epoch=req.epoch,
@@ -254,12 +245,11 @@ async def control_release(
 async def control_arm(
     req: ControlArmRequestModel, request: Request
 ) -> ControlArmResponseModel:
-    """Arm the robot chassis; requires strict tracks_raised: true."""
+    """Arm the robot chassis; requires explicit ownership and healthy preflight."""
     relay = request.app.state.operator_relay
     success, err, msg = await asyncio.to_thread(
         relay.arm,
         epoch=req.epoch,
-        tracks_raised=req.tracks_raised,
         request_id=req.request_id,
     )
     return ControlArmResponseModel(
@@ -303,8 +293,15 @@ async def control_stop(
     response_model=OperationStatusResponseModel,
     summary="Get status of an asynchronous operation",
 )
-async def get_operation(id: str) -> OperationStatusResponseModel:
+async def get_operation(
+    id: str, request: Request, operation_token: str | None = None
+) -> OperationStatusResponseModel:
     """Query status of a retained operation by its ID."""
+    if operation_token is not None:
+        result = await asyncio.to_thread(
+            request.app.state.operator_relay.acquisition_result, id, operation_token
+        )
+        return OperationStatusResponseModel(**result)
     op = _operations.get(id)
     if op is None:
         raise HTTPException(

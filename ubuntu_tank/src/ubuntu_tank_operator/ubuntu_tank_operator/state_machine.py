@@ -2,7 +2,7 @@
 Deterministic Operator State Machine and Motion Lease Manager.
 
 Implements Milestone 10 state transitions, single-operator ownership,
-monotonic challenge validation, 150 ms motion lease enforcement, 5 s continuous
+monotonic challenge validation, configurable input lease enforcement, 5 s continuous
 hold cap, 30 s idle timeout, telemetry freshness gating, and fail-closed stop priority.
 """
 
@@ -12,15 +12,15 @@ import os
 import secrets
 import threading
 from collections.abc import Callable
-from typing import Any
 
+from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_protocol.constants import (
+    CHALLENGE_INTERVAL_SEC,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     FIRST_COMMAND_DEADLINE_NS,
     IDLE_TIMEOUT_NS,
     IDLE_TIMEOUT_SEC,
-    LEASE_DURATION_NS,
     LEASE_DURATION_SEC,
     MAX_CONTINUOUS_HOLD_NS,
     MAX_CONTINUOUS_HOLD_SEC,
@@ -52,7 +52,20 @@ class OperatorStateMachine:
         linear_speed_cap: float = DEFAULT_WEB_LINEAR_SPEED,
         angular_speed_cap: float = DEFAULT_WEB_ANGULAR_SPEED,
         lock: threading.RLock | None = None,
+        lease_duration_sec: float = LEASE_DURATION_SEC,
+        challenge_interval_sec: float = CHALLENGE_INTERVAL_SEC,
     ) -> None:
+        WebControlConfig(
+            lease_duration_sec=lease_duration_sec,
+            challenge_interval_sec=challenge_interval_sec,
+        ).validate()
+        self.lease_duration_sec = lease_duration_sec
+        self.lease_duration_ns = int(lease_duration_sec * 1e9)
+        self.input_generation = 0
+        self.pause_reason: str | None = None
+        self.pause_started_ns: int | None = None
+        self.zero_confirmed_ns: int | None = None
+        self.on_zero_required: Callable[[], None] | None = None
         self.release_id = os.environ.get("UBUNTU_TANK_RELEASE_ID", release_id)
         self.linear_speed_cap = min(linear_speed_cap, MAX_PERMISSIBLE_LINEAR_SPEED)
         self.angular_speed_cap = min(angular_speed_cap, MAX_PERMISSIBLE_ANGULAR_SPEED)
@@ -209,11 +222,10 @@ class OperatorStateMachine:
         self,
         owner_id: str,
         epoch: int,
-        tracks_raised: Any,
         current_monotonic_ns: int,
         request_id: str | None = None,
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
-        """Initiate arming sequence. Requires exact boolean tracks_raised=True."""
+        """Initiate explicit arming after ownership, neutral and health checks."""
         with self._lock:
             if not admitted():
                 return (
@@ -221,17 +233,6 @@ class OperatorStateMachine:
                     WebControlErrorCode.DEPLOYMENT_BUSY,
                     "Deployment is not admitted",
                 )
-            # Safety Invariant: require exact boolean True
-            if type(tracks_raised) is not bool or tracks_raised is not True:
-                return (
-                    False,
-                    WebControlErrorCode.TRACKS_NOT_RAISED,
-                    (
-                        "Arming strictly requires tracks_raised affirmation (exact boolean "
-                        "True)"
-                    ),
-                )
-
             if self.state != OperatorState.OWNED_DISARMED:
                 return (
                     False,
@@ -374,7 +375,9 @@ class OperatorStateMachine:
             self.active_arm_request_id = None
             self.last_directional_input_monotonic_ns = current_monotonic_ns
             # Initialize bounded input lease upon arming completion (enforced in ARMED_IDLE)
-            self.lease_deadline_monotonic_ns = current_monotonic_ns + LEASE_DURATION_NS
+            self.lease_deadline_monotonic_ns = (
+                current_monotonic_ns + self.lease_duration_ns
+            )
             self.disarm_pending = False
             self.compensating_disarm_required = False
             self.last_seen_sequence = -1
@@ -385,16 +388,41 @@ class OperatorStateMachine:
             return True, None, "Arming confirmed and downstream zero verified"
 
     def _expire_authority(self, current_monotonic_ns: int, reason: str) -> None:
-        """Expire operator authority upon lease deadline overrun."""
+        """Pause stale input without disarming a healthy controller."""
+        if self.state == OperatorState.INPUT_PAUSED:
+            return
+        if self.state == OperatorState.DRIVING:
+            self.last_directional_input_monotonic_ns = current_monotonic_ns
+        # Expiry is not a release; retain the held-input budget until neutral recovery.
+        self.active_direction = MotionDirection.NEUTRAL
+        self.lease_deadline_monotonic_ns = 0
+        self.outstanding_challenges.clear()
+        self.input_generation += 1
+        self.pause_started_ns = current_monotonic_ns
+        self.zero_confirmed_ns = None
+        self.pause_reason = reason
+        self.state = OperatorState.INPUT_PAUSED
+        if self.on_zero_required:
+            self.on_zero_required()
+
+    def confirm_zero_delivery(self, current_monotonic_ns: int) -> None:
+        """Refresh paused zero-delivery evidence; ongoing writes must remain fresh."""
         with self._lock:
-            self.stop(current_monotonic_ns)
-            self.state = OperatorState.FAULT
-            self.last_fault = reason
+            if (
+                self.state == OperatorState.INPUT_PAUSED
+                and self.pause_started_ns is not None
+                and current_monotonic_ns >= self.pause_started_ns
+            ):
+                self.zero_confirmed_ns = current_monotonic_ns
 
     def issue_challenge(self, current_monotonic_ns: int) -> Challenge | None:
         """Issue an unpredictable single-use challenge with monotonic deadline."""
         with self._lock:
-            if self.state not in (OperatorState.ARMED_IDLE, OperatorState.DRIVING):
+            if self.state not in (
+                OperatorState.ARMED_IDLE,
+                OperatorState.DRIVING,
+                OperatorState.INPUT_PAUSED,
+            ):
                 return None
 
             # Expire existing authority if current lease deadline has already passed
@@ -405,19 +433,21 @@ class OperatorStateMachine:
                 self._expire_authority(
                     current_monotonic_ns,
                     (
-                        f"Input lease expired (> {LEASE_DURATION_SEC * 1000:.0f} ms); "
-                        "authority expired"
+                        f"Input lease expired (> {self.lease_duration_sec * 1000:.0f} ms); "
+                        "input paused"
                     ),
                 )
                 return None
 
             token = secrets.token_urlsafe(16)
-            deadline_ns = current_monotonic_ns + LEASE_DURATION_NS
+            deadline_ns = current_monotonic_ns + self.lease_duration_ns
             challenge = Challenge(
                 token=token,
                 epoch=self.epoch,
                 deadline_monotonic_ns=deadline_ns,
                 issued_monotonic_ns=current_monotonic_ns,
+                input_generation=self.input_generation,
+                recovery_required=self.state == OperatorState.INPUT_PAUSED,
             )
             self.outstanding_challenges[token] = challenge
 
@@ -441,7 +471,11 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Validate client challenge response and apply discrete motion intent."""
         with self._lock:
-            if self.state not in (OperatorState.ARMED_IDLE, OperatorState.DRIVING):
+            if self.state not in (
+                OperatorState.ARMED_IDLE,
+                OperatorState.DRIVING,
+                OperatorState.INPUT_PAUSED,
+            ):
                 return (
                     False,
                     WebControlErrorCode.INVALID_STATE,
@@ -458,7 +492,7 @@ class OperatorStateMachine:
                     (
                         f"Input lease expired before renewal arrived (overdue by "
                         f"{(current_monotonic_ns - self.lease_deadline_monotonic_ns) / 1e6:.1f} ms); "
-                        "motion halted and disarmed"
+                        "input paused"
                     ),
                 )
                 return (
@@ -479,6 +513,13 @@ class OperatorStateMachine:
                     False,
                     WebControlErrorCode.INVALID_EPOCH,
                     f"Stale or mismatched epoch {response.epoch} (current is {self.epoch})",
+                )
+
+            if response.input_generation != self.input_generation:
+                return (
+                    False,
+                    WebControlErrorCode.STALE_TRANSACTION,
+                    "Stale input generation",
                 )
 
             # Challenge lookup and single-use enforcement
@@ -515,7 +556,12 @@ class OperatorStateMachine:
 
             # Fail-closed re-check: verify state, epoch, and disarm_pending before applying intent
             if (
-                self.state not in (OperatorState.ARMED_IDLE, OperatorState.DRIVING)
+                self.state
+                not in (
+                    OperatorState.ARMED_IDLE,
+                    OperatorState.DRIVING,
+                    OperatorState.INPUT_PAUSED,
+                )
                 or response.epoch != self.epoch
                 or self.disarm_pending
                 or self.compensating_disarm_required
@@ -530,6 +576,34 @@ class OperatorStateMachine:
             if response.direction == MotionDirection.STOP:
                 self.stop(current_monotonic_ns, requester_id=owner_id)
                 return True, None, "Stop requested; motion halted and disarmed"
+
+            if self.state == OperatorState.INPUT_PAUSED:
+                if response.direction != MotionDirection.NEUTRAL:
+                    return (
+                        False,
+                        WebControlErrorCode.INPUT_CONFLICT,
+                        "Release controls and send fresh neutral",
+                    )
+                healthy, err, message = self.telemetry.is_healthy(current_monotonic_ns)
+                if not healthy or self.telemetry.guard_armed is not True:
+                    self.stop(current_monotonic_ns)
+                    return (
+                        False,
+                        err or WebControlErrorCode.INVALID_STATE,
+                        message or "Guard is disarmed",
+                    )
+                if self.zero_confirmed_ns is None:
+                    return (
+                        False,
+                        WebControlErrorCode.INVALID_STATE,
+                        "Waiting for downstream zero",
+                    )
+                self.pause_reason = None
+                self.pause_started_ns = None
+                self.zero_confirmed_ns = None
+                # Invalidate challenges issued before the recovery acknowledgment.
+                self.outstanding_challenges.clear()
+                self.input_generation += 1
 
             # Non-zero motion handling
             if response.direction in (
@@ -598,11 +672,53 @@ class OperatorStateMachine:
                 OperatorState.ARMED_IDLE,
                 OperatorState.DRIVING,
                 OperatorState.ARMING,
+                OperatorState.INPUT_PAUSED,
             ):
                 self.stop(current_monotonic_ns)
                 self.state = OperatorState.FAULT
                 self.last_fault = f"Telemetry failure: {msg}"
                 return False, err_code, self.last_fault
+
+            if (
+                self.state
+                in (
+                    OperatorState.ARMED_IDLE,
+                    OperatorState.DRIVING,
+                    OperatorState.INPUT_PAUSED,
+                )
+                and self.telemetry.guard_armed is not True
+            ):
+                self.stop(current_monotonic_ns)
+                self.state = OperatorState.FAULT
+                self.last_fault = "Guard unexpectedly disarmed"
+                return False, WebControlErrorCode.INVALID_STATE, self.last_fault
+            if (
+                self.state == OperatorState.INPUT_PAUSED
+                and self.pause_started_ns is not None
+            ) and (
+                current_monotonic_ns
+                - (
+                    self.zero_confirmed_ns
+                    if self.zero_confirmed_ns is not None
+                    else self.pause_started_ns
+                )
+                > FIRST_COMMAND_DEADLINE_NS
+            ):
+                self.stop(current_monotonic_ns)
+                self.state = OperatorState.FAULT
+                self.last_fault = "Paused motion zero delivery unconfirmed"
+                return False, WebControlErrorCode.TIMEOUT, self.last_fault
+            if (
+                self.direction_hold_start_monotonic_ns is not None
+                and current_monotonic_ns - self.direction_hold_start_monotonic_ns
+                > MAX_CONTINUOUS_HOLD_NS
+            ):
+                self.stop(current_monotonic_ns)
+                return (
+                    False,
+                    WebControlErrorCode.MAX_HOLD_EXCEEDED,
+                    "Continuous hold cap reached",
+                )
 
             # 2. Arming transaction timeout check
             if (
@@ -631,15 +747,15 @@ class OperatorStateMachine:
                 self._expire_authority(
                     current_monotonic_ns,
                     (
-                        f"Input lease expired (> {LEASE_DURATION_SEC * 1000:.0f} ms);"
-                        " motion halted and disarmed"
+                        f"Input lease expired (> {self.lease_duration_sec * 1000:.0f} ms);"
+                        " input paused"
                     ),
                 )
-                return False, WebControlErrorCode.LEASE_EXPIRED, self.last_fault
+                return True, None, None
 
             # 4. 30-second idle timeout check while armed
             if (
-                self.state == OperatorState.ARMED_IDLE
+                self.state in (OperatorState.ARMED_IDLE, OperatorState.INPUT_PAUSED)
                 and self.last_directional_input_monotonic_ns is not None
             ):
                 idle_ns = (
@@ -662,6 +778,10 @@ class OperatorStateMachine:
     ) -> None:
         """Immediate stop priority: halt motion, disarm, and invalidate epoch."""
         with self._lock:
+            self.input_generation += 1
+            self.pause_reason = None
+            self.pause_started_ns = None
+            self.zero_confirmed_ns = None
             self.active_direction = MotionDirection.NEUTRAL
             self.direction_hold_start_monotonic_ns = None
             self.lease_deadline_monotonic_ns = 0
@@ -677,6 +797,7 @@ class OperatorStateMachine:
                     OperatorState.ARMED_IDLE,
                     OperatorState.ARMING,
                     OperatorState.FAULT,
+                    OperatorState.INPUT_PAUSED,
                 )
                 or (self.telemetry and self.telemetry.guard_armed is not False)
                 or self.disarm_pending
@@ -696,6 +817,7 @@ class OperatorStateMachine:
                 OperatorState.ARMED_IDLE,
                 OperatorState.ARMING,
                 OperatorState.FAULT,
+                OperatorState.INPUT_PAUSED,
             ):
                 self.state = (
                     OperatorState.OWNED_DISARMED
@@ -769,6 +891,10 @@ class OperatorStateMachine:
                 if self.state != OperatorState.NO_OWNER
                 else None,
                 guard_armed=self.telemetry.guard_armed if self.telemetry else None,
+                input_generation=self.input_generation,
+                pause_reason=self.pause_reason,
+                recovery_ready=self.state == OperatorState.INPUT_PAUSED
+                and self.zero_confirmed_ns is not None,
                 disarm_pending=self.disarm_pending,
                 battery_voltage=self.telemetry.battery_voltage
                 if self.telemetry
@@ -780,7 +906,7 @@ class OperatorStateMachine:
                     "max_angular_speed": self.active_angular_speed,
                     "configured_linear_speed_cap": self.linear_speed_cap,
                     "configured_angular_speed_cap": self.angular_speed_cap,
-                    "lease_duration_sec": LEASE_DURATION_SEC,
+                    "lease_duration_sec": self.lease_duration_sec,
                     "max_hold_sec": MAX_CONTINUOUS_HOLD_SEC,
                     "idle_timeout_sec": IDLE_TIMEOUT_SEC,
                 },

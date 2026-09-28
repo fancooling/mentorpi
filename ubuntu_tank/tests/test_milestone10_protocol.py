@@ -52,7 +52,9 @@ class TestMilestone10StateMachineTransitions(unittest.TestCase):
     """Verify core operator lifecycle state transitions."""
 
     def setUp(self):
-        self.sm = OperatorStateMachine(release_id="test-1.0.0")
+        self.sm = OperatorStateMachine(
+            release_id="test-1.0.0", lease_duration_sec=0.150
+        )
         self.base_time_ns = 1_000_000_000
 
         # Supply healthy telemetry
@@ -98,7 +100,7 @@ class TestMilestone10StateMachineTransitions(unittest.TestCase):
 
         # Arm with exact boolean True
         ok, _err, _msg = self.sm.arm(
-            "operator-1", 1, True, self.base_time_ns, request_id="arm-req-1"
+            "operator-1", 1, self.base_time_ns, request_id="arm-req-1"
         )
         self.assertTrue(ok)
         self.assertEqual(self.sm.state, OperatorState.ARMING)
@@ -117,7 +119,9 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
     """Verify strict monotonic challenges, deadlines, hold caps, and stop priority."""
 
     def setUp(self):
-        self.sm = OperatorStateMachine(release_id="test-1.0.0")
+        self.sm = OperatorStateMachine(
+            release_id="test-1.0.0", lease_duration_sec=0.150
+        )
         self.base_time_ns = 10_000_000_000
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -129,7 +133,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             odom_monotonic_ns=self.base_time_ns,
         )
         self.sm.acquire("operator-1", self.base_time_ns)
-        self.sm.arm("operator-1", 1, True, self.base_time_ns, request_id="setup-arm-1")
+        self.sm.arm("operator-1", 1, self.base_time_ns, request_id="setup-arm-1")
         self.sm.confirm_armed(
             True,
             True,
@@ -138,8 +142,8 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             request_id="setup-arm-1",
         )
 
-    def test_tracks_raised_strict_boolean_requirement(self):
-        """Tracks raised affirmation must reject non-booleans, strings, numbers, None."""
+    def test_arm_no_longer_requires_affirmation(self):
+        """Explicit Arm still requires ownership and healthy preflight."""
         sm = OperatorStateMachine()
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -148,37 +152,14 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=100,
         )
         sm.acquire("op", 100)
-
-        # Reject string 'true'
-        ok, err, _ = sm.arm("op", 1, "true", 100)
-        self.assertFalse(ok)
-        self.assertEqual(err, WebControlErrorCode.TRACKS_NOT_RAISED)
-
-        # Reject integer 1
-        ok, err, _ = sm.arm("op", 1, 1, 100)
-        self.assertFalse(ok)
-        self.assertEqual(err, WebControlErrorCode.TRACKS_NOT_RAISED)
-
-        # Reject False
-        ok, err, _ = sm.arm("op", 1, False, 100)
-        self.assertFalse(ok)
-        self.assertEqual(err, WebControlErrorCode.TRACKS_NOT_RAISED)
-
-        # Reject None
-        ok, err, _ = sm.arm("op", 1, None, 100)
-        self.assertFalse(ok)
-        self.assertEqual(err, WebControlErrorCode.TRACKS_NOT_RAISED)
-
-        # Reject list [True]
-        ok, err, _ = sm.arm("op", 1, [True], 100)
-        self.assertFalse(ok)
-        self.assertEqual(err, WebControlErrorCode.TRACKS_NOT_RAISED)
+        self.assertTrue(sm.arm("op", 1, 100)[0])
 
     def test_challenge_single_use_and_replay_rejection(self):
         challenge = self.sm.issue_challenge(self.base_time_ns)
         self.assertIsNotNone(challenge)
 
         resp = ChallengeResponse(
+            input_generation=challenge.input_generation,
             token=challenge.token,
             epoch=1,
             sequence=1,
@@ -206,6 +187,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         late_time_ns = challenge.deadline_monotonic_ns + 1_000_000  # 1 ms past 150 ms
 
         resp = ChallengeResponse(
+            input_generation=challenge.input_generation,
             token=challenge.token,
             epoch=1,
             sequence=1,
@@ -225,7 +207,11 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         """Responses must have strictly increasing sequence numbers."""
         c1 = self.sm.issue_challenge(self.base_time_ns)
         r1 = ChallengeResponse(
-            token=c1.token, epoch=1, sequence=5, direction=MotionDirection.FORWARD
+            input_generation=c1.input_generation,
+            token=c1.token,
+            epoch=1,
+            sequence=5,
+            direction=MotionDirection.FORWARD,
         )
         ok1, _, _ = self.sm.process_challenge_response(
             "operator-1", r1, self.base_time_ns + 10_000_000
@@ -235,7 +221,11 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         # Duplicate sequence 5 fails
         c2 = self.sm.issue_challenge(self.base_time_ns + 20_000_000)
         r2 = ChallengeResponse(
-            token=c2.token, epoch=1, sequence=5, direction=MotionDirection.FORWARD
+            input_generation=c2.input_generation,
+            token=c2.token,
+            epoch=1,
+            sequence=5,
+            direction=MotionDirection.FORWARD,
         )
         ok2, err2, _ = self.sm.process_challenge_response(
             "operator-1", r2, self.base_time_ns + 30_000_000
@@ -246,7 +236,11 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         # Regressive sequence 4 fails
         c3 = self.sm.issue_challenge(self.base_time_ns + 40_000_000)
         r3 = ChallengeResponse(
-            token=c3.token, epoch=1, sequence=4, direction=MotionDirection.FORWARD
+            input_generation=c3.input_generation,
+            token=c3.token,
+            epoch=1,
+            sequence=4,
+            direction=MotionDirection.FORWARD,
         )
         ok3, err3, _ = self.sm.process_challenge_response(
             "operator-1", r3, self.base_time_ns + 50_000_000
@@ -258,6 +252,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         """Response with mismatched or stale epoch must be rejected."""
         c1 = self.sm.issue_challenge(self.base_time_ns)
         r1 = ChallengeResponse(
+            input_generation=c1.input_generation,
             token=c1.token,
             epoch=0,  # Stale epoch
             sequence=1,
@@ -278,6 +273,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             c = self.sm.issue_challenge(t_cur)
             self.assertIsNotNone(c)
             r = ChallengeResponse(
+                input_generation=c.input_generation,
                 token=c.token,
                 epoch=1,
                 sequence=seq,
@@ -299,6 +295,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         c_cap = self.sm.issue_challenge(t_5_1s)
         self.assertIsNotNone(c_cap)
         r_cap = ChallengeResponse(
+            input_generation=c_cap.input_generation,
             token=c_cap.token,
             epoch=1,
             sequence=seq,
@@ -340,7 +337,11 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         """Stop clears motion, cancels challenges, invalidates epoch, and tracks pending disarm."""
         c1 = self.sm.issue_challenge(self.base_time_ns)
         r1 = ChallengeResponse(
-            token=c1.token, epoch=1, sequence=1, direction=MotionDirection.FORWARD
+            input_generation=c1.input_generation,
+            token=c1.token,
+            epoch=1,
+            sequence=1,
+            direction=MotionDirection.FORWARD,
         )
         self.sm.process_challenge_response(
             "operator-1", r1, self.base_time_ns + 10_000_000
@@ -377,7 +378,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_renewal_rejected_after_existing_lease_expires(self):
         """Reject renewal when response arrives after existing lease deadline, before watchdog tick."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         t_0 = 1_000_000_000  # 1.000 s
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -386,7 +387,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=t_0,
         )
         sm.acquire("operator-1", t_0)
-        sm.arm("operator-1", 1, True, t_0, request_id="arm-1")
+        sm.arm("operator-1", 1, t_0, request_id="arm-1")
         sm.confirm_armed(True, True, t_0 + 10_000_000, epoch=1, request_id="arm-1")
 
         # First forward challenge issued at t_0 + 20 ms, accepted at t_0 + 30 ms
@@ -394,6 +395,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         c1 = sm.issue_challenge(t_1)
         self.assertIsNotNone(c1)
         r1 = ChallengeResponse(
+            input_generation=c1.input_generation,
             token=c1.token,
             epoch=1,
             sequence=1,
@@ -414,6 +416,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         # (existing_lease_deadline + 10 ms), before challenge individual deadline and watchdog tick
         t_late = existing_lease_deadline + int(0.010 * 1e9)
         r2 = ChallengeResponse(
+            input_generation=c2.input_generation,
             token=c2.token,
             epoch=1,
             sequence=2,
@@ -428,55 +431,22 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         # Require zero velocity, epoch invalidation, and state FAULT
         vx, wz = sm.get_velocity_command()
         self.assertEqual((vx, wz), (0.0, 0.0))
-        self.assertEqual(sm.state, OperatorState.FAULT)
-        self.assertEqual(sm.epoch, 2)
+        self.assertEqual(sm.state, OperatorState.INPUT_PAUSED)
+        self.assertEqual(sm.epoch, 1)
 
         # Subsequent watchdog tick at t_late sees state FAULT and zero velocity
         sm.telemetry.battery_monotonic_ns = t_late
         sm.telemetry.guard_monotonic_ns = t_late
         ok_tick, _, _ = sm.check_deadlines(t_late)
         self.assertTrue(ok_tick)
-        self.assertEqual(sm.state, OperatorState.FAULT)
-
-        # Explicit rearming required: cannot arm directly from FAULT
-        arm_fail, err_arm, _ = sm.arm("operator-1", sm.epoch, True, t_late)
-        self.assertFalse(arm_fail)
-        self.assertEqual(err_arm, WebControlErrorCode.INVALID_STATE)
-
-        # Clear fault via Stop disarms and advances epoch to OWNED_DISARMED
-        sm.stop(t_late + int(0.010 * 1e9), requester_id="operator-1")
-        self.assertEqual(sm.state, OperatorState.OWNED_DISARMED)
-        self.assertEqual(sm.epoch, 3)
-
-        # Before confirmed disarm: rearming fails
-        arm_blocked, err_blocked, _ = sm.arm(
-            "operator-1",
-            sm.epoch,
-            True,
-            t_late + int(0.015 * 1e9),
-            request_id="rearm-blocked",
-        )
-        self.assertFalse(arm_blocked)
-        self.assertEqual(err_blocked, WebControlErrorCode.INVALID_STATE)
-
-        # Downstream confirms disarm
-        sm.update_guard_telemetry(False, t_late + int(0.018 * 1e9))
-
-        # Explicit rearm after confirmed disarm succeeds
-        arm_ok, _, _ = sm.arm(
-            "operator-1",
-            sm.epoch,
-            True,
-            t_late + int(0.020 * 1e9),
-            request_id="rearm-1",
-        )
-        self.assertTrue(arm_ok)
+        self.assertEqual(sm.state, OperatorState.INPUT_PAUSED)
 
     def test_lost_neutral_responses_in_armed_idle_expire_lease(self):
         """Neutral response accepted, then client disconnects: lease expires at 150 ms in ARMED_IDLE."""
         c1 = self.sm.issue_challenge(self.base_time_ns)
         self.assertIsNotNone(c1)
         r1 = ChallengeResponse(
+            input_generation=c1.input_generation,
             token=c1.token,
             epoch=1,
             sequence=1,
@@ -493,14 +463,14 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         self.sm.telemetry.battery_monotonic_ns = t_expire
         self.sm.telemetry.guard_monotonic_ns = t_expire
         ok_exp, err_exp, _ = self.sm.check_deadlines(t_expire)
-        self.assertFalse(ok_exp)
-        self.assertEqual(err_exp, WebControlErrorCode.LEASE_EXPIRED)
-        self.assertEqual(self.sm.state, OperatorState.FAULT)
-        self.assertEqual(self.sm.epoch, 2)
+        self.assertTrue(ok_exp)
+        self.assertIsNone(err_exp)
+        self.assertEqual(self.sm.state, OperatorState.INPUT_PAUSED)
+        self.assertEqual(self.sm.epoch, 1)
 
     def test_lost_response_before_first_response_in_armed_idle(self):
         """Arming completes but client drops before first response: lease expires at 150 ms."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 1_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -509,7 +479,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=base_t,
         )
         sm.acquire("op", base_t)
-        sm.arm("op", 1, True, base_t, request_id="arm-first")
+        sm.arm("op", 1, base_t, request_id="arm-first")
         sm.confirm_armed(
             True, True, base_t + 10_000_000, epoch=1, request_id="arm-first"
         )
@@ -525,14 +495,14 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         sm.telemetry.battery_monotonic_ns = t_160ms
         sm.telemetry.guard_monotonic_ns = t_160ms
         ok160, err160, _ = sm.check_deadlines(t_160ms)
-        self.assertFalse(ok160)
-        self.assertEqual(err160, WebControlErrorCode.LEASE_EXPIRED)
-        self.assertEqual(sm.state, OperatorState.FAULT)
-        self.assertEqual(sm.epoch, 2)
+        self.assertTrue(ok160)
+        self.assertIsNone(err160)
+        self.assertEqual(sm.state, OperatorState.INPUT_PAUSED)
+        self.assertEqual(sm.epoch, 1)
 
     def test_bind_arm_completion_to_originating_transaction(self):
         """Late arm A completion cannot complete arm B or enable motion; B requires its own confirmation."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -547,7 +517,6 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         ok_a, _, _ = sm.arm(
             "operator-1",
             epoch=1,
-            tracks_raised=True,
             current_monotonic_ns=base_t,
             request_id="req-arm-A",
         )
@@ -570,7 +539,6 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         fail_b, err_b, _ = sm.arm(
             "operator-1",
             epoch=2,
-            tracks_raised=True,
             current_monotonic_ns=base_t + 25_000_000,
             request_id="req-arm-B",
         )
@@ -587,7 +555,6 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         ok_b, _, _ = sm.arm(
             "operator-1",
             epoch=2,
-            tracks_raised=True,
             current_monotonic_ns=t_b,
             request_id="req-arm-B",
         )
@@ -684,6 +651,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         c_b = sm.issue_challenge(t_b_confirm)
         self.assertIsNotNone(c_b)
         r_b = ChallengeResponse(
+            input_generation=c_b.input_generation,
             token=c_b.token,
             epoch=2,
             sequence=1,
@@ -697,7 +665,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_preserve_observed_guard_state_while_disarm_is_pending(self):
         """Stop clears requested velocity immediately, but guard_armed remains observed True until confirmed."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -745,7 +713,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_preserve_pending_disarm_across_stop_and_arm(self):
         """Stop sets pending disarm; arming is blocked until downstream confirms disarm."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -754,7 +722,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=base_t,
         )
         sm.acquire("operator-1", base_t)
-        sm.arm("operator-1", 1, True, base_t, request_id="arm-1")
+        sm.arm("operator-1", 1, base_t, request_id="arm-1")
         sm.confirm_armed(True, True, base_t + 10_000_000, epoch=1, request_id="arm-1")
         self.assertEqual(sm.state, OperatorState.ARMED_IDLE)
         self.assertTrue(sm.telemetry.guard_armed)
@@ -771,7 +739,6 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         arm_fail, arm_err, _ = sm.arm(
             "operator-1",
             sm.epoch,
-            True,
             base_t + 25_000_000,
             request_id="arm-2",
         )
@@ -792,7 +759,6 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         arm_ok, _, _ = sm.arm(
             "operator-1",
             sm.epoch,
-            True,
             base_t + 35_000_000,
             request_id="arm-2",
         )
@@ -801,7 +767,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_preserve_pending_disarm_across_stop_and_same_owner_acquire(self):
         """Stop sets pending disarm; same-owner acquire is blocked until downstream confirms disarm."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -810,7 +776,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=base_t,
         )
         sm.acquire("operator-1", base_t)
-        sm.arm("operator-1", 1, True, base_t, request_id="arm-1")
+        sm.arm("operator-1", 1, base_t, request_id="arm-1")
         sm.confirm_armed(True, True, base_t + 10_000_000, epoch=1, request_id="arm-1")
         self.assertEqual(sm.state, OperatorState.ARMED_IDLE)
 
@@ -842,7 +808,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_preserve_pending_disarm_across_release_and_different_owner_acquire(self):
         """Release while armed sets pending disarm; new operator acquire is blocked until confirmed."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -851,7 +817,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=base_t,
         )
         sm.acquire("operator-A", base_t)
-        sm.arm("operator-A", 1, True, base_t, request_id="arm-A")
+        sm.arm("operator-A", 1, base_t, request_id="arm-A")
         sm.confirm_armed(True, True, base_t + 10_000_000, epoch=1, request_id="arm-A")
         self.assertEqual(sm.state, OperatorState.ARMED_IDLE)
 
@@ -888,7 +854,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_delayed_arm_completion_retains_disarm_obligation(self):
         """Delayed arm confirmation during OWNED_DISARMED retains disarm obligation and blocks rearm."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         base_t = 10_000_000_000
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -897,7 +863,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=base_t,
         )
         sm.acquire("op", base_t)
-        sm.arm("op", 1, True, base_t, request_id="arm-orig")
+        sm.arm("op", 1, base_t, request_id="arm-orig")
         self.assertEqual(sm.state, OperatorState.ARMING)
 
         # Stop cancels Arm before confirmation
@@ -918,7 +884,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
         # Rearm must be blocked while disarm is pending
         arm_fail, arm_err, _ = sm.arm(
-            "op", sm.epoch, True, t_late + 5_000_000, request_id="arm-new"
+            "op", sm.epoch, t_late + 5_000_000, request_id="arm-new"
         )
         self.assertFalse(arm_fail)
         self.assertEqual(arm_err, WebControlErrorCode.INVALID_STATE)
@@ -929,15 +895,13 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         self.assertFalse(sm.compensating_disarm_required)
 
         # Rearm now succeeds
-        arm_ok, _, _ = sm.arm(
-            "op", sm.epoch, True, t_late + 15_000_000, request_id="arm-new"
-        )
+        arm_ok, _, _ = sm.arm("op", sm.epoch, t_late + 15_000_000, request_id="arm-new")
         self.assertTrue(arm_ok)
         self.assertEqual(sm.state, OperatorState.ARMING)
 
     def test_arm_cancellation_and_compensating_disarm(self):
         """Timeout during ARMING triggers compensating disarm and transitions to FAULT."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=100,
@@ -945,7 +909,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
             guard_monotonic_ns=100,
         )
         sm.acquire("op", 100)
-        sm.arm("op", 1, True, 100, request_id="arm-1")
+        sm.arm("op", 1, 100, request_id="arm-1")
         self.assertEqual(sm.state, OperatorState.ARMING)
 
         # 260 ms elapsed without confirmation (> 250 ms deadline)
@@ -959,7 +923,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
 
     def test_stale_telemetry_blocks_arm_and_trips_driving(self):
         """Stale battery or guard telemetry blocks arming and trips active driving."""
-        sm = OperatorStateMachine()
+        sm = OperatorStateMachine(lease_duration_sec=0.150)
         # Battery is 3.5 seconds old (> 3.0 s threshold)
         sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -970,7 +934,7 @@ class TestMilestone10SafetyInvariants(unittest.TestCase):
         sm.acquire("op", int(3.6 * 1e9))
 
         # Cannot arm with stale battery
-        ok, err, _ = sm.arm("op", 1, True, int(3.6 * 1e9))
+        ok, err, _ = sm.arm("op", 1, int(3.6 * 1e9))
         self.assertFalse(ok)
         self.assertEqual(err, WebControlErrorCode.STALE_TELEMETRY)
 
@@ -1088,10 +1052,8 @@ class TestMilestone10Schemas(unittest.TestCase):
 
     def test_arm_request_schema(self):
         # Valid
-        req = ControlArmRequest.from_dict(
-            {"request_id": "req-1", "epoch": 1, "tracks_raised": True}
-        )
-        self.assertTrue(req.tracks_raised)
+        req = ControlArmRequest.from_dict({"request_id": "req-1", "epoch": 1})
+        self.assertEqual(req.epoch, 1)
 
         # Reject non-boolean tracks_raised
         with self.assertRaises(ValueError):

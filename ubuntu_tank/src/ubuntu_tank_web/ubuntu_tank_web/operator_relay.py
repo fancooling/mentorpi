@@ -14,7 +14,11 @@ import secrets
 import threading
 from typing import Any
 
-from ubuntu_tank_protocol.constants import DEFAULT_OPERATOR_SOCKET_PATH
+from ubuntu_tank_protocol.constants import (
+    DEFAULT_OPERATOR_SOCKET_PATH,
+    PROTOCOL_VERSION,
+    SCHEMA_VERSION,
+)
 from ubuntu_tank_protocol.enums import WebControlErrorCode
 from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 
@@ -32,6 +36,9 @@ class OperatorRelay:
         self._active_bind_token: str | None = None
         self._bound_session_id: str | None = None
         self._lock = threading.Lock()
+        self._setup_operation: str | None = None
+        self._setup_token: str | None = None
+        self._setup_request: str | None = None
 
     def _clear_owner_state_locked(self) -> None:
         """Clear active owner connection and binding state while holding self._lock."""
@@ -40,6 +47,9 @@ class OperatorRelay:
         self._active_epoch = None
         self._active_bind_token = None
         self._bound_session_id = None
+        self._setup_operation = None
+        self._setup_token = None
+        self._setup_request = None
 
     def create_client(self) -> OperatorIpcClient:
         """Create a new dedicated IPC client instance."""
@@ -91,6 +101,12 @@ class OperatorRelay:
                     "Owner connection already bound to an active WebSocket session",
                 )
 
+            if self._setup_operation is not None:
+                result = self._owner_client._send_request(
+                    {"action": "bind_control", "operation_id": self._setup_operation}
+                )
+                if not result.get("success"):
+                    return False, None, "Acquisition expired or cancelled"
             self._bound_session_id = session_id
             # Consume bind_token so it cannot be reused
             self._active_bind_token = None
@@ -124,7 +140,7 @@ class OperatorRelay:
                 "freshness": {},
                 "last_fault": f"Operator agent unavailable: {exc}",
                 "release_id": "unknown",
-                "protocol_version": "1.0.0",
+                "protocol_version": PROTOCOL_VERSION,
             }
         finally:
             client.close()
@@ -137,11 +153,11 @@ class OperatorRelay:
             return client.get_version(timeout_sec=timeout_sec)
         except Exception as exc:
             return {
-                "protocol_version": "1.0.0",
+                "protocol_version": PROTOCOL_VERSION,
                 "api_version": "v1",
-                "schema_version": 1,
+                "schema_version": SCHEMA_VERSION,
                 "release_id": "unknown",
-                "supported_protocols": ["1.0.0"],
+                "supported_protocols": [PROTOCOL_VERSION],
                 "error": f"Operator agent unavailable: {exc}",
             }
         finally:
@@ -158,27 +174,6 @@ class OperatorRelay:
 
         Independent of ownership: any connected client or stop request can stop the tank.
         """
-        with self._lock:
-            owner_client = self._owner_client
-
-        if owner_client is not None:
-            try:
-                return owner_client.stop(
-                    request_id=request_id, epoch=epoch, timeout_sec=timeout_sec
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Stop request on owner client failed, clearing broken owner and falling back: %s",
-                    exc,
-                )
-                with self._lock:
-                    if self._owner_client is owner_client:
-                        try:
-                            self._owner_client.close()
-                        except Exception:
-                            pass
-                        self._clear_owner_state_locked()
-
         fallback_client = self.create_client()
         try:
             fallback_client.connect(timeout_sec=timeout_sec)
@@ -190,6 +185,150 @@ class OperatorRelay:
             return False, str(exc)
         finally:
             fallback_client.close()
+
+    def take_control(
+        self,
+        operator_id: str,
+        request_id: str,
+        max_linear_speed: float,
+        max_angular_speed: float,
+    ) -> dict[str, Any]:
+        """Begin one runtime-owned setup operation, retaining its private IPC socket."""
+        with self._lock:
+            try:
+                if self._owner_client is not None and self._setup_operation is not None:
+                    previous = self._owner_client._send_request(
+                        {
+                            "action": "acquisition_result",
+                            "operation_id": self._setup_operation,
+                        }
+                    )
+                    if not previous.get("success") and (
+                        previous.get("error") == "NOT_OWNER"
+                        or self._setup_request != request_id
+                    ):
+                        self._owner_client.close()
+                        self._clear_owner_state_locked()
+                if self._owner_client is not None:
+                    if (
+                        self._setup_request == request_id
+                        and self._active_operator_id == operator_id
+                    ):
+                        result = self._owner_client._send_request(
+                            {
+                                "action": "take_control",
+                                "operator_id": operator_id,
+                                "request_id": request_id,
+                                "max_linear_speed": max_linear_speed,
+                                "max_angular_speed": max_angular_speed,
+                            }
+                        )
+                        return {**result, "operation_token": self._setup_token}
+                    return {"success": False, "error": "DEPLOYMENT_BUSY"}
+            except (OSError, ValueError) as exc:
+                self._owner_client.close()
+                self._clear_owner_state_locked()
+                return {
+                    "success": False,
+                    "error": "CONTROLLER_UNAVAILABLE",
+                    "message": str(exc),
+                }
+            client = self.create_client()
+            try:
+                result = client._send_request(
+                    {
+                        "action": "take_control",
+                        "operator_id": operator_id,
+                        "request_id": request_id,
+                        "max_linear_speed": max_linear_speed,
+                        "max_angular_speed": max_angular_speed,
+                    }
+                )
+                if not result.get("success"):
+                    client.close()
+                    return result
+                self._owner_client = client
+                self._active_operator_id = operator_id
+                self._setup_operation = result["operation_id"]
+                self._setup_request = request_id
+                self._setup_token = secrets.token_urlsafe(24)
+                return {**result, "operation_token": self._setup_token}
+            except Exception as exc:
+                client.close()
+                return {
+                    "success": False,
+                    "error": "CONTROLLER_UNAVAILABLE",
+                    "message": str(exc),
+                }
+
+    def acquisition_result(
+        self, operation_id: str, operation_token: str
+    ) -> dict[str, Any]:
+        """Retrieve private setup outcome; never include bind credentials in public status."""
+        with self._lock:
+            if (
+                self._owner_client is None
+                or operation_id != self._setup_operation
+                or not self._setup_token
+                or not secrets.compare_digest(self._setup_token, operation_token)
+            ):
+                return {
+                    "success": False,
+                    "error": "NOT_OWNER",
+                    "status": "failed",
+                    "operation_id": operation_id,
+                }
+            try:
+                result = self._owner_client._send_request(
+                    {"action": "acquisition_result", "operation_id": operation_id}
+                )
+            except (OSError, ValueError) as exc:
+                self._owner_client.close()
+                self._clear_owner_state_locked()
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "error": "CONTROLLER_UNAVAILABLE",
+                    "operation_id": operation_id,
+                    "message": str(exc),
+                }
+            if not result.get("success") and result.get("error") == "NOT_OWNER":
+                self._owner_client.close()
+                self._clear_owner_state_locked()
+                return {**result, "status": "failed", "operation_id": operation_id}
+            if result.get("status") == "completed":
+                self._active_epoch = result["epoch"]
+                if self._bound_session_id is None and self._active_bind_token is None:
+                    self._active_bind_token = secrets.token_urlsafe(24)
+                result["bind_token"] = self._active_bind_token
+            return result
+
+    def cancel_setup(self, operation_id: str, operation_token: str) -> bool:
+        """Cancel only the session holding the private setup token."""
+        with self._lock:
+            if (
+                operation_id != self._setup_operation
+                or not self._setup_token
+                or not secrets.compare_digest(self._setup_token, operation_token)
+            ):
+                return False
+            try:
+                self._owner_client._send_request({"action": "cancel_acquisition"})
+            except (OSError, ValueError):
+                # Closing the owner socket also revokes setup at the runtime.
+                pass
+            finally:
+                self._owner_client.close()
+                self._clear_owner_state_locked()
+            return True
+
+    def cancel_all_setups(self) -> None:
+        """Invalidate pending runtime startup before Stop controller."""
+        client = self.create_client()
+        try:
+            client._send_request({"action": "cancel_all_acquisitions"})
+        finally:
+            client.close()
 
     def acquire(
         self,
@@ -268,7 +407,6 @@ class OperatorRelay:
     def arm(
         self,
         epoch: int,
-        tracks_raised: bool = True,
         request_id: str | None = None,
         timeout_sec: float = 5.0,
     ) -> tuple[bool, str | None, str | None]:
@@ -284,7 +422,6 @@ class OperatorRelay:
             try:
                 ok, err, msg = client.arm(
                     epoch=epoch,
-                    tracks_raised=tracks_raised,
                     request_id=request_id,
                     timeout_sec=timeout_sec,
                 )

@@ -259,7 +259,7 @@ def main(args=None):
             # If tracks raised was acknowledged on CLI, arm immediately within this persistent session
             if parsed.ack_tracks_raised:
                 arm_ok, arm_err, arm_msg = ipc_client.arm(
-                    epoch=ipc_epoch, tracks_raised=True, timeout_sec=3.0
+                    epoch=ipc_epoch, timeout_sec=3.0
                 )
                 if arm_ok:
                     is_armed = True
@@ -421,7 +421,7 @@ def main(args=None):
                         pass
 
                     arm_ok, arm_err, arm_msg = ipc_client.arm(
-                        epoch=ipc_epoch, tracks_raised=True, timeout_sec=2.0
+                        epoch=ipc_epoch, timeout_sec=2.0
                     )
                     if not arm_ok and arm_err == "INVALID_EPOCH":
                         try:
@@ -430,7 +430,6 @@ def main(args=None):
                                 ipc_epoch = st["current_epoch"]
                                 arm_ok, arm_err, arm_msg = ipc_client.arm(
                                     epoch=ipc_epoch,
-                                    tracks_raised=True,
                                     timeout_sec=2.0,
                                 )
                         except Exception:
@@ -479,6 +478,16 @@ def main(args=None):
                     except Exception:
                         pass
 
+                    if c and c.get("recovery_required"):
+                        # Terminal events cannot prove physical release after a stall.
+                        # Disarm explicitly and require a new R command instead.
+                        ipc_client.stop(timeout_sec=0.5)
+                        try:
+                            if os.name != "nt" and sys.stdin.isatty():
+                                termios.tcflush(sys.stdin, termios.TCIFLUSH)
+                        except (OSError, ValueError):
+                            pass
+                        c = None
                     if not c or "token" not in c:
                         is_armed = False
                         current_key = None
@@ -499,6 +508,7 @@ def main(args=None):
                                 timeout_sec=0.2,
                             )
                             if not ok:
+                                ipc_client.stop(timeout_sec=0.5)
                                 is_armed = False
                                 current_key = None
                                 try:

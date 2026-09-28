@@ -65,6 +65,7 @@ class RuntimeProcesses(unittest.TestCase):
             UBUNTU_TANK_OPERATOR_LOCK=str(self.directory / "authority.lock"),
             UBUNTU_TANK_LIFECYCLE_SOCKET=str(self.directory / "lifecycle.sock"),
             UBUNTU_TANK_CONFIG=str(TANK / "config/controller.yaml"),
+            UBUNTU_TANK_WEB_CONFIG=str(TANK / "config/web/web.yaml"),
             ROS_LOG_DIR=str(self.directory / "ros-log"),
             _UBUNTU_TANK_TEST_CHILD_CMD=f"{sys.executable} {TANK / 'tests/fixtures/runtime_graph.py'}",
         )
@@ -289,9 +290,7 @@ class RuntimeEpoch(unittest.TestCase):
                         client.acquire("epoch-test")
                         epoch = sm.epoch
                         if driving:
-                            self.assertTrue(
-                                client.arm(epoch=epoch, tracks_raised=True)[0]
-                            )
+                            self.assertTrue(client.arm(epoch=epoch)[0])
                             challenge = client.request_challenge(epoch)
                             client.submit_intent(
                                 challenge["token"], epoch, 1, "forward"
@@ -302,7 +301,6 @@ class RuntimeEpoch(unittest.TestCase):
                                 sm.arm(
                                     "epoch-test",
                                     epoch,
-                                    True,
                                     now,
                                     request_id="pending",
                                 )[0]
@@ -321,7 +319,7 @@ class RuntimeEpoch(unittest.TestCase):
                                 True, True, time.monotonic_ns(), epoch, "pending"
                             )[0]
                         )
-                        self.assertFalse(client.arm(epoch=epoch, tracks_raised=True)[0])
+                        self.assertFalse(client.arm(epoch=epoch)[0])
                 finally:
                     node.destroy_node()
 

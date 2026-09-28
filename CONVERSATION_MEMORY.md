@@ -1,21 +1,81 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
-## Web control lease recovery correction (2026-09-26)
+## M14.3 backend implemented locally (2026-09-27)
 
-- Live read-only Pi status showed repeated 150 ms input-lease expiry. Local
-  browser code invalidated its owner binding on expiry, preventing Arm recovery.
-  Preserve that binding while retaining input reset and Stop; `NOT_OWNER` still
-  invalidates it. The relay now includes processing time in its 50 ms cadence
-  and yields after overruns. Safety deadlines remain unchanged.
-- The delayed-IPC regression fails on the original relay and passes locally;
-  all 13 browser tests pass, including expiry recovery and held-key suppression.
-  Initial Pi latency cause is not measured. No deployment or motor commands.
-  See `docs/BUG_WEB_CONTROL_LEASE_EXPIRY.md`; Pi verification remains pending.
+- M14.3 runtime/protocol/API implementation (one milestone commit): configurable `web.yaml`
+  `lease_duration_sec` (default 1 s), `INPUT_PAUSED`, generation-fenced neutral
+  recovery after downstream zero, and unchanged hard-fault disarming.
+- Runtime owns combined Take control startup/acquisition, operation deduplication,
+  binding timeout and cancellation. Public controller/start and web Arm affirmation
+  removed. CLI/bench Stop and require explicit Arm after input pause.
+- Protocol 2 deliberately blocks the current protocol-1 browser. M14.4 must finish
+  browser recovery/UI and re-enable migrated `browser_control.spec.ts` scenarios;
+  current browser tests cover build/PWA and the incompatibility gate only.
+- Local validation: full `./ubuntu_tank/deploy.sh test` passed 555 tests plus
+  source/dependency gates; focused API/recovery passed 71 tests, final recovery
+  passed 28 (overlapping counts). No Pi deployment or physical motion validation.
+  Runtime mounts shared web.yaml read-only; retained valid timeout overrides stay
+  unchanged until explicitly edited and the stopped runtime restarted.
+- Review remediation keeps controller-stop cleanup monotonic across prior setup
+  cancellation, clears broken relay sockets for retry and updates the executable
+  packaging probe to protocol 2. Fresh zero evidence and unreleased hold limits
+  remain enforced; 28 recovery/acquisition tests cover these behaviors.
+- API/configuration details: `ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md`.
+
+## Input timeout redesign approved (2026-09-27)
+
+- Web design §4 now separates input expiry from Arm: retain healthy guard Arm
+  and ownership, command zero in `INPUT_PAUSED`, and invalidate an input
+  generation. Require actual release, fresh neutral acknowledgment and a new
+  press before motion. Never automatically arm a disarmed controller.
+- M14.3 makes `web.yaml` `lease_duration_sec` authoritative in the runtime
+  operator, with a 1-second default, validated startup loading, effective status
+  reporting and behavioral tests at multiple values. Changes require restart
+  while stopped/disarmed; retained valid deployment overrides remain explicit.
+- Owner selected a 1-second default input lease/challenge validity. Keep independent
+  watchdogs, 50 ms cadence, first-command and idle/hold limits unchanged. Hard
+  faults, detected disconnects and explicit Stop still disarm. M15 must validate
+  the proposed 1.2-second input-loss physical-rest target and stopping distance;
+  the former 300 ms target cannot apply to this lease. Network stalls remain open.
+- Pending sequence in `docs/MENTORPI_WEB_CONTROL_DESIGN.md`: M14.3 protocol
+  and operator → M14.4 browser/relay recovery → M15 deployment and real-robot
+  acceptance → M16 release handoff. M15 includes recovery validation and supplies
+  revised web-control evidence for container C5; no separate M17–M19 milestones.
+- M14.3 also combines the public API: `control/acquire` starts if needed, waits
+  for readiness and grants ownership; remove public `controller/start`. Keep
+  release, Arm, motion Stop/disarm and controller Stop distinct. Runtime owns
+  orchestration, deduplication, binding timeout and cancellation; M14.4 uses
+  this single API operation instead of chaining start/acquire in the browser.
+- M14.4 also combines controller startup and ownership into one Take control
+  action, retaining separate Arm and Stop controller. Remove the tracks-raised
+  checkbox with no replacement dialog. M14.3 removes the corresponding mandatory
+  web Arm affirmation; do not silently send `tracks_raised: true`. Keep hardware
+  acceptance acknowledgments and the raised-track operating restriction.
+- Deployed `b45dfdd` still uses 150 ms and disarms on expiry. The local M14.3
+  implementation above has not changed the deployed robot.
+
+## Web lease fix deployed; network reliability unresolved (2026-09-26)
+
+- Commit `b45dfdd` deployed as release
+  `63df3bda6caa5fbe86eef8a3e6a39f206300c46685a7d96d3b24589a66cb59f9`.
+  ARM64 smoke, archive verification, staging and stopped integration passed;
+  all 40 configuration hashes retained. Build: `.work/lease-fix-b45dfdd` under
+  `ubuntu_tank`; evidence/scripts: `ubuntu_tank/.work/lease-fix-evidence/`.
+- Owner authorized raised-track testing. Pi-local HTTPS/WS real-controller test
+  passed 12 direction/neutral cycles and actual lease-expiry Stop/Arm recovery.
+  Remote browser had partial successes but still failed on network stalls.
+  Matched packet captures measured up to ~409 ms Pi-to-browser delivery delay.
+- Installed `iw` for diagnosis; disabling Wi-Fi power saving did not resolve
+  stalls, so its original enabled setting was restored. No lease or persistent
+  network configuration changes. Ethernet retest remains pending.
+- Controller left inactive, disarmed and ownerless. No physical stop-latency
+  certification or direction observation claimed. See
+  `docs/BUG_WEB_CONTROL_LEASE_EXPIRY.md`; remote-browser reliability remains open.
 
 ## C4 owner-scoped Pi verification complete (2026-09-26)
 

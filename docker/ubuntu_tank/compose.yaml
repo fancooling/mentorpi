@@ -49,6 +49,11 @@ services:
         read_only: true
         bind: {create_host_path: false}
       - type: bind
+        source: /etc/opt/ubuntu_tank/web/web.yaml
+        target: /etc/opt/ubuntu_tank/web/web.yaml
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
         source: /etc/opt/ubuntu_tank/controller.yaml
         target: /etc/opt/ubuntu_tank/controller.yaml
         read_only: true

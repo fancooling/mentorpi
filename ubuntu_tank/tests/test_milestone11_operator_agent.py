@@ -85,7 +85,7 @@ class TestIpcPeerCredentialsAndFraming(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -198,7 +198,7 @@ class TestExclusiveOperatorArbitration(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -279,7 +279,7 @@ class TestFailClosedDisconnectAndStopPriority(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -310,7 +310,7 @@ class TestFailClosedDisconnectAndStopPriority(unittest.TestCase):
         """When the active owner disconnects, server must stop and disarm immediately."""
         client = OperatorIpcClient(socket_path=self.socket_path)
         client.acquire("owner_abc")
-        ok, err, msg = client.arm(epoch=1, tracks_raised=True)
+        ok, err, msg = client.arm(epoch=1)
         self.assertTrue(ok)
         self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
@@ -338,7 +338,7 @@ class TestFailClosedDisconnectAndStopPriority(unittest.TestCase):
 
         try:
             owner.acquire("owner_1")
-            owner.arm(epoch=1, tracks_raised=True)
+            owner.arm(epoch=1)
             self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
             self.stop_called = False
@@ -360,7 +360,7 @@ class TestArmingTransactionAndFirstCommandZero(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -395,25 +395,23 @@ class TestArmingTransactionAndFirstCommandZero(unittest.TestCase):
         self.server.stop()
         self.tmp_dir.cleanup()
 
-    def test_arm_requires_tracks_raised_true(self):
+    def test_arm_rejects_removed_affirmation_field(self):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
-            client.acquire("op_arm")
-
-            # Arm with tracks_raised=False -> rejected
-            ok, err, msg = client.arm(epoch=1, tracks_raised=False)
-            self.assertFalse(ok)
-            self.assertEqual(err, WebControlErrorCode.INVALID_PAYLOAD.value)
-
-            # Arm with tracks_raised=True -> succeeds
-            ok, err, msg = client.arm(epoch=1, tracks_raised=True)
-            self.assertTrue(ok)
-            self.assertEqual(len(self.arm_requests), 1)
-            self.assertEqual(self.arm_requests[0][0], 1)
-            self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
+            client.acquire("owner")
+            result = client._send_request(
+                {
+                    "action": "arm",
+                    "epoch": 1,
+                    "request_id": "arm",
+                    "tracks_raised": True,
+                }
+            )
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"], "INVALID_PAYLOAD")
 
     def test_non_owner_cannot_arm(self):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
-            ok, err, msg = client.arm(epoch=1, tracks_raised=True)
+            ok, err, msg = client.arm(epoch=1)
             self.assertFalse(ok)
             self.assertEqual(err, WebControlErrorCode.NOT_OWNER.value)
 
@@ -428,7 +426,7 @@ class TestChallengeAndIntentLeases(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -452,7 +450,7 @@ class TestChallengeAndIntentLeases(unittest.TestCase):
     def test_challenge_and_intent_success(self):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             client.acquire("op_intent")
-            client.arm(epoch=1, tracks_raised=True)
+            client.arm(epoch=1)
 
             # Request challenge
             c = client.request_challenge(epoch=1)
@@ -509,7 +507,7 @@ class TestMotionBurstAndObservations(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -557,7 +555,7 @@ class TestMotionBurstAndObservations(unittest.TestCase):
     def test_burst_execution_via_ipc(self):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             client.acquire("op_burst")
-            client.arm(epoch=1, tracks_raised=True)
+            client.arm(epoch=1)
 
             ok, msg = client.run_motion_burst(
                 epoch=1,
@@ -574,7 +572,7 @@ class TestMotionBurstAndObservations(unittest.TestCase):
     def test_stop_interrupts_burst_promptly(self):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             client.acquire("burst_owner")
-            client.arm(epoch=1, tracks_raised=True)
+            client.arm(epoch=1)
 
             burst_result = {}
 
@@ -625,6 +623,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
         try:
             socket_path = os.path.join(tmp_dir.name, "agent.sock")
             node = OperatorAgentNode(
+                lease_duration_sec=0.150,
                 node_name="test_operator_agent",
                 socket_path=socket_path,
                 allowed_uids=[os.getuid()],
@@ -652,7 +651,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
                 # Acquire and arm locally
                 ok, epoch, _, _ = client.acquire("test_client")
                 self.assertTrue(ok)
-                arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+                arm_ok, _, _ = client.arm(epoch)
                 self.assertTrue(arm_ok)
 
                 # Lease timer tick
@@ -680,6 +679,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
         try:
             socket_path = os.path.join(tmp_dir.name, "agent_batt.sock")
             node = OperatorAgentNode(
+                lease_duration_sec=0.150,
                 node_name="test_operator_agent_batt",
                 socket_path=socket_path,
                 allowed_uids=[os.getuid()],
@@ -706,7 +706,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
                 self.assertTrue(ok)
 
                 # Healthy battery and fresh guard -> Arm succeeds
-                arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+                arm_ok, _, _ = client.arm(epoch)
                 self.assertTrue(arm_ok)
                 self.assertEqual(node.state_machine.state, OperatorState.ARMED_IDLE)
 
@@ -731,6 +731,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
         try:
             socket_path = os.path.join(tmp_dir.name, "agent_stall.sock")
             node = OperatorAgentNode(
+                lease_duration_sec=0.150,
                 node_name="test_operator_agent_stall",
                 socket_path=socket_path,
                 allowed_uids=[os.getuid()],
@@ -744,7 +745,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
 
             with OperatorIpcClient(socket_path=socket_path) as client:
                 client.acquire("stall_test")
-                client.arm(epoch=1, tracks_raised=True)
+                client.arm(epoch=1)
 
                 c = client.request_challenge(1)
                 client.submit_intent(c["token"], 1, 1, "forward")
@@ -775,6 +776,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             socket_path = os.path.join(tmp_dir, "agent_contention.sock")
             node = OperatorAgentNode(
+                lease_duration_sec=0.150,
                 node_name="test_operator_agent_contention",
                 socket_path=socket_path,
                 allowed_uids=[os.getuid()],
@@ -795,7 +797,7 @@ class TestOperatorAgentNodeLifecycle(unittest.TestCase):
                 with OperatorIpcClient(socket_path=socket_path) as client:
                     ok, epoch, _, _ = client.acquire("contention_test")
                     self.assertTrue(ok)
-                    arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+                    arm_ok, _, _ = client.arm(epoch)
                     self.assertTrue(arm_ok)
                     challenge = client.request_challenge(epoch)
                     drive_ok, _, _ = client.submit_intent(
@@ -861,7 +863,11 @@ class TestAgentArmDeliveryConfirmation(unittest.TestCase):
 
     def _make_arming_node(self, tmp_dir: str, delay_sec: float = 0.0):
         socket_path = os.path.join(tmp_dir, "arm_delivery.sock")
-        node = OperatorAgentNode(socket_path=socket_path, allowed_uids=[os.getuid()])
+        node = OperatorAgentNode(
+            lease_duration_sec=0.150,
+            socket_path=socket_path,
+            allowed_uids=[os.getuid()],
+        )
         now_ns = time.monotonic_ns()
         node.state_machine.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -876,7 +882,7 @@ class TestAgentArmDeliveryConfirmation(unittest.TestCase):
         self.assertTrue(ok)
         request_id = "arm-delivery-test"
         ok, _, _ = node.state_machine.arm(
-            "arm_test", epoch, True, time.monotonic_ns(), request_id
+            "arm_test", epoch, time.monotonic_ns(), request_id
         )
         self.assertTrue(ok)
         node.arm_client = self._ArmClient(delay_sec)
@@ -960,7 +966,9 @@ class TestIpcPostLockTimestamps(unittest.TestCase):
     def test_expired_intent_waiting_for_lock_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             socket_path = os.path.join(tmp_dir, "ipc_contention.sock")
-            sm = OperatorStateMachine(release_id="test-ipc-contention")
+            sm = OperatorStateMachine(
+                lease_duration_sec=0.150, release_id="test-ipc-contention"
+            )
             now_ns = time.monotonic_ns()
             sm.telemetry = TelemetrySnapshot(
                 battery_voltage=12.2,
@@ -989,7 +997,7 @@ class TestIpcPostLockTimestamps(unittest.TestCase):
                 with OperatorIpcClient(socket_path=socket_path) as client:
                     ok, epoch, _, _ = client.acquire("ipc_contention")
                     self.assertTrue(ok)
-                    arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+                    arm_ok, _, _ = client.arm(epoch)
                     self.assertTrue(arm_ok)
                     challenge = client.request_challenge(epoch)
                     result = []
@@ -1086,7 +1094,7 @@ class TestCliIntegrationRegressions(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "operator.sock")
-        self.sm = OperatorStateMachine(release_id="test-m11")
+        self.sm = OperatorStateMachine(lease_duration_sec=0.150, release_id="test-m11")
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -1342,6 +1350,7 @@ class TestGuardLivenessFreshness(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "guard_fresh.sock")
         self.node = OperatorAgentNode(
+            lease_duration_sec=0.150,
             node_name="test_guard_fresh",
             socket_path=self.socket_path,
             allowed_uids=[os.getuid()],
@@ -1373,7 +1382,7 @@ class TestGuardLivenessFreshness(unittest.TestCase):
                 time.sleep(0.05)
 
             # Arming must SUCCEED because guard liveness was observed while idle
-            arm_ok, arm_err, arm_msg = client.arm(epoch, tracks_raised=True)
+            arm_ok, arm_err, arm_msg = client.arm(epoch)
             self.assertTrue(
                 arm_ok,
                 f"Arming should succeed after idle time: {arm_err} ({arm_msg})",
@@ -1393,7 +1402,7 @@ class TestGuardLivenessFreshness(unittest.TestCase):
             self.node.state_machine.telemetry.battery_monotonic_ns = time.monotonic_ns()
 
             self.node._timer_tick()
-            arm_ok, arm_err, arm_msg = client.arm(epoch, tracks_raised=True)
+            arm_ok, arm_err, arm_msg = client.arm(epoch)
             self.assertFalse(arm_ok)
             self.assertEqual(arm_err, WebControlErrorCode.STALE_TELEMETRY.value)
 
@@ -1405,7 +1414,7 @@ class TestGuardLivenessFreshness(unittest.TestCase):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             ok, epoch, _, _ = client.acquire("test_op")
             self.assertTrue(ok)
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
 
             start_mono = time.monotonic()
@@ -1453,7 +1462,7 @@ class TestGuardLivenessFreshness(unittest.TestCase):
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             ok, epoch, _, _ = client.acquire("test_op")
             self.assertTrue(ok)
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
 
             c = client.request_challenge(epoch, timeout_sec=0.2)
@@ -1483,7 +1492,9 @@ class TestBenchAcceptanceWorkflowIntegration(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "bench_acc.sock")
-        self.sm = OperatorStateMachine(release_id="test-bench-acc")
+        self.sm = OperatorStateMachine(
+            lease_duration_sec=0.150, release_id="test-bench-acc"
+        )
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -1576,7 +1587,9 @@ class TestTeleopAuthorityRecoveryAndEpochRefresh(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "teleop_recov.sock")
-        self.sm = OperatorStateMachine(release_id="test-teleop-recov")
+        self.sm = OperatorStateMachine(
+            lease_duration_sec=0.150, release_id="test-teleop-recov"
+        )
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
             battery_monotonic_ns=time.monotonic_ns(),
@@ -1608,7 +1621,7 @@ class TestTeleopAuthorityRecoveryAndEpochRefresh(unittest.TestCase):
             self.assertEqual(epoch, 1)
 
             # 1. Initial arm
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
             self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
@@ -1624,7 +1637,7 @@ class TestTeleopAuthorityRecoveryAndEpochRefresh(unittest.TestCase):
             self.assertEqual(self.sm.epoch, 2)
 
             # Old epoch command must be rejected
-            old_arm_ok, old_err, _ = client.arm(1, tracks_raised=True)
+            old_arm_ok, old_err, _ = client.arm(1)
             self.assertFalse(old_arm_ok)
             self.assertEqual(old_err, WebControlErrorCode.INVALID_EPOCH.value)
 
@@ -1638,7 +1651,7 @@ class TestTeleopAuthorityRecoveryAndEpochRefresh(unittest.TestCase):
             self.sm.telemetry.battery_monotonic_ns = time.monotonic_ns()
 
             # 4. 'r' pressed -> arm with fresh epoch
-            arm2_ok, _, _ = client.arm(fresh_epoch, tracks_raised=True)
+            arm2_ok, _, _ = client.arm(fresh_epoch)
             self.assertTrue(arm2_ok)
             self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
@@ -1649,38 +1662,38 @@ class TestTeleopAuthorityRecoveryAndEpochRefresh(unittest.TestCase):
             self.assertEqual(self.sm.state, OperatorState.DRIVING)
 
     def test_recovery_after_lease_expiry_in_same_session(self):
-        """Automatic lease expiry stops and disarms; client detects challenge failure, refreshes epoch, and re-arms."""
+        """Legacy CLI explicitly stops a paused session before rearming."""
         with OperatorIpcClient(socket_path=self.socket_path) as client:
             ok, epoch, _, _ = client.acquire("test_teleop")
             self.assertTrue(ok)
             self.assertEqual(epoch, 1)
 
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
 
             # Simulate lease expiry on server
             self.sm.check_deadlines(
                 self.sm.lease_deadline_monotonic_ns + int(0.1 * 1e9)
             )
-            self.assertEqual(self.sm.state, OperatorState.FAULT)
-            self.assertEqual(self.sm.epoch, 2)
+            self.assertEqual(self.sm.state, OperatorState.INPUT_PAUSED)
+            self.assertEqual(self.sm.epoch, 1)
 
             # Next challenge request fails because server is not armed
             c = client.request_challenge(epoch)
-            self.assertNotIn("token", c)
+            self.assertTrue(c["recovery_required"])
 
             # Client resets server fault via stop() or status query
             client.stop()
             self.assertEqual(self.sm.state, OperatorState.OWNED_DISARMED)
             fresh_epoch = client.get_status().get("current_epoch")
-            self.assertEqual(fresh_epoch, 3)
+            self.assertEqual(fresh_epoch, 2)
 
             # Downstream guard confirms disarm and telemetry stays fresh
             self.sm.update_guard_telemetry(False, time.monotonic_ns())
             self.sm.telemetry.battery_monotonic_ns = time.monotonic_ns()
 
             # Re-arm succeeds with fresh epoch
-            rearm_ok, _, _ = client.arm(fresh_epoch, tracks_raised=True)
+            rearm_ok, _, _ = client.arm(fresh_epoch)
             self.assertTrue(rearm_ok)
             self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
@@ -1694,7 +1707,9 @@ class TestInterleavingStopAndIntent(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "interleave.sock")
-        self.sm = OperatorStateMachine(release_id="test-interleave")
+        self.sm = OperatorStateMachine(
+            lease_duration_sec=0.150, release_id="test-interleave"
+        )
         now_ns = time.monotonic_ns()
         self.sm.telemetry = TelemetrySnapshot(
             battery_voltage=12.2,
@@ -1722,7 +1737,7 @@ class TestInterleavingStopAndIntent(unittest.TestCase):
             self.assertTrue(ok)
             self.assertEqual(epoch, 1)
 
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
             self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
@@ -1767,6 +1782,7 @@ class TestOperatingSpeedPreservation(unittest.TestCase):
         self.socket_path = os.path.join(self.tmp_dir.name, "speeds.sock")
         os.environ["UBUNTU_TANK_OPERATOR_SOCKET"] = self.socket_path
         self.sm = OperatorStateMachine(
+            lease_duration_sec=0.150,
             release_id="test-speeds",
             linear_speed_cap=0.50,
             angular_speed_cap=1.00,
@@ -1808,7 +1824,7 @@ class TestOperatingSpeedPreservation(unittest.TestCase):
             self.assertEqual(st["limits"]["max_linear_speed"], 0.05)
             self.assertEqual(st["limits"]["max_angular_speed"], 0.15)
 
-            arm_ok, _, _ = client.arm(epoch, tracks_raised=True)
+            arm_ok, _, _ = client.arm(epoch)
             self.assertTrue(arm_ok)
 
             c = client.request_challenge(epoch)
@@ -1949,6 +1965,7 @@ class TestDirectRosMutualExclusion(unittest.TestCase):
         try:
             with self.assertRaises(RuntimeError):
                 OperatorAgentNode(
+                    lease_duration_sec=0.150,
                     socket_path=self.socket_path,
                     allowed_uids=[os.getuid()],
                 )
@@ -2006,6 +2023,7 @@ class TestDirectRosMutualExclusion(unittest.TestCase):
             try:
                 with self.assertRaises(RuntimeError):
                     OperatorAgentNode(
+                        lease_duration_sec=0.150,
                         socket_path=self.socket_path,
                         allowed_uids=[os.getuid()],
                     )
@@ -2015,6 +2033,7 @@ class TestDirectRosMutualExclusion(unittest.TestCase):
                 def assert_lock_held_until_publisher_destroyed(_node):
                     with self.assertRaises(RuntimeError):
                         OperatorAgentNode(
+                            lease_duration_sec=0.150,
                             socket_path=self.socket_path,
                             allowed_uids=[os.getuid()],
                         )
@@ -2027,6 +2046,7 @@ class TestDirectRosMutualExclusion(unittest.TestCase):
                     bench.destroy_node()
 
         agent = OperatorAgentNode(
+            lease_duration_sec=0.150,
             socket_path=self.socket_path,
             allowed_uids=[os.getuid()],
         )
@@ -2050,6 +2070,7 @@ class TestDirectRosMutualExclusion(unittest.TestCase):
                 release_authority_lock(fd)
 
             agent = OperatorAgentNode(
+                lease_duration_sec=0.150,
                 socket_path=self.socket_path,
                 allowed_uids=[os.getuid()],
             )
@@ -2062,7 +2083,9 @@ class TestIpcRoleAuthorization(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.socket_path = os.path.join(self.tmp_dir.name, "role_auth.sock")
-        self.sm = OperatorStateMachine(release_id="test-role-auth")
+        self.sm = OperatorStateMachine(
+            lease_duration_sec=0.150, release_id="test-role-auth"
+        )
         self.server = OperatorIpcServer(
             state_machine=self.sm,
             socket_path=self.socket_path,
@@ -2250,7 +2273,15 @@ def main():
         ):
             mock_instance = mock.Mock()
             mock_node_cls.return_value = mock_instance
-            ret = entrypoint_main(["--simulation"])
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "UBUNTU_TANK_WEB_CONFIG": os.path.join(
+                        UBUNTU_TANK_DIR, "config/web/web.yaml"
+                    )
+                },
+            ):
+                ret = entrypoint_main(["--simulation"])
             self.assertEqual(ret, 0)
             mock_instance.execute_stop.assert_called()
 

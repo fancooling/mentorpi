@@ -253,7 +253,10 @@ After preparation, the installed host CLI is also available as
 application processes remain supervised inside runtime. A manual first deploy
 activates that unit, which verifies/redeploys the selected pair once more.
 Every boot or container restart leaves the controller stopped. Only explicit
-browser/terminal Start followed by Arm can enable motion.
+Take control (start if needed, then acquire) followed by explicit Arm can enable
+motion. Protocol-2 browser support remains pending M14.4; do not deploy M14.3
+alone as a completed web-driving release. See the
+[control contract and timeout configuration](../../ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md#m143-control-contract).
 
 The host keeps the original deployment-lock inode and a separate lifetime
 hardware-owner lock. Runtime holds the latter even when stopped. The bridge uses

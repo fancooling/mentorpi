@@ -82,6 +82,7 @@ export function useControlSession(
       const res: ControlAcquireResponse = await apiClient.acquireControl({
         request_id: reqId,
         operator_id: operatorId,
+        protocol_version: "2.0.0",
       });
 
       if (!res.success || res.epoch === null || !res.bind_token) {
@@ -176,7 +177,6 @@ export function useControlSession(
       const res: ControlArmResponse = await apiClient.armControl({
         request_id: reqId,
         epoch: currentEpoch.value,
-        tracks_raised: true, // Strict boolean literal
       });
 
       if (!res.success) {

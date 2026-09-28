@@ -9,13 +9,15 @@ docs/MENTORPI_WEB_CONTROL_DESIGN.md.
 from typing import Final
 
 # Protocol and schema identity
-PROTOCOL_VERSION: Final[str] = "1.0.0"
+PROTOCOL_VERSION: Final[str] = "2.0.0"
 API_VERSION: Final[str] = "v1"
-SCHEMA_VERSION: Final[int] = 1
-SUPPORTED_PROTOCOL_VERSIONS: Final[list[str]] = ["1.0.0"]
+SCHEMA_VERSION: Final[int] = 2
+SUPPORTED_PROTOCOL_VERSIONS: Final[list[str]] = ["2.0.0"]
 
 # Monotonic timing and lease parameters (seconds)
-LEASE_DURATION_SEC: Final[float] = 0.150  # 150 ms maximum lease duration
+LEASE_DURATION_SEC: Final[float] = (
+    1.0  # Default input lease; validated startup configuration may lower it
+)
 CHALLENGE_INTERVAL_SEC: Final[float] = 0.050  # 50 ms challenge issue interval
 LEASE_CHECK_INTERVAL_SEC: Final[float] = 0.020  # 20 ms check tick interval
 MAX_CONTINUOUS_HOLD_SEC: Final[float] = 5.0  # 5.0 s continuous hold cap

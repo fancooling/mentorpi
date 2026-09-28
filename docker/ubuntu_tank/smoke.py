@@ -35,19 +35,32 @@ cert, key = generate_self_signed_cert('/smoke/certs/server.crt', '/smoke/certs/s
     operator_socket_path='/smoke/ipc/operator.sock', lifecycle_socket_path='/smoke/ipc/lifecycle.sock')))
 for path in [root, *root.rglob('*')]: os.chown(path, 10001, 10001)
 """
-PROBE = r"""
+
+
+def operator_probe(socket_path: str) -> str:
+    """Generate the installed IPC compatibility/owner check used by web smoke."""
+    return f"""
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
+from ubuntu_tank_protocol.constants import PROTOCOL_VERSION
+with OperatorIpcClient({socket_path!r}) as client:
+    assert client.get_version()['protocol_version'] == PROTOCOL_VERSION
+    assert client.get_status()['active_owner'] is None
+"""
+
+
+PROBE = (
+    r"""
 import importlib.util, json, os, ssl, stat, urllib.request
 assert importlib.util.find_spec('rclpy') is None
 assert importlib.util.find_spec('ubuntu_tank_operator') is None
-from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 from ubuntu_tank_protocol.deployment import admitted
 assert admitted()
 from ubuntu_tank_web.lifecycle_client import LifecycleClient
 for name in ('operator', 'lifecycle'):
     assert stat.S_IMODE(os.stat('/smoke/ipc/' + name + '.sock').st_mode) == 0o600
-with OperatorIpcClient('/smoke/ipc/operator.sock') as client:
-    assert client.get_version()['protocol_version'] == '1.0.0'
-    assert client.get_status()['active_owner'] is None
+"""
+    + operator_probe("/smoke/ipc/operator.sock")
+    + r"""
 assert LifecycleClient('/smoke/ipc/lifecycle.sock').get_status()[:2] == (True, 'inactive')
 context = ssl.create_default_context(cafile='/smoke/certs/server.crt')
 for path in ('/', '/api/v1/version', '/api/v1/status'):
@@ -57,6 +70,7 @@ for path in ('/', '/api/v1/version', '/api/v1/status'):
         if path == '/': assert b'<html' in data.lower()
         if path == '/api/v1/status': assert json.loads(data)['service_state'] == 'inactive'
 """
+)
 
 
 def docker(*args: str) -> str:

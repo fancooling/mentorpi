@@ -6,6 +6,7 @@ preventing unsafe wildcards, excessive speeds, or unvalidated addresses.
 """
 
 import ipaddress
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -90,6 +91,11 @@ class WebControlConfig:
                 f" (0.0 < speed <= {MAX_PERMISSIBLE_ANGULAR_SPEED} rad/s)"
             )
 
+        # Reject coercions and NaN before comparisons, which NaN can bypass.
+        for name in ("lease_duration_sec", "challenge_interval_sec"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number")
         # 5. Timing parameter bounds check
         if self.lease_duration_sec < 0.050 or self.lease_duration_sec > 1.000:
             raise ValueError(

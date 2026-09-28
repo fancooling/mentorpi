@@ -73,6 +73,11 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
 
     await websocket.accept()
     relay = websocket.app.state.operator_relay
+    challenge_interval = getattr(
+        getattr(websocket.app.state, "config", None),
+        "challenge_interval_sec",
+        CHALLENGE_INTERVAL_SEC,
+    )
 
     # Session identifier and state
     session_id = uuid.uuid4().hex
@@ -110,7 +115,7 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
 
                     current_epoch = relay.active_epoch or bound_epoch
                     if current_epoch is None:
-                        await asyncio.sleep(CHALLENGE_INTERVAL_SEC)
+                        await asyncio.sleep(challenge_interval)
                         continue
 
                     async with ws_lock:
@@ -125,6 +130,8 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                         await _send_frame(
                             "challenge",
                             {
+                                "input_generation": c["input_generation"],
+                                "recovery_required": c["recovery_required"],
                                 "token": c["token"],
                                 "epoch": c["epoch"],
                                 "deadline_monotonic_ns": c["deadline_monotonic_ns"],
@@ -136,12 +143,12 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                 elapsed = asyncio.get_running_loop().time() - cycle_started
                 # After an overrun, yield to incoming intents/Stop rather than
                 # issuing catch-up challenges that compete for the IPC lock.
-                await asyncio.sleep(max(0.01, CHALLENGE_INTERVAL_SEC - elapsed))
+                await asyncio.sleep(max(0.01, challenge_interval - elapsed))
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.debug("Challenge loop exception: %s", exc)
-                await asyncio.sleep(CHALLENGE_INTERVAL_SEC)
+                await asyncio.sleep(challenge_interval)
 
     challenge_task = asyncio.create_task(_challenge_loop())
 
@@ -321,6 +328,7 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                         direction,
                         payload.get("client_timestamp_ms"),
                         0.2,
+                        payload.get("input_generation", -1),
                     )
                 if not ok:
                     await _send_frame(
@@ -328,6 +336,12 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                         {
                             "error": err or WebControlErrorCode.LEASE_EXPIRED.value,
                             "message": f"Intent submission rejected: {err}",
+                            "input_generation": session_ipc.last_intent_result.get(
+                                "input_generation"
+                            ),
+                            "operator_state": session_ipc.last_intent_result.get(
+                                "operator_state"
+                            ),
                         },
                     )
                 else:
@@ -337,6 +351,12 @@ async def websocket_control_endpoint(websocket: WebSocket) -> None:
                             "action": "intent",
                             "success": True,
                             "direction": active_dir,
+                            "input_generation": session_ipc.last_intent_result.get(
+                                "input_generation"
+                            ),
+                            "operator_state": session_ipc.last_intent_result.get(
+                                "operator_state"
+                            ),
                             "sequence": sequence,
                         },
                     )

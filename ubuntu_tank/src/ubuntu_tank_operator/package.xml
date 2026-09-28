@@ -23,6 +23,7 @@ Declare the ubuntu_tank_operator ROS package metadata and build/runtime dependen
 
   <exec_depend>ubuntu_tank_supervisor</exec_depend>
   <exec_depend>ubuntu_tank_protocol</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

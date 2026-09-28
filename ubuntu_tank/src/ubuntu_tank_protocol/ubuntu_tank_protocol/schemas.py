@@ -92,6 +92,9 @@ class StatusResponse:
     freshness: dict[str, float | None]
     last_fault: str | None
     release_id: str
+    input_generation: int = 0
+    pause_reason: str | None = None
+    recovery_ready: bool = False
     disarm_pending: bool = False
     protocol_version: str = PROTOCOL_VERSION
 
@@ -103,6 +106,9 @@ class StatusResponse:
             "current_epoch": self.current_epoch,
             "guard_armed": self.guard_armed,
             "disarm_pending": self.disarm_pending,
+            "input_generation": self.input_generation,
+            "pause_reason": self.pause_reason,
+            "recovery_ready": self.recovery_ready,
             "battery_voltage": self.battery_voltage,
             "linear_speed": self.linear_speed,
             "angular_speed": self.angular_speed,
@@ -262,20 +268,16 @@ class ControlReleaseResponse:
 
 @dataclass(frozen=True)
 class ControlArmRequest:
-    """Arming request strictly requiring tracks_raised affirmation."""
+    """Arming request requiring explicit ownership and a current epoch."""
 
     request_id: str
     epoch: int
-    tracks_raised: bool
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlArmRequest":
-        _check_no_extra_fields(
-            data, {"request_id", "epoch", "tracks_raised"}, "ControlArmRequest"
-        )
+        _check_no_extra_fields(data, {"request_id", "epoch"}, "ControlArmRequest")
         req_id = data.get("request_id")
         epoch = data.get("epoch")
-        tracks = data.get("tracks_raised")
 
         if not isinstance(req_id, str) or not req_id:
             raise ValueError(
@@ -285,13 +287,7 @@ class ControlArmRequest:
             raise ValueError(
                 "Validation error in ControlArmRequest: epoch must be positive integer"
             )
-        # Strictly require exact boolean True; reject strings, integers, None, False
-        if type(tracks) is not bool or tracks is not True:
-            raise ValueError(
-                "Validation error in ControlArmRequest: tracks_raised must be exact boolean True"
-            )
-
-        return cls(request_id=req_id, epoch=epoch, tracks_raised=True)
+        return cls(request_id=req_id, epoch=epoch)
 
 
 @dataclass(frozen=True)
@@ -354,6 +350,8 @@ class Challenge:
     epoch: int
     deadline_monotonic_ns: int
     issued_monotonic_ns: int
+    input_generation: int = 0
+    recovery_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -367,10 +365,12 @@ class ChallengeResponse:
     epoch: int
     sequence: int
     direction: MotionDirection
+    input_generation: int = 0
     client_timestamp_ms: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "input_generation": self.input_generation,
             "token": self.token,
             "epoch": self.epoch,
             "sequence": self.sequence,
@@ -382,9 +382,19 @@ class ChallengeResponse:
     def from_dict(cls, data: dict[str, Any]) -> "ChallengeResponse":
         _check_no_extra_fields(
             data,
-            {"token", "epoch", "sequence", "direction", "client_timestamp_ms"},
+            {
+                "token",
+                "epoch",
+                "sequence",
+                "direction",
+                "client_timestamp_ms",
+                "input_generation",
+            },
             "ChallengeResponse",
         )
+        generation = data.get("input_generation")
+        if type(generation) is not int or generation < 0:
+            raise ValueError("input_generation must be a nonnegative integer")
         token = data.get("token")
         epoch = data.get("epoch")
         sequence = data.get("sequence")
@@ -409,6 +419,7 @@ class ChallengeResponse:
             )
 
         return cls(
+            input_generation=generation,
             token=token,
             epoch=epoch,
             sequence=sequence,

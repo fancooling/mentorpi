@@ -35,7 +35,7 @@ else:
 
 def generate_openapi_spec() -> dict[str, Any]:
     """Construct complete OpenAPI 3.0.3 specification for Web Control API."""
-    return {
+    spec = {
         "openapi": "3.0.3",
         "info": {
             "title": "MentorPi Pi 5 Web Control API",
@@ -552,6 +552,61 @@ def generate_openapi_spec() -> dict[str, Any]:
         },
     }
 
+    spec["paths"].pop("/controller/start", None)
+    schemas = spec["components"]["schemas"]
+    arm = schemas["ControlArmRequest"]
+    arm["required"] = ["request_id", "epoch"]
+    arm["properties"].pop("tracks_raised", None)
+    arm["additionalProperties"] = False
+    for name in ("Challenge", "ChallengeResponse"):
+        schemas[name]["properties"]["input_generation"] = {
+            "type": "integer",
+            "minimum": 0,
+        }
+        schemas[name]["required"].append("input_generation")
+    schemas["Challenge"]["properties"]["recovery_required"] = {"type": "boolean"}
+    for name, shape in {
+        "input_generation": {"type": "integer"},
+        "pause_reason": {"type": "string", "nullable": True},
+        "recovery_ready": {"type": "boolean"},
+    }.items():
+        schemas["StatusResponse"]["properties"][name] = shape
+    schemas["ControlAcquireRequest"]["properties"]["protocol_version"] = {
+        "type": "string",
+        "enum": [PROTOCOL_VERSION],
+    }
+    schemas["ControlAcquireRequest"]["required"].append("protocol_version")
+    for name in ("operation_id", "operation_token", "status"):
+        schemas["ControlAcquireResponse"]["properties"][name] = {
+            "type": "string",
+            "nullable": True,
+        }
+    for name in ("operation_id", "operation_token"):
+        schemas["ControlReleaseRequest"]["properties"][name] = {"type": "string"}
+    schemas["ControlReleaseRequest"]["required"] = ["request_id"]
+    for name, shape in {
+        "epoch": {"type": "integer", "nullable": True},
+        "bind_token": {"type": "string", "nullable": True},
+        "success": {"type": "boolean"},
+        "message": {"type": "string", "nullable": True},
+    }.items():
+        schemas["OperationStatusResponse"]["properties"][name] = shape
+    spec["paths"]["/operations/{id}"]["get"].setdefault("parameters", []).append(
+        {
+            "name": "operation_token",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "string"},
+        }
+    )
+    spec["paths"]["/control/acquire"]["post"]["summary"] = (
+        "Start if needed and acquire exclusive control asynchronously"
+    )
+    spec["paths"]["/control/arm"]["post"]["summary"] = (
+        "Explicitly arm after ownership and healthy preflight"
+    )
+    return spec
+
 
 def generate_typescript_definitions() -> str:
     """Generate strongly typed TypeScript interfaces for the Vue/PWA frontend."""
@@ -564,6 +619,7 @@ export type OperatorState =
   | 'ARMING'
   | 'ARMED_IDLE'
   | 'DRIVING'
+  | 'INPUT_PAUSED'
   | 'FAULT';
 
 export type MotionDirection =
@@ -610,6 +666,9 @@ export interface VersionResponse {{
 }}
 
 export interface StatusResponse {{
+  input_generation?: number;
+  pause_reason?: string | null;
+  recovery_ready?: boolean;
   service_state: ControllerServiceState;
   operator_state: OperatorState;
   active_owner: string | null;
@@ -638,17 +697,25 @@ export interface ControllerOperationRequest {{
 }}
 
 export interface OperationStatusResponse {{
+  epoch?: number | null;
+  bind_token?: string | null;
+  success?: boolean;
+  message?: string | null;
   operation_id: string;
   status: 'pending' | 'completed' | 'failed';
   error: string | null;
 }}
 
 export interface ControlAcquireRequest {{
+  protocol_version: "2.0.0";
   request_id: string;
   operator_id: string;
 }}
 
 export interface ControlAcquireResponse {{
+  operation_id?: string | null;
+  operation_token?: string | null;
+  status?: "pending" | "completed" | "failed";
   success: boolean;
   epoch: number | null;
   bind_token?: string | null;
@@ -659,7 +726,9 @@ export interface ControlAcquireResponse {{
 
 export interface ControlReleaseRequest {{
   request_id: string;
-  epoch: number;
+  epoch?: number | null;
+  operation_id?: string;
+  operation_token?: string;
 }}
 
 export interface ControlReleaseResponse {{
@@ -670,7 +739,6 @@ export interface ControlReleaseResponse {{
 export interface ControlArmRequest {{
   request_id: string;
   epoch: number;
-  tracks_raised: true; // Strictly exact boolean true
 }}
 
 export interface ControlArmResponse {{
@@ -690,6 +758,8 @@ export interface ControlStopResponse {{
 }}
 
 export interface Challenge {{
+  input_generation: number;
+  recovery_required: boolean;
   token: string;
   epoch: number;
   deadline_monotonic_ns: number;
@@ -697,6 +767,7 @@ export interface Challenge {{
 }}
 
 export interface ChallengeResponse {{
+  input_generation: number;
   token: string;
   epoch: number;
   sequence: number;

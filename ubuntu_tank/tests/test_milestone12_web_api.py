@@ -70,6 +70,29 @@ from ubuntu_tank_web.lifecycle_client import LifecycleClient
 from ubuntu_tank_web.tls import ensure_tls_certificate
 
 
+def complete_acquisition(client, path, **kwargs):
+    """Poll the real asynchronous setup API for tests of subsequent controls."""
+    import httpx
+
+    kwargs["json"] = {"protocol_version": PROTOCOL_VERSION, **kwargs.get("json", {})}
+    response = client.post(path, **kwargs)
+    if response.status_code != 200:
+        return response
+    data = response.json()
+    if not data.get("success") or not data.get("operation_id"):
+        return response
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        result = client.get(
+            "/api/v1/operations/" + data["operation_id"],
+            params={"operation_token": data["operation_token"]},
+        ).json()
+        if result["status"] != "pending":
+            return httpx.Response(200, json={**data, **result})
+        time.sleep(0.01)
+    raise AssertionError("Take control did not finish")
+
+
 class TestTlsProvisioning(unittest.TestCase):
     """Test owner-trusted TLS certificate generation and permission enforcement."""
 
@@ -200,7 +223,8 @@ class TestSecurityHeadersAndSameOrigin(unittest.TestCase):
             "operator_id": "op-test",
             "request_id": "req-2",
         }
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json=payload,
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -236,6 +260,7 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
             state_machine=self.sm,
             socket_path=self.op_sock,
             allowed_uids=[os.getuid()],
+            lifecycle_client=LifecycleClient(self.lc_sock),
         )
         self.op_server.start()
 
@@ -280,7 +305,8 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
 
     def test_strict_models_reject_extra_fields(self):
         """Pydantic extra='forbid' rejects unexpected fields with 422."""
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={
                 "operator_id": "user1",
@@ -374,9 +400,9 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
             def __init__(self):
                 self.acquisitions = []
 
-            def acquire(self, **kwargs):
+            def take_control(self, **kwargs):
                 self.acquisitions.append(kwargs)
-                return True, len(self.acquisitions), "bind-token", "Acquired"
+                return {"success": True, "epoch": len(self.acquisitions)}
 
         relay = RecordingRelay()
         config = WebControlConfig(
@@ -389,12 +415,14 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         client = TestClient(create_app(config=config, relay=relay))
         headers = {"Origin": "https://127.0.0.1:8443"}
 
-        default_response = client.post(
+        default_response = complete_acquisition(
+            client,
             "/api/v1/control/acquire",
             json={"operator_id": "default", "request_id": "req-default"},
             headers=headers,
         )
-        excessive_response = client.post(
+        excessive_response = complete_acquisition(
+            client,
             "/api/v1/control/acquire",
             json={
                 "operator_id": "excessive",
@@ -404,7 +432,8 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
             },
             headers=headers,
         )
-        lower_response = client.post(
+        lower_response = complete_acquisition(
+            client,
             "/api/v1/control/acquire",
             json={
                 "operator_id": "lower",
@@ -441,7 +470,8 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
     def test_control_lifecycle_flow(self):
         """Full REST control cycle: acquire, arm, release, stop."""
         # 1. Acquire
-        res_acq = self.client.post(
+        res_acq = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "web-op-1", "request_id": "req-acq"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -453,7 +483,8 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         self.assertIsNotNone(epoch)
 
         # Competing acquire is rejected with DEPLOYMENT_BUSY
-        res_comp = self.client.post(
+        res_comp = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "competing-op", "request_id": "req-comp"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -466,7 +497,7 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         # 2. Arm with correct epoch
         res_arm = self.client.post(
             "/api/v1/control/arm",
-            json={"epoch": epoch, "tracks_raised": True, "request_id": "req-arm"},
+            json={"epoch": epoch, "request_id": "req-arm"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res_arm.status_code, 200)
@@ -491,26 +522,15 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         self.assertEqual(res_stop.status_code, 200)
         self.assertTrue(res_stop.json()["disarmed"])
 
-    def test_controller_start_stop_operations(self):
-        """Controller start/stop endpoints return tracked operation records."""
-        res_start = self.client.post(
+    def test_controller_start_removed_and_operations_unknown(self):
+        """Startup is part of acquisition; removed endpoint cannot mutate service."""
+        result = self.client.post(
             "/api/v1/controller/start",
-            json={"request_id": "req-start"},
+            json={"request_id": "old"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
-        self.assertEqual(res_start.status_code, 200)
-        data_start = res_start.json()
-        op_id = data_start["operation_id"]
-        self.assertEqual(data_start["status"], "completed")
-
-        # Query operation status
-        res_op = self.client.get(f"/api/v1/operations/{op_id}")
-        self.assertEqual(res_op.status_code, 200)
-        self.assertEqual(res_op.json()["operation_id"], op_id)
-
-        # Unknown operation returns 404
-        res_unknown = self.client.get("/api/v1/operations/nonexistent-op")
-        self.assertEqual(res_unknown.status_code, 404)
+        self.assertIn(result.status_code, (404, 405))
+        self.assertEqual(self.client.get("/api/v1/operations/missing").status_code, 404)
 
 
 class TestOversizedAndFloodProtection(unittest.TestCase):
@@ -523,7 +543,8 @@ class TestOversizedAndFloodProtection(unittest.TestCase):
     def test_oversized_http_payload_rejected(self):
         """HTTP requests exceeding 64 KiB receive 413 Payload Too Large."""
         large_junk = "x" * 70000
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             content=large_junk.encode("utf-8"),
             headers={
@@ -562,6 +583,7 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
             state_machine=self.sm,
             socket_path=self.op_sock,
             allowed_uids=[os.getuid()],
+            lifecycle_client=LifecycleClient(self.lc_sock),
         )
         self.op_server.start()
 
@@ -625,7 +647,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
     def test_websocket_bind_intent_and_stop_priority(self):
         """Test WS session bind, challenge receipt, intent submission, and stop priority."""
         # 1. Acquire ownership through REST first
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "ws-client", "request_id": "req-acq-ws"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -638,7 +661,7 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         # Arm
         res_arm = self.client.post(
             "/api/v1/control/arm",
-            json={"epoch": epoch, "tracks_raised": True, "request_id": "req-arm-ws"},
+            json={"epoch": epoch, "request_id": "req-arm-ws"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertTrue(res_arm.json()["success"])
@@ -676,6 +699,7 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
                 {
                     "action": "intent",
                     "token": token,
+                    "input_generation": challenge_frame["input_generation"],
                     "epoch": epoch,
                     "sequence": 1,
                     "direction": "forward",
@@ -694,7 +718,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
     def test_challenge_processing_does_not_add_an_extra_interval(self):
         """IPC response latency must not add a full interval to every renewal."""
         headers = {"Origin": "https://127.0.0.1:8443"}
-        acquired = self.client.post(
+        acquired = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "delayed-ipc", "request_id": "acquire-delayed"},
             headers=headers,
@@ -725,7 +750,6 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
                 "/api/v1/control/arm",
                 json={
                     "epoch": acquired["epoch"],
-                    "tracks_raised": True,
                     "request_id": "arm-delayed",
                 },
                 headers=headers,
@@ -747,6 +771,7 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
                                 "action": "intent",
                                 "payload": {
                                     "token": challenge["token"],
+                                    "input_generation": challenge["input_generation"],
                                     "epoch": challenge["epoch"],
                                     "sequence": sequence,
                                     "direction": "neutral",
@@ -760,7 +785,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
     def test_websocket_disconnect_disarms(self):
         """Closing WebSocket connection drops dedicated IPC socket, triggering immediate disarm."""
         # 1. Acquire and Arm
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "dc-client", "request_id": "req-dc"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -770,7 +796,7 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         self.assertIsNotNone(bind_token)
         self.client.post(
             "/api/v1/control/arm",
-            json={"epoch": epoch, "tracks_raised": True, "request_id": "req-arm-dc"},
+            json={"epoch": epoch, "request_id": "req-arm-dc"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
@@ -801,7 +827,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
     def test_stop_preserves_operator_ownership_and_supports_rearm(self):
         """Disarm/Stop must preserve operator ownership (OWNED_DISARMED) and allow re-arming under new epoch."""
         # 1. Acquire control authority
-        res = self.client.post(
+        res = complete_acquisition(
+            self.client,
             "/api/v1/control/acquire",
             json={"operator_id": "owner-op", "request_id": "req-acq-stop"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -812,12 +839,17 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         # 2. Arm chassis
         res_arm = self.client.post(
             "/api/v1/control/arm",
-            json={"epoch": epoch, "tracks_raised": True, "request_id": "req-arm-1"},
+            json={"epoch": epoch, "request_id": "req-arm-1"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res_arm.status_code, 200)
         self.assertTrue(res_arm.json()["success"])
         self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
+
+        bound, _, _ = self.app.state.operator_relay.claim_owner_binding(
+            "owner-op", epoch, res.json()["bind_token"], "test-bound-session"
+        )
+        self.assertTrue(bound)
 
         # 3. Issue stop / disarm
         res_stop = self.client.post(
@@ -851,7 +883,6 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
             "/api/v1/control/arm",
             json={
                 "epoch": new_epoch,
-                "tracks_raised": True,
                 "request_id": "req-rearm-2",
             },
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -1138,7 +1169,7 @@ class TestOpenApiExport(unittest.TestCase):
         self.assertIn("/api/v1/control/arm", paths)
         self.assertIn("/api/v1/control/release", paths)
         self.assertIn("/api/v1/control/stop", paths)
-        self.assertIn("/api/v1/controller/start", paths)
+        self.assertNotIn("/api/v1/controller/start", paths)
         self.assertIn("/api/v1/controller/stop", paths)
         self.assertIn("/api/v1/operations/{id}", paths)
 
@@ -1201,10 +1232,18 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
             )
 
         sm = OperatorStateMachine()
+        now = time.monotonic_ns()
+        sm.telemetry = TelemetrySnapshot(
+            battery_voltage=12.4,
+            battery_monotonic_ns=now,
+            guard_monotonic_ns=now,
+            guard_armed=False,
+        )
         server = OperatorIpcServer(
             state_machine=sm,
             socket_path=op_sock,
             allowed_uids=[os.getuid()],
+            lifecycle_client=LifecycleClient(lc_sock),
         )
         server.start()
 
@@ -1229,7 +1268,8 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
 
         try:
             # 1. Tab A acquires ownership
-            res = client.post(
+            res = complete_acquisition(
+                client,
                 "/api/v1/control/acquire",
                 json={"operator_id": "tab-a", "request_id": "req-acq-a"},
                 headers={"Origin": "https://127.0.0.1:8443"},
@@ -1246,7 +1286,6 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
                 "/api/v1/control/arm",
                 json={
                     "epoch": epoch,
-                    "tracks_raised": True,
                     "request_id": "req-arm-a",
                 },
                 headers={"Origin": "https://127.0.0.1:8443"},

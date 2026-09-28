@@ -20,6 +20,7 @@ from .constants import (
     DEFAULT_OPERATOR_SOCKET_PATH,
     ENV_OPERATOR_SOCKET_PATH,
     MAX_IPC_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
 )
 from .enums import MotionDirection
 
@@ -36,6 +37,8 @@ class OperatorIpcClient:
         self._sock: socket.socket | None = None
         self._buf = ""
         self._lock = threading.RLock()
+        self._challenge_generations: dict[str, int] = {}
+        self.last_intent_result: dict[str, Any] = {}
 
     def connect(self, timeout_sec: float = 3.0) -> None:
         """Connect to operator agent Unix socket."""
@@ -83,6 +86,7 @@ class OperatorIpcClient:
             assert self._sock is not None
 
             self._sock.settimeout(timeout_sec)
+            req = {"protocol_version": PROTOCOL_VERSION, **req}
             payload = json.dumps(req).encode("utf-8") + b"\n"
             if len(payload) > MAX_IPC_MESSAGE_BYTES:
                 raise ValueError(
@@ -200,14 +204,13 @@ class OperatorIpcClient:
     def arm(
         self,
         epoch: int,
-        tracks_raised: bool = True,
         request_id: str | None = None,
         timeout_sec: float = 5.0,
     ) -> tuple[bool, str | None, str | None]:
         """
         Explicitly arm the robot chassis controller.
 
-        Requires tracks_raised: True. Returns (success, error_code, message).
+        Returns (success, error_code, message).
         """
         if request_id is None:
             request_id = f"arm-{uuid.uuid4().hex[:8]}"
@@ -215,7 +218,6 @@ class OperatorIpcClient:
             {
                 "action": "arm",
                 "epoch": epoch,
-                "tracks_raised": tracks_raised,
                 "request_id": request_id,
             },
             timeout_sec=timeout_sec,
@@ -262,9 +264,14 @@ class OperatorIpcClient:
 
     def request_challenge(self, epoch: int, timeout_sec: float = 1.0) -> dict[str, Any]:
         """Request single-use cryptographic challenge for motion lease renewal."""
-        return self._send_request(
+        result = self._send_request(
             {"action": "challenge", "epoch": epoch}, timeout_sec=timeout_sec
         )
+        if result.get("success"):
+            self._challenge_generations[result["token"]] = result["input_generation"]
+            if len(self._challenge_generations) > 64:
+                self._challenge_generations.pop(next(iter(self._challenge_generations)))
+        return result
 
     def submit_intent(
         self,
@@ -274,6 +281,7 @@ class OperatorIpcClient:
         direction: MotionDirection | str,
         client_timestamp_ms: int | None = None,
         timeout_sec: float = 1.0,
+        input_generation: int | None = None,
     ) -> tuple[bool, str | None, str | None]:
         """
         Submit motion direction intent in response to an active challenge.
@@ -288,6 +296,9 @@ class OperatorIpcClient:
         req = {
             "action": "intent",
             "response": {
+                "input_generation": input_generation
+                if input_generation is not None
+                else self._challenge_generations.get(token, -1),
                 "token": token,
                 "epoch": epoch,
                 "sequence": sequence,
@@ -296,6 +307,7 @@ class OperatorIpcClient:
             },
         }
         res = self._send_request(req, timeout_sec=timeout_sec)
+        self.last_intent_result = res
         return (
             bool(res.get("success", False)),
             res.get("direction"),
@@ -330,8 +342,8 @@ class OperatorIpcClient:
         try:
             while time.monotonic() - start_time < duration_sec:
                 c = self.request_challenge(epoch, timeout_sec=0.5)
-                if not c or "token" not in c:
-                    return False, "Failed to obtain motion challenge during burst"
+                if not c or "token" not in c or c.get("recovery_required"):
+                    return False, "Motion burst interrupted; explicit Stop/Arm required"
                 seq += 1
                 ok, cur_dir, err = self.submit_intent(
                     c["token"], epoch, seq, direction, timeout_sec=0.5

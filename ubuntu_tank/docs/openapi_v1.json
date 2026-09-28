@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MentorPi Pi 5 Web Control API",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Guarded web control, teleoperation, and lifecycle monitoring interface for MentorPi Tank on native Ubuntu 26.04 / ROS 2 Lyrical."
   },
   "servers": [
@@ -75,33 +75,6 @@
         }
       }
     },
-    "/controller/start": {
-      "post": {
-        "summary": "Start controller systemd service unit",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ControllerOperationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Operation result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OperationStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/controller/stop": {
       "post": {
         "summary": "Stop controller systemd service (invalidates driving first)",
@@ -131,7 +104,7 @@
     },
     "/control/acquire": {
       "post": {
-        "summary": "Acquire single operator ownership slot",
+        "summary": "Start if needed and acquire exclusive control asynchronously",
         "requestBody": {
           "required": true,
           "content": {
@@ -185,7 +158,7 @@
     },
     "/control/arm": {
       "post": {
-        "summary": "Arm motor guard with tracks_raised affirmation",
+        "summary": "Explicitly arm after ownership and healthy preflight",
         "requestBody": {
           "required": true,
           "content": {
@@ -248,6 +221,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "operation_token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -275,6 +256,7 @@
           "ARMING",
           "ARMED_IDLE",
           "DRIVING",
+          "INPUT_PAUSED",
           "FAULT"
         ]
       },
@@ -421,6 +403,16 @@
           },
           "protocol_version": {
             "type": "string"
+          },
+          "input_generation": {
+            "type": "integer"
+          },
+          "pause_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "recovery_ready": {
+            "type": "boolean"
           }
         }
       },
@@ -486,6 +478,21 @@
           "error": {
             "type": "string",
             "nullable": true
+          },
+          "epoch": {
+            "type": "integer",
+            "nullable": true
+          },
+          "bind_token": {
+            "type": "string",
+            "nullable": true
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -493,7 +500,8 @@
         "type": "object",
         "required": [
           "request_id",
-          "operator_id"
+          "operator_id",
+          "protocol_version"
         ],
         "properties": {
           "request_id": {
@@ -501,6 +509,12 @@
           },
           "operator_id": {
             "type": "string"
+          },
+          "protocol_version": {
+            "type": "string",
+            "enum": [
+              "2.0.0"
+            ]
           }
         }
       },
@@ -532,14 +546,25 @@
           "message": {
             "type": "string",
             "nullable": true
+          },
+          "operation_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "operation_token": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
       "ControlReleaseRequest": {
         "type": "object",
         "required": [
-          "request_id",
-          "epoch"
+          "request_id"
         ],
         "properties": {
           "request_id": {
@@ -547,6 +572,12 @@
           },
           "epoch": {
             "type": "integer"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "operation_token": {
+            "type": "string"
           }
         }
       },
@@ -569,8 +600,7 @@
         "type": "object",
         "required": [
           "request_id",
-          "epoch",
-          "tracks_raised"
+          "epoch"
         ],
         "properties": {
           "request_id": {
@@ -578,14 +608,9 @@
           },
           "epoch": {
             "type": "integer"
-          },
-          "tracks_raised": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ControlArmResponse": {
         "type": "object",
@@ -642,7 +667,8 @@
           "token",
           "epoch",
           "deadline_monotonic_ns",
-          "issued_monotonic_ns"
+          "issued_monotonic_ns",
+          "input_generation"
         ],
         "properties": {
           "token": {
@@ -656,6 +682,13 @@
           },
           "issued_monotonic_ns": {
             "type": "integer"
+          },
+          "input_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recovery_required": {
+            "type": "boolean"
           }
         }
       },
@@ -665,7 +698,8 @@
           "token",
           "epoch",
           "sequence",
-          "direction"
+          "direction",
+          "input_generation"
         ],
         "properties": {
           "token": {
@@ -683,6 +717,10 @@
           "client_timestamp_ms": {
             "type": "integer",
             "nullable": true
+          },
+          "input_generation": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

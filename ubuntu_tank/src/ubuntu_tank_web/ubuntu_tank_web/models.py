@@ -10,8 +10,8 @@ and valid enumerated actions and directions.
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
+from pydantic import BaseModel, ConfigDict, Field
 from ubuntu_tank_protocol.constants import (
     API_VERSION,
     PROTOCOL_VERSION,
@@ -52,6 +52,9 @@ class StatusResponseModel(BaseStrictModel):
     active_owner: str | None = None
     current_epoch: int | None = None
     guard_armed: bool | None = None
+    input_generation: int = 0
+    pause_reason: str | None = None
+    recovery_ready: bool = False
     disarm_pending: bool = False
     battery_voltage: float | None = None
     linear_speed: float = 0.0
@@ -87,6 +90,10 @@ class ControllerOperationRequestModel(BaseStrictModel):
 class OperationStatusResponseModel(BaseStrictModel):
     """Status of an asynchronous controller or lifecycle operation."""
 
+    epoch: int | None = None
+    bind_token: str | None = None
+    success: bool = True
+    message: str | None = None
     operation_id: str
     status: Literal["pending", "completed", "failed"]
     error: str | None = None
@@ -95,6 +102,7 @@ class OperationStatusResponseModel(BaseStrictModel):
 class ControlAcquireRequestModel(BaseStrictModel):
     """Request to acquire exclusive operator control authority."""
 
+    protocol_version: Literal["2.0.0"]
     request_id: str = Field(..., min_length=1)
     operator_id: str = Field(..., min_length=1)
     max_linear_speed: float | None = Field(default=None, gt=0.0)
@@ -104,6 +112,9 @@ class ControlAcquireRequestModel(BaseStrictModel):
 class ControlAcquireResponseModel(BaseStrictModel):
     """Response to an operator control authority acquisition attempt."""
 
+    operation_id: str | None = None
+    operation_token: str | None = None
+    status: Literal["pending", "completed", "failed"] = "failed"
     success: bool
     epoch: int | None = None
     bind_token: str | None = None
@@ -116,7 +127,9 @@ class ControlReleaseRequestModel(BaseStrictModel):
     """Request to relinquish operator control authority and disarm."""
 
     request_id: str = Field(..., min_length=1)
-    epoch: int = Field(..., ge=1)
+    epoch: int | None = Field(default=None, ge=1)
+    operation_id: str | None = None
+    operation_token: str | None = None
     operator_id: str | None = None
 
 
@@ -133,17 +146,6 @@ class ControlArmRequestModel(BaseStrictModel):
 
     request_id: str = Field(..., min_length=1)
     epoch: int = Field(..., ge=1)
-    tracks_raised: StrictBool = Field(...)
-
-    @field_validator("tracks_raised", mode="before")
-    @classmethod
-    def require_exact_bool_true(cls, v: Any) -> bool:
-        """Enforce exact boolean True; reject truthy strings, integers, or False."""
-        if v is not True or type(v) is not bool:
-            raise ValueError(
-                "tracks_raised must be exact boolean True (cannot be string, number, or False)"
-            )
-        return True
 
 
 class ControlArmResponseModel(BaseStrictModel):

@@ -18,7 +18,21 @@ try:
 except ImportError:
     rclpy = None
 
+from ubuntu_tank_protocol.config import WebControlConfig
+from ubuntu_tank_protocol.lifecycle_client import LifecycleClient
+
 from .agent_node import OperatorAgentNode
+
+
+def load_operator_config(path: str) -> WebControlConfig:
+    """Load and validate the shared web configuration before any runtime startup."""
+    import yaml
+
+    with open(path, encoding="utf-8") as stream:
+        data = yaml.safe_load(stream)
+    if not isinstance(data, dict):
+        raise TypeError("web configuration must be a mapping")
+    return WebControlConfig.from_dict(data)
 
 
 def configure_loopback_dds() -> None:
@@ -79,12 +93,25 @@ def main(args: list[str] | None = None) -> int:
         )
         return 1
 
+    config = load_operator_config(
+        os.environ.get("UBUNTU_TANK_WEB_CONFIG", "/etc/opt/ubuntu_tank/web/web.yaml")
+    )
     configure_loopback_dds()
 
     if rclpy is not None:
         rclpy.init(args=target_args)
 
-    node = OperatorAgentNode(socket_path=socket_path)
+    node = OperatorAgentNode(
+        socket_path=socket_path
+        or os.environ.get("UBUNTU_TANK_OPERATOR_SOCKET", config.operator_socket_path),
+        lease_duration_sec=config.lease_duration_sec,
+        challenge_interval_sec=config.challenge_interval_sec,
+        linear_speed_cap=config.linear_speed_cap,
+        angular_speed_cap=config.angular_speed_cap,
+        lifecycle_client=LifecycleClient(
+            os.environ.get("UBUNTU_TANK_LIFECYCLE_SOCKET", config.lifecycle_socket_path)
+        ),
+    )
 
     running = True
 

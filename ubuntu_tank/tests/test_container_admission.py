@@ -59,16 +59,14 @@ class Admission(unittest.TestCase):
                     json.dumps(dict(self.approval, **{field: "wrong"}))
                 )
                 self.assertFalse(admitted())
-                result = self.machine.arm("operator", self.epoch, True, self.now, "arm")
+                result = self.machine.arm("operator", self.epoch, self.now, "arm")
                 self.assertEqual(result[1], WebControlErrorCode.DEPLOYMENT_BUSY)
         self.path.unlink()
         self.assertFalse(admitted())
         self.machine.stop(self.now)  # Stop remains available while admission is absent.
 
     def test_gate_revocation_cancels_pending_arm_and_late_success(self):
-        self.assertTrue(
-            self.machine.arm("operator", self.epoch, True, self.now, "arm")[0]
-        )
+        self.assertTrue(self.machine.arm("operator", self.epoch, self.now, "arm")[0])
         self.path.unlink()
         result = self.machine.confirm_armed(True, True, self.now + 1, self.epoch, "arm")
         self.assertFalse(result[0])
@@ -76,9 +74,7 @@ class Admission(unittest.TestCase):
         self.assertEqual(self.machine.get_velocity_command(), (0.0, 0.0))
 
     def test_gate_revocation_releases_authority_and_requires_fresh_ownership(self):
-        self.assertTrue(
-            self.machine.arm("operator", self.epoch, True, self.now, "arm")[0]
-        )
+        self.assertTrue(self.machine.arm("operator", self.epoch, self.now, "arm")[0])
         self.assertTrue(
             self.machine.confirm_armed(True, True, self.now + 1, self.epoch, "arm")[0]
         )
@@ -89,7 +85,7 @@ class Admission(unittest.TestCase):
         self.assertNotEqual(self.machine.epoch, self.epoch)
         self.path.write_text(json.dumps(self.approval))
         self.assertFalse(
-            self.machine.arm("operator", self.epoch, True, self.now + 3, "old")[0]
+            self.machine.arm("operator", self.epoch, self.now + 3, "old")[0]
         )
         self.assertEqual(self.machine.get_velocity_command(), (0.0, 0.0))
 

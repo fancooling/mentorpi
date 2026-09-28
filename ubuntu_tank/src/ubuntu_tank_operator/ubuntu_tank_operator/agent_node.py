@@ -71,6 +71,9 @@ class OperatorAgentNode(Node):
         linear_speed_cap: float = DEFAULT_WEB_LINEAR_SPEED,
         angular_speed_cap: float = DEFAULT_WEB_ANGULAR_SPEED,
         context: Any = None,
+        lease_duration_sec: float = 1.0,
+        challenge_interval_sec: float = 0.05,
+        lifecycle_client: Any = None,
     ) -> None:
         self.release_id = release_id
         self._fallback_context = context
@@ -84,6 +87,8 @@ class OperatorAgentNode(Node):
             linear_speed_cap=linear_speed_cap,
             angular_speed_cap=angular_speed_cap,
             lock=self._lock,
+            lease_duration_sec=lease_duration_sec,
+            challenge_interval_sec=challenge_interval_sec,
         )
 
         # Wire disarm callback from state machine to physical ROS stop
@@ -180,6 +185,7 @@ class OperatorAgentNode(Node):
             self.sub_obs = None
             self._timer = None
 
+        self.state_machine.on_zero_required = self.publish_zero
         self._runtime_epoch = (
             progress.read_record("epoch").get("value") if progress.enabled() else None
         )
@@ -196,6 +202,7 @@ class OperatorAgentNode(Node):
             ),
             arm_callback=self.execute_arm,
             stop_callback=self.execute_stop,
+            lifecycle_client=lifecycle_client,
             observations_callback=self.get_observations,
             reset_observations_callback=self.reset_observations,
             lock=self._lock,
@@ -236,6 +243,11 @@ class OperatorAgentNode(Node):
             data["_rx_mono_ns"] = now_ns
             with self._lock:
                 self._observations.append(data)
+                if self._is_confirmed_zero_write(data):
+                    # Require source observation time, not delayed delivery time.
+                    observed_ns = int(float(data.get("stamp_mono", 0)) * 1e9)
+                    if type(observed_ns) is int and observed_ns <= now_ns:
+                        self.state_machine.confirm_zero_delivery(observed_ns)
                 self.state_machine.telemetry.delivery_monotonic_ns = now_ns
                 if data.get("node") == "motor_guard":
                     self.state_machine.telemetry.guard_monotonic_ns = now_ns
@@ -310,6 +322,7 @@ class OperatorAgentNode(Node):
             if self.state_machine.state in (
                 OperatorState.DRIVING,
                 OperatorState.ARMED_IDLE,
+                OperatorState.INPUT_PAUSED,
             ):
                 # Work after the first check may consume the remaining lease,
                 # so revalidate immediately before any publication.
@@ -417,7 +430,7 @@ class OperatorAgentNode(Node):
             # Transition to ARMING if not already initiated by caller
             if self.state_machine.state != OperatorState.ARMING:
                 ok, err, msg = self.state_machine.arm(
-                    self.state_machine.owner_id or "", epoch, True, now_ns, request_id
+                    self.state_machine.owner_id or "", epoch, now_ns, request_id
                 )
                 if not ok:
                     return (

@@ -6,19 +6,9 @@ Verifies:
 2. PWA manifest compliance: standalone display, 192x192 and 512x512 icons, start URL, theme color.
 3. Service worker cache safety: asset-only precache, explicit /api/ denylist, NetworkOnly for API requests,
    no background sync for motion commands, and explicit SKIP_WAITING update handling.
-4. Real browser automation via Playwright and system Google Chrome against live FastAPI test server:
-   - Initial page layout, status indicators, accessible semantic buttons, and visible STOP button.
-   - Control acquisition and single-operator ownership exclusivity across multiple tabs.
-   - Arming gate strictly requiring tracks-raised confirmation checkbox.
-   - Press-and-hold pointer driving: pointerdown drives, pointerup stops.
-   - Pointer cancellation: pointerleave/pointercancel resets to neutral.
-   - Keyboard driving: W/S/A/D active only when drive panel is focused.
-   - Space key immediate STOP priority document-wide, clearing all held input.
-   - Keys held prior to Arm cannot initiate motion (requires release and re-press).
-   - Mixed input conflict immediately resets to neutral and triggers safety stop.
-   - 5-second continuous hold cap automatically stops and disarms.
-   - Window blur and hidden document visibility change clear input and disarm without auto-resume.
-   - Incompatible protocol version banner blocks control.
+4. Playwright checks that the protocol-1 browser cannot control protocol-2 runtime.
+   Full driving scenarios remain in browser_control.spec.ts and must be migrated
+   and re-enabled with the M14.4 browser recovery implementation.
 """
 
 from __future__ import annotations
@@ -304,11 +294,13 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.tmp_dir.cleanup()
 
     def test_playwright_browser_control_suite(self):
-        """Execute Playwright browser test suite in headless Google Chrome."""
+        """Verify the old UI fails closed against protocol 2 until M14.4."""
         env = os.environ.copy()
         env["TEST_BASE_URL"] = self.base_url
 
-        cmd = ["npx", "playwright", "test"]
+        # Protocol-1 interaction scenarios remain in browser_control.spec.ts;
+        # migrate and re-enable them in M14.4 before browser release acceptance.
+        cmd = ["npx", "playwright", "test", "protocol_fence.spec.ts"]
         proc = subprocess.run(
             cmd, cwd=WEB_DIR, env=env, capture_output=True, text=True, check=False
         )

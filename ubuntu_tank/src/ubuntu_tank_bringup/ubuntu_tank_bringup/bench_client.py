@@ -476,7 +476,7 @@ class BenchClientNode(Node):
                     return False, "No active control authority"
 
                 ok, err, msg = self._ipc_client.arm(
-                    self._ipc_epoch, tracks_raised=True, timeout_sec=timeout_sec
+                    self._ipc_epoch, timeout_sec=timeout_sec
                 )
                 if not ok and err == "INVALID_EPOCH":
                     # Retry once with freshly resolved epoch
@@ -486,7 +486,6 @@ class BenchClientNode(Node):
                             self._ipc_epoch = st["current_epoch"]
                             ok, err, msg = self._ipc_client.arm(
                                 self._ipc_epoch,
-                                tracks_raised=True,
                                 timeout_sec=timeout_sec,
                             )
                     except Exception:
@@ -609,6 +608,9 @@ class BenchClientNode(Node):
                     c = self._ipc_client.request_challenge(
                         self._ipc_epoch, timeout_sec=0.5
                     )
+                    if c and c.get("recovery_required"):
+                        self._ipc_client.stop(timeout_sec=0.5)
+                        return False
                     if not c or "token" not in c:
                         return False
                     seq += 1
@@ -627,6 +629,9 @@ class BenchClientNode(Node):
                     c = self._ipc_client.request_challenge(
                         self._ipc_epoch, timeout_sec=0.2
                     )
+                    if c and c.get("recovery_required"):
+                        self._ipc_client.stop(timeout_sec=0.5)
+                        c = None
                     if c and "token" in c:
                         seq += 1
                         self._ipc_client.submit_intent(

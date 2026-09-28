@@ -9,7 +9,7 @@ allowed_origins:
   - "https://localhost:8443"
 linear_speed_cap: 0.20
 angular_speed_cap: 0.50
-lease_duration_sec: 0.150
+lease_duration_sec: 1.0
 challenge_interval_sec: 0.050
 idle_timeout_sec: 30.0
 max_hold_duration_sec: 5.0

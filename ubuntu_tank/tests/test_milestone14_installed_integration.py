@@ -259,30 +259,16 @@ class TestLifecycleAndWebAvailability(unittest.TestCase):
             self.assertEqual(data["operator_state"], "NO_OWNER")
             self.assertFalse(data["guard_armed"])
 
-    def test_lifecycle_start_coordination(self):
-        """Lifecycle start initiates controller start via lifecycle client."""
-        with (
-            patch.object(
-                self.lifecycle,
-                "get_status",
-                return_value=(True, "inactive", "0"),
-            ),
-            patch.object(
-                self.lifecycle,
-                "start_controller",
-                return_value=(True, "active", "Started"),
-            ),
-        ):
+    def test_public_start_removed(self):
+        """Only combined Take control may initiate startup through the public API."""
+        with patch.object(self.lifecycle, "start_controller") as start:
             res = self.client.post(
                 "/api/v1/controller/start",
-                json={"request_id": "req-start-1"},
+                json={"request_id": "obsolete"},
                 headers={"Origin": "https://127.0.0.1:8443"},
             )
-            self.assertEqual(res.status_code, 200)
-            data = res.json()
-            self.assertEqual(data["status"], "completed")
-            self.assertIsNone(data["error"])
-            self.assertTrue(data["operation_id"].startswith("op-"))
+            self.assertIn(res.status_code, (404, 405))
+            start.assert_not_called()
 
     def test_service_restart_leaves_ownership_empty_and_disarmed(self):
         """Restarting leaves ownership empty (NO_OWNER) and motion disarmed."""
@@ -329,7 +315,6 @@ class TestCliAndBrowserMutualExclusion(unittest.TestCase):
         arm_ok, _arm_err, _arm_msg = self.sm.arm(
             owner_id="browser-session-1",
             epoch=epoch,
-            tracks_raised=True,
             current_monotonic_ns=time.monotonic_ns(),
             request_id="arm-req-1",
         )
@@ -374,7 +359,7 @@ class TestCachedClientRecoveryAndIncompatibleProtocol(unittest.TestCase):
         # Arm attempt without valid ownership must fail closed
         res = client.post(
             "/api/v1/control/arm",
-            json={"epoch": 999, "tracks_raised": True, "request_id": "stale-arm"},
+            json={"epoch": 999, "request_id": "stale-arm"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res.status_code, 200)
@@ -393,7 +378,7 @@ class TestCachedClientRecoveryAndIncompatibleProtocol(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("protocol_version", data)
-        self.assertEqual(data["protocol_version"], "1.0.0")
+        self.assertEqual(data["protocol_version"], "2.0.0")
 
 
 if __name__ == "__main__":

@@ -87,10 +87,10 @@ login/logout schemas, generated API artifacts, and credential configurations wer
 removed in Milestone 12. No password-hashing dependency is required by this design.
 Existing native SROS2 credentials and process-identity safeguards remain unchanged.
 
-- **Protocol Version**: `1.0.0`
+- **Protocol Version**: `2.0.0`
 - **API Version**: `v1`
-- **Schema Version**: `1`
-- **Supported Releases**: Compatible within major version `1.x.y`.
+- **Schema Version**: `2`
+- **Supported Releases**: Only protocol `2.0.0` is currently accepted for control mutations.
 
 ### Client Compatibility Handshake
 
@@ -108,10 +108,11 @@ The operator state machine enforces strict mathematical guarantees:
    - `ARMING`: Arming transaction in progress; awaiting guard verification and downstream zero confirmation within 250 ms.
    - `ARMED_IDLE`: Guard armed; operator lease active; neutral zero intent maintained.
    - `DRIVING`: Active direction held under a valid challenge lease.
-   - `FAULT`: Safety violation, lease breach, or telemetry stale; fails closed to zero and disarms.
+   - `INPUT_PAUSED`: Expired input commands zero while retaining healthy Arm; recovery needs fresh neutral after downstream zero confirmation.
+   - `FAULT`: Safety or telemetry failure; commands zero and disarms.
 
 2. **Monotonic Challenge Leases**:
-   - **Lease Duration**: 150 ms (`LEASE_DURATION_SEC = 0.150`).
+   - **Lease Duration**: `lease_duration_sec` in `web.yaml`, default 1 second. Runtime validates and loads it at startup; status reports the effective value.
    - **Challenge Interval**: 50 ms (`CHALLENGE_INTERVAL_SEC = 0.050`).
    - Single-use cryptographically random tokens (`secrets.token_urlsafe(16)`).
    - Evaluated strictly against the Pi monotonic clock (`CLOCK_MONOTONIC`).
@@ -125,7 +126,7 @@ The operator state machine enforces strict mathematical guarantees:
    - Motion cannot continue until the operator releases the key, re-arms, and presses again.
 
 4. **Armed Idle Timeout**:
-   - 30 seconds without directional input in `ARMED_IDLE` automatically disarms the guard (`IDLE_TIMEOUT_SEC = 30.0`).
+   - 30 seconds without directional input in `ARMED_IDLE` or `INPUT_PAUSED` automatically disarms the guard (`IDLE_TIMEOUT_SEC = 30.0`).
 
 5. **Stop Priority**:
    - Space key, Stop UI button, or `POST /api/v1/control/stop` immediately invalidates the control epoch, sets requested velocity to zero, cancels outstanding challenges, and initiates disarm.
@@ -148,3 +149,52 @@ To guarantee complete deadlock freedom and ensure emergency stop availability, a
 
 **Rule**: Locks MUST be acquired in increasing numerical order (`1 -> 2 -> 3`).
 **Emergency Exception**: Stop requests MUST NEVER block behind `DEPLOYMENT_LOCK`. Stop routines use non-blocking attempts (timeout <= 50 ms) and invoke immediate fail-closed zeroing regardless of lock contention.
+
+## M14.3 control contract
+
+`POST /api/v1/control/acquire` accepts `request_id`, `operator_id`, and
+`protocol_version: "2.0.0"` (optional speed caps remain ceilings). It returns
+`operation_id`, private `operation_token`, and pending/completed/failed status.
+The runtime starts the controller only if needed, waits for fresh readiness and
+acquires the sole operator slot. It does not arm. Poll
+`GET /api/v1/operations/{id}?operation_token=...` for the epoch and bind token;
+bind the WebSocket within five seconds of the runtime grant. Public status and
+logs contain no bind credentials. Do not share operation URLs or tokens.
+
+The public `controller/start` endpoint is removed. `control/release` accepts
+either the current epoch or the private operation ID/token to cancel setup.
+`controller/stop` cancels setup and stops the controller, including a late startup
+completion. Motion Stop cancels pending setup and disarms; a bound owner remains
+assigned. Repeated acquisition request IDs identify the same operation.
+
+Arm accepts only `request_id` and `epoch`; the `tracks_raised` affirmation field
+is removed. Hardware acceptance tools retain their own explicit acknowledgment.
+
+Each challenge/intent/acknowledgment carries `input_generation`. Expiry advances
+it and clears queued challenges without changing the ownership epoch. Recovery
+challenges set `recovery_required`; only fresh neutral after a confirmed complete
+bridge zero write can recover. The acknowledgment advances the generation again,
+invalidating challenges issued before recovery. The browser must wait for that
+acknowledgment and a new physical press before sending a direction.
+
+Terminal and bench clients do not infer physical release after a stall. They
+explicitly stop and require a new Arm instead of recovering from cached input.
+The current browser still targets protocol 1 and is deliberately blocked by the
+compatibility check. M14.4 must implement the new interaction flow and restore
+its full browser suite before deployment for web driving.
+
+Both containers read `/etc/opt/ubuntu_tank/web/web.yaml`; the runtime receives a
+read-only mount. `lease_duration_sec` must be finite, between 0.050 and 1.000
+seconds inclusive, and greater than `challenge_interval_sec`. The latter stays
+50 ms by default. To select the new timeout for an existing installation, stop
+and disarm, explicitly edit the retained YAML to `lease_duration_sec: 1.0`, and
+stage/deploy the paired release through the host CLI so configuration hashes
+are revalidated. Deployment preserves valid existing overrides; changing the
+shipped default does not overwrite a retained 150 ms value. Restart is required;
+no browser request or hot reload changes an active deadline.
+
+The runtime startup loader accepts `UBUNTU_TANK_WEB_CONFIG` for an explicit
+configuration path; missing or invalid files fail before ROS initialization.
+The 250 ms first-command and independent guard/bridge watchdogs remain unchanged.
+The proposed 1.2-second input-loss physical-rest target is unverified; M15 must
+measure stopping time and distance on the actual robot.

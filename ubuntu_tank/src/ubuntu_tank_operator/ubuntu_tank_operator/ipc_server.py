@@ -26,6 +26,7 @@ from ubuntu_tank_protocol.constants import (
     DEFAULT_OPERATOR_SOCKET_PATH,
     ENV_OPERATOR_SOCKET_PATH,
     MAX_IPC_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
 )
 from ubuntu_tank_protocol.enums import OperatorState, WebControlErrorCode
 from ubuntu_tank_protocol.schemas import (
@@ -35,6 +36,8 @@ from ubuntu_tank_protocol.schemas import (
     VersionResponse,
 )
 from ubuntu_tank_supervisor import progress
+
+from .acquisition import AcquisitionCoordinator
 
 if TYPE_CHECKING:
     from .state_machine import OperatorStateMachine
@@ -70,6 +73,7 @@ class OperatorIpcServer:
         | None = None,
         reset_observations_callback: Callable[[], int] | None = None,
         lock: threading.RLock | None = None,
+        lifecycle_client: Any = None,
     ) -> None:
         if socket_path is None:
             socket_path = os.environ.get(
@@ -100,6 +104,7 @@ class OperatorIpcServer:
         self._owner_conn: socket.socket | None = None
         self._owner_id: str | None = None
         self._owner_pid: int | None = None
+        self.acquisition = AcquisitionCoordinator(self, lifecycle_client)
 
     def start(self) -> None:
         """Bind socket, set permissions, and start background listening thread."""
@@ -193,6 +198,7 @@ class OperatorIpcServer:
                         break
                     rlist = [self._server_sock] + list(self._clients.keys())
 
+                self.acquisition.expire()
                 progress.beat("operator_ipc")
                 readable, _, exceptional = select.select(rlist, [], rlist, 0.05)
 
@@ -281,6 +287,7 @@ class OperatorIpcServer:
     def _close_client(self, sock: socket.socket, reason: str = "") -> None:
         """Close client socket and trigger emergency disarm if it was the active owner."""
         with self._lock:
+            self.acquisition.cancel(sock)
             self._clients.pop(sock, None)
             is_owner = sock == self._owner_conn
             if is_owner:
@@ -396,6 +403,16 @@ class OperatorIpcServer:
     ) -> dict[str, Any]:
         """Dispatch validated IPC request to appropriate handler."""
         action = req.get("action")
+        if (
+            action not in ("version", "status", "stop", "disarm", "get_observations")
+            and req.get("protocol_version") != PROTOCOL_VERSION
+        ):
+            return {
+                "success": False,
+                "error": "INCOMPATIBLE_PROTOCOL",
+                "message": "Protocol 2.0.0 required",
+            }
+        req = {k: v for k, v in req.items() if k != "protocol_version"}
 
         if action == "status":
             with self._lock:
@@ -409,6 +426,22 @@ class OperatorIpcServer:
                 ).to_dict()
 
         # Stop has absolute priority and can be called by ANY client at ANY time
+        if action in ("stop", "disarm"):
+            self.acquisition.cancel()
+
+        if action == "take_control":
+            return self.acquisition.begin(sock, req, client)
+        if action == "acquisition_result":
+            return self.acquisition.result(sock, req.get("operation_id", ""))
+        if action == "bind_control":
+            return {"success": self.acquisition.bind(sock, req.get("operation_id", ""))}
+        if action == "cancel_acquisition":
+            self.acquisition.cancel(sock)
+            return {"success": True}
+        if action == "cancel_all_acquisitions":
+            self.acquisition.cancel(stop_service=True)
+            return {"success": True}
+
         if action == "stop":
             if self.stop_callback is not None:
                 try:
@@ -450,6 +483,8 @@ class OperatorIpcServer:
                     }
 
             with self._lock:
+                if self.acquisition.pending:
+                    return {"success": False, "error": "DEPLOYMENT_BUSY"}
                 if self._owner_conn is not None and self._owner_conn is not sock:
                     return {
                         "success": False,
@@ -539,12 +574,11 @@ class OperatorIpcServer:
                         "message": str(exc),
                     }
 
-                # Transition state machine into ARMING (validates preflight, tracks_raised, epoch)
+                # Transition state machine into ARMING (validates preflight and epoch)
                 now_ns = time.monotonic_ns()
                 ok, err, msg = self.state_machine.arm(
                     self._owner_id or "",
                     arm_req.epoch,
-                    arm_req.tracks_raised,
                     now_ns,
                     arm_req.request_id,
                 )
@@ -625,6 +659,8 @@ class OperatorIpcServer:
                     }
                 return {
                     "success": True,
+                    "input_generation": challenge.input_generation,
+                    "recovery_required": challenge.recovery_required,
                     "token": challenge.token,
                     "epoch": challenge.epoch,
                     "deadline_monotonic_ns": challenge.deadline_monotonic_ns,
@@ -659,6 +695,10 @@ class OperatorIpcServer:
                 return {
                     "success": ok,
                     "direction": self.state_machine.active_direction.value,
+                    "input_generation": self.state_machine.input_generation,
+                    "operator_state": self.state_machine.state.value,
+                    "recovery_ready": self.state_machine.state
+                    == OperatorState.ARMED_IDLE,
                     "error": err.value if err else None,
                     "message": msg,
                 }

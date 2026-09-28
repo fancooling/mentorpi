@@ -16,6 +16,7 @@ class OperatorState(str, Enum):
     ARMING = "ARMING"
     ARMED_IDLE = "ARMED_IDLE"
     DRIVING = "DRIVING"
+    INPUT_PAUSED = "INPUT_PAUSED"
     FAULT = "FAULT"
 
 

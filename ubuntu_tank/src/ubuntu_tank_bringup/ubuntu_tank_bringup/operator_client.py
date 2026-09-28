@@ -119,9 +119,7 @@ def main(args=None):
                             f"FAIL: Guard arm request failed: {acq_msg} ({acq_err})\n"
                         )
                         return 1
-                    arm_ok, arm_err, arm_msg = client.arm(
-                        epoch, tracks_raised=True, timeout_sec=3.0
-                    )
+                    arm_ok, arm_err, arm_msg = client.arm(epoch, timeout_sec=3.0)
                     if arm_ok:
                         print(f"PASS: Guard successfully set to armed ({arm_msg}).")
                         return 0
