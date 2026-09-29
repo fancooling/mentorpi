@@ -1,10 +1,11 @@
 # MentorPi Pi 5 Web Control Design
 
 Status: Existing implementation and acceptance status are recorded per milestone.
-M14.3 and M14.4 are implemented locally. M15 robot acceptance and M16 release
-handoff remain pending; M14.4 is committed locally, not deployed.
+M14.3 and M14.4 are deployed; stopped Pi integration passed on 2026-09-29.
+M14.5 and M14.6 below specify the approved control simplification and are not
+implemented. M15 physical acceptance and M16 release handoff remain pending.
 
-Date: 2026-09-27
+Date: 2026-09-29
 
 Target: Ubuntu 26.04 ARM64 / ROS 2 Lyrical on the MentorPi Tank Pi 5.
 Current delivery uses paired runtime/web containers; the
@@ -51,14 +52,14 @@ without scrolling. A conceptual layout is:
 MentorPi Tank             Connected | Controller running | Disarmed
 Battery: 12.2 V           Control owner: this tab | Raised-track mode
 
-[Take control] [Release control] [Stop controller]
-[Arm] [Disarm]
+[Take control] [Release control]
 
                           [Forward W]
-                [Left A] [STOP Space] [Right D]
+                [Left A] [Start / Stop] [Right D]
                           [Reverse S]
 
-Hold a direction to move. Release to stop. Space stops and disarms.
+Start enables driving. Hold a direction to move.
+Release direction to stop moving. Stop / Space also disarms.
 Command: zero | Delivery: idle | Last update: 0.1 s ago
 [Recent logs] [Diagnostics]
 ```
@@ -67,31 +68,67 @@ Values above are illustrative, not live readings.
 
 | Control | Required behavior |
 | --- | --- |
-| Stop controller | Invalidate driving, request zero/disarm, then stop the systemd service even if ROS is unavailable. Keep the web page available. |
 | Take control | Start the controller if stopped, wait for readiness and fresh disarmed state, then acquire and bind the single operator slot. If already running, acquire without restarting it. Report busy ownership without takeover. Never arm or move automatically. |
-| Arm | Require an explicit Arm click, ownership, healthy preflight, neutral input, and a ready command path. No tracks-raised checkbox. |
+| Start | Arm if not already armed, requiring ownership, healthy preflight, released inputs and a ready command path. Await confirmed armed state. Never command movement; require a new direction press. |
 | Forward / W | Hold for positive linear velocity, zero angular velocity. |
 | Reverse / S | Hold for negative linear velocity, zero angular velocity. |
 | Left / A | Hold for positive angular velocity (spin left), zero linear velocity. |
 | Right / D | Hold for negative angular velocity (spin right), zero linear velocity. |
 | Direction release | Immediately request zero. Remain armed while controller health, ownership, and the idle limit permit. |
 | Input lease expiry | Stop motion and show “Input paused — release controls.” Keep a healthy controller armed; require fresh neutral acknowledgment and a new press before moving. |
-| Stop motion / Space / Disarm | Request zero and disarm; clear all held input and require a new explicit Arm before moving again. No confirmation dialog. |
-| Release control | Stop, disarm, invalidate the control lease, and relinquish ownership. |
+| Stop / Space | Request zero and disarm; clear held input. Retain ownership and keep the controller running. Require explicit Start before driving again. No confirmation dialog. |
+| Release control | Cancel this session's pending acquisition or stop/disarm its active control, stop the controller, and relinquish ownership. Report completion only when the controller is confirmed inactive. Keep the dashboard and containers running. |
 
-“Take control” is the only setup action in the page; remove the separate Start
-controller button. Show startup/acquisition progress and prevent duplicate setup
-requests. On startup failure or timeout, do not acquire; on acquisition failure,
-show the reason and leave motion disabled. Do not stop another owner's controller
-as cleanup. Stop controller remains available to cancel pending setup, and a late
-startup/acquisition result must not restore control after Stop or cancellation.
+The page has Take control, Release control, and one Start / Stop button; remove
+separate Arm, Disarm and Stop controller buttons. The button shows Start only
+when the owning session is confirmed disarmed, and Stop while armed, arming or
+paused. Disable Start without ownership/readiness or while release is pending.
+For observers or unknown state, offer Stop only; never infer permission to Start.
+Space always means Stop, including when the button displays Start. Keyboard
+activation of a focused Start button must not turn the Space shortcut into Start.
+Repeated Start requests are idempotent; the API uses explicit actions, not a toggle.
+A double-click or late response must never rearm after Stop.
 
-Remove the tracks-raised checkbox and its client-side Arm gate. The revised web
-Arm protocol must not require or manufacture `tracks_raised: true`; update the
-shared contract and generated clients together. This removes a UI affirmation,
-not the raised-track operating restriction or physical-test prerequisites. Keep
-explicit tracks-raised acknowledgment in hardware acceptance tooling. No new
-confirmation dialog replaces the checkbox.
+Take control checks controller state, starts only if needed, waits for readiness,
+and acquires ownership without arming. Show progress and prevent duplicate setup.
+Release control remains available during that session's setup and cancels it;
+late startup must be stopped before release completes. Stop remains available
+during setup to cancel acquisition and prohibit arming, but does not promise
+controller shutdown. Failures leave driving disabled and show the reason.
+Never stop another owner's controller as acquisition-failure cleanup.
+
+Release control is scoped to the requesting session. Keep ownership unavailable
+until shutdown is confirmed so delayed cleanup cannot stop a new owner's controller.
+A non-owner cannot use Release to shut down another owner; it can still use Stop.
+If shutdown fails or times out, report failure/unconfirmed state, retain the
+handoff block and allow bounded retry; never report a completed release prematurely.
+Disconnect still invokes immediate zero/disarm and ownership cleanup; it must not
+silently rearm or replay Start. Explicit Release additionally requires shutdown.
+
+After five minutes without an owner action, automatically perform Release
+control, including controller shutdown. The timeout is configurable and runs on
+the Pi, even if the browser stops polling. Show “Control released due to inactivity”
+and require Take control again; never reacquire automatically.
+
+While the page is visible, poll `GET /api/v1/status` every second, with at most one
+poll outstanding and a bounded request timeout. Poll immediately on load, focus,
+resume and completion of ownership operations. WebSocket updates can provide
+faster feedback but do not replace polling. Compare the server's ownership
+session identifier with this tab's bound session, not just a display owner name.
+Discard out-of-order responses using a monotonic server status revision; release
+or a newer acquisition must not be undone by an older poll response.
+On ownership loss, clear held input and session credentials, disable Start and
+driving, and show Take control. On release-in-progress, show shutdown progress
+until confirmed inactive; do not offer acquisition as ready before completion.
+After three seconds without fresh status, show ownership as unknown and disable
+Start/driving while preserving Stop. Existing connection/focus safety rules
+still apply sooner. Resume never restores control from cached browser state.
+
+Start has no tracks-raised checkbox or affirmation field. Retain the raised-track
+operating restriction and explicit acknowledgment in hardware acceptance tooling.
+In the safety contract below, explicit Arm means the internal operation requested
+by Start; Disarm means the internal operation requested by Stop. These are states
+and safety operations, not additional browser controls or public API endpoints.
 
 On-screen movement uses press-and-hold: a quick click produces only a brief
 request between press and release, possibly no visible movement. It never
@@ -198,7 +235,7 @@ Root/owner intervention remains trusted, as in the native controller design.
 One connection holds control, including across browsers, tabs, CLI teleop, and
 bench. No silent takeover. Handoff requires stop/disarm confirmation or service
 stop before granting another owner. Any connected client may request
-Stop/Disarm even if another tab owns driving. Stop invalidates the old motion
+Stop even if another tab owns driving. Stop invalidates the old motion
 generation before replying so subsequent queued commands cannot restart it.
 
 ### 3.3 Lifecycle helper
@@ -275,9 +312,9 @@ devices; desktop emulation alone does not establish mobile acceptance.
 ## 4. Motion lease and state contract
 
 This revised contract separates permission to remain armed from permission to
-publish nonzero motion. It is approved design, not deployed behavior: commit
-`b45dfdd` still disarms on input expiry. M14.3 implements the backend change;
-M14.4 implements browser recovery locally; M15 robot validation remains pending.
+publish nonzero motion. M14.3 and M14.4 are deployed with stopped integration verified; M15 physical
+validation remains pending. M14.5/M14.6 change the public controls while retaining
+these input-expiry and hard-fault rules.
 The [bug report](BUG_WEB_CONTROL_LEASE_EXPIRY.md) records the deployed evidence.
 
 ### 4.1 States and deadlines
@@ -317,6 +354,47 @@ use the existing fault/disarm path. Agent crash or hang must still trigger the
 independent downstream watchdogs; this change must not renew their deadlines
 from a stale cached command.
 
+### 4.1.1 Ownership inactivity timeout
+
+Add `control_idle_timeout_sec` to installed `web.yaml`, default `300.0` seconds.
+Load and enforce it in the runtime operator, alongside `lease_duration_sec`.
+Accept only finite positive numbers; reject booleans, zero, negative and non-finite
+values at configuration load. Retain valid installed overrides. Changes require
+restart while stopped/disarmed; the browser cannot change or disable the timeout.
+Report the effective value in status. This is separate from the 30-second armed
+idle disarm limit, input lease, binding timeout and continuous-hold limit; none
+of those deadlines are extended or replaced.
+
+Start the Pi monotonic inactivity deadline when ownership is granted. Reset it
+only for a fresh accepted action from that owning session: explicit Start or Stop,
+or a direction press/change/release. A held direction's periodic intent does not
+count as a new action. Observe direction transitions in the validated runtime
+input stream; a return from motion to neutral counts once. Start/Stop carry fresh
+request IDs and are counted once after acceptance. No separate heartbeat or
+activity endpoint renews ownership.
+
+Polling, status/log reads, WebSocket pings, challenge exchanges, automatic neutral
+messages/recovery, duplicate requests, rejected/stale input, key-repeat, mouse
+movement and other clients' actions never reset this deadline. A safety-generated
+zero on pause/disconnect is not owner activity. CLI and bench owners use the same
+runtime policy; their background traffic cannot keep abandoned ownership alive.
+
+At `now >= deadline`, invalidate motion and pending Start immediately, then run
+the same zero/disarm, controller shutdown and ownership-release operation as
+explicit Release. Enforce expiry in the runtime deadline loop, independently of
+web requests and without blocking motion watchdogs. Expiry wins over input
+arriving at or after the deadline. Late requests cannot renew the expired session,
+rearm it or affect a subsequent owner. If shutdown fails, remain disarmed with
+handoff blocked and report failure; use the same bounded retry/recovery rules as
+explicit Release. Never silently restore ownership after a shutdown failure.
+
+Status reports the ownership session ID, monotonic status revision, effective
+`control_idle_timeout_sec`, remaining inactivity seconds, release progress and
+last release reason (`CONTROL_IDLE_TIMEOUT` for this case). Retain the reason
+and released session ID long enough for a disconnected/slow client to identify
+its expiry even if another client subsequently takes control; do not expose
+private bind tokens. Remaining time is informational; only the Pi decides expiry.
+
 ### 4.2 Fresh input after a pause
 
 Keep the control epoch for ownership and Arm changes. Add an agent-owned input
@@ -354,8 +432,9 @@ Browser wall clocks are not authoritative for any deadline.
 
 | Event | Required result |
 | --- | --- |
+| Ownership inactivity timeout | Zero/disarm, cancel pending Start, stop the controller and release ownership; require a new Take control. |
 | Input expiry with healthy controller and live connection | Zero, `INPUT_PAUSED`, retain Arm and ownership, require neutral acknowledgment and fresh press. |
-| Explicit Stop, Space, Disarm, release control, idle timeout, or hold cap | Zero/disarm and invalidate motion; require explicit Arm before moving again. Release control also relinquishes ownership. |
+| Explicit Stop, Space, release control, idle timeout, or hold cap | Zero/disarm and invalidate motion; require explicit Start before moving again. Release control also stops the controller and relinquishes ownership. |
 | Browser blur, hidden page, navigation, screen lock, or detected socket loss | Clear input and request stop/disarm. Server-observed owner disconnect disarms; reconnect never resumes motion or automatically arms. |
 | Silent browser/network/web stall with socket still open | Input expiry stops motion first; remain paused only while controller health permits, then disarm at the idle limit if communication does not recover. |
 | Stale/failed guard, bridge, battery, serial, or zero-delivery health | Fault/zero/disarm; require healthy preflight and explicit Arm to recover. |
@@ -420,23 +499,24 @@ safeguards; they add no web login or user-authentication workflow.
 
 | Proposed API | Input, result, and side effect |
 | --- | --- |
-| `GET /api/v1/status` | Service/agent/guard status, freshness, battery, owner, limits, release ID, and last fault; never arms. |
+| `GET /api/v1/status` | Service/agent/guard status, freshness, battery, owner/session ID, status revision, limits, inactivity timeout/remaining time, release progress/reason/session, release ID and last fault. Read-only; never arms or renews activity. |
 | `GET /api/v1/version` | Network-only protocol compatibility and release identity; no robot state or credentials. Used before control and to recover incompatible cached clients. |
 | `GET /api/v1/logs?limit=N` | Recent controller/web/agent logs, maximum 200 lines and 64 KiB; no arbitrary journal filters. |
 | `POST /api/v1/control/acquire` | Request ID and operator ID; one Take control operation starts the controller if needed, waits for readiness, then acquires ownership. Returns operation ID; successful completion provides epoch and a short-lived socket bind token. Never arms. |
-| `POST /api/v1/control/release` | Cancel pending acquisition for this session or stop/disarm and relinquish its ownership. Leaves the controller running. |
-| `POST /api/v1/controller/stop` | Cancel pending setup, invalidate authority, zero/disarm and stop the controller; return operation ID and observed completion or failure. |
-| `POST /api/v1/control/arm` | Epoch and request ID; returns pending then confirmed or failed. The revised contract removes the tracks-raised affirmation field. |
+| `POST /api/v1/control/release` | Request ID and session ownership/setup identity; cancel its acquisition, invalidate input, zero/disarm, stop the controller and release ownership. Return a pollable operation; complete only after confirmed inactive, otherwise return explicit failure. |
+| `POST /api/v1/control/start` | Epoch and request ID; owner-only explicit permission to drive. Arm if disarmed after preflight and neutral-input checks; already armed is an idempotent success. Return pending then confirmed or failed. Never start the controller, acquire ownership or command motion. No tracks-raised field. |
 | `POST /api/v1/control/stop` | Stop independent of ownership; immediate invalidation and asynchronous zero/disarm confirmation. |
 | `GET /api/v1/operations/{id}` | Status of a bounded retained operation; timeouts/errors explicit. |
 | `WSS /api/v1/control` | Control connection binding, agent challenges, input generation, enumerated direction/neutral intent, neutral recovery, stop, acknowledgments, and live state. |
 
-The revised public API mirrors the page: Take control, Release control, Arm,
-Disarm/Stop motion, and Stop controller. Remove the public `controller/start`
-endpoint; controller startup remains an internal lifecycle operation used by
-`control/acquire` and trusted maintenance tooling. The browser must not orchestrate
-separate start/acquire calls. The Arm request has no `tracks_raised` field, and
-no adapter may manufacture that affirmation for the operator.
+The M14.5 public API mirrors the page: Take control, Release control, Start and
+Stop. Remove `controller/stop` and `control/arm`, and any public disarm alias;
+`controller/start` remains absent. Old routes must reject requests without side
+effects, not redirect to new actions. Keep arm/disarm and controller lifecycle
+operations internal to the runtime and trusted local maintenance tooling.
+The browser must not chain stop/release or start/acquire calls. Version HTTP/WS/IPC
+schemas and generated clients together; reject incompatible clients before any
+mutation, including when an old client's release semantics differ.
 
 The runtime coordinates acquisition and lifecycle state under the existing
 ownership/admission rules. Only one acquisition may be pending; competing owners
@@ -446,12 +526,13 @@ timed-out start cannot grant ownership. Successful operation results expose only
 the requesting session's bind credentials, never public status/logs. Bound the
 bind window and revoke unbound ownership when it expires; setup never arms.
 
-Stop controller and Stop motion cancel pending setup before reporting success.
-Release cancels only its own setup/ownership. Cancellation invalidates the
-operation generation so a late lifecycle or acquire result cannot restore control;
-a late startup completing after Stop controller must be stopped again. Preserve
-Stop access while startup is pending. Version these breaking endpoint/schema
-changes together and reject incompatible clients before mutating controller state.
+Stop cancels pending setup and Start before reporting success; Release cancels
+only its own setup/ownership and also shuts down the controller. Runtime operation
+generations fence every late startup, acquire and arm completion. A Start request
+sent before Stop must not arm afterward, including duplicate retries. During
+Release, late startup is stopped again and no new owner is granted until shutdown
+is confirmed. Stop remains independent of ownership, responsive during startup,
+arming and shutdown, and available when deployment admission is closed.
 
 All mutation requests are bounded JSON with schema version and request ID.
 Directions are enums, not arbitrary velocities, ROS topics, or service names.
@@ -531,9 +612,10 @@ and deployment flags are proposed until implemented and documented in README.
 Continue numbering after native Milestone 9. Unchecked boxes identify pending
 work. Complete M11.1 before continuing with M12; M12 and M13 can then proceed
 independently, with M14 integrating both. Existing completed checkboxes describe
-the original contract. The revised §4 work proceeds in order:
-M14.3 protocol/operator → M14.4 browser recovery → M15 deployment and physical
-acceptance → M16 release handoff. M15 supplies the revised web-control evidence
+the contract implemented at that time, including the superseded Arm and controller
+Stop interfaces in M14.3/M14.4. The remaining work proceeds in order:
+M14.5 simplified runtime/API → M14.6 browser controls → M15 deployment and
+physical acceptance → M16 release handoff. M15 supplies the revised web-control evidence
 for container C5; M16 and container C6 release sign-off require that acceptance.
 Earlier reports do not certify the revised release.
 
@@ -928,7 +1010,8 @@ to additional candidates.
 
 ### Milestone 14.3 — Separate input expiry from controller disarm
 
-Status: implemented and committed locally (2026-09-27); not deployed.
+Status: implemented and committed (2026-09-27); deployed 2026-09-29 with
+stopped integration passed. Physical acceptance remains pending.
 Protocol 2 rejects browsers predating the M14.4 migration.
 Local validation: 217 runtime/API/tooling tests, four browser build/PWA/fence
 checks, source/dependency gates and Compose parsing. A final 66-test API/recovery
@@ -988,7 +1071,8 @@ pass. No physical stopping claim follows from these tests.
 
 ### Milestone 14.4 — Browser and relay recovery without rearming
 
-Status: implemented and committed locally (2026-09-27); not deployed.
+Status: implemented and committed (2026-09-27); deployed 2026-09-29 with
+stopped integration passed. Physical acceptance remains pending.
 Browser/API validation and independent review are recorded in `CHANGES.md`.
 The local fixture uses real HTTP, WebSocket, operator IPC and lifecycle services
 with simulated controller health/zero delivery; it does not certify robot stops.
@@ -1027,9 +1111,86 @@ Exit: repeated press/release and recoverable timeouts work without clicking Arm
 again on a healthy connection. Tests show no nonzero intent until fresh neutral
 recovery and a new press, and no automatic movement on reconnect.
 
+### Milestone 14.5 — Unified ownership lifecycle and Start/Stop API
+
+Status: approved design (2026-09-29); not implemented. Supersedes the public
+Arm and controller Stop interfaces delivered by M14.3/M14.4.
+
+- [ ] Keep Take control as one runtime operation: inspect controller state, start
+  only when needed, verify readiness and acquire/bind without arming or moving.
+- [ ] Make Release control perform owner-scoped cancellation, zero/disarm,
+  controller shutdown and ownership release. Return bounded operation progress,
+  confirmed inactive completion or explicit failure. Prevent new acquisition
+  until shutdown is confirmed; do not strand retries behind stale ownership.
+- [ ] Add `control/start` for owner-only, explicit, idempotent arming with existing
+  preflight, neutral-input and ready-path gates. Preserve `control/stop` for
+  immediate zero/disarm while retaining ownership and the running controller.
+- [ ] Remove public `controller/stop`, `control/arm` and any disarm aliases.
+  Preserve internal safety/lifecycle operations. Update schemas, OpenAPI,
+  generated clients, relay and protocol version; reject old clients/routes
+  before mutation, including old Release requests.
+- [ ] Fence Stop/Release against late acquisition, startup and arming. Deduplicate
+  retries without repeating side effects or reviving canceled operations. Keep
+  Stop responsive during shutdown, stalled ROS and closed deployment admission.
+- [ ] Implement runtime ownership inactivity per §4.1.1: configurable
+  `control_idle_timeout_sec` default 300 seconds, accepted owner-action accounting,
+  monotonic expiry and automatic Release including shutdown. Publish session IDs,
+  status revisions, remaining time and release progress/reason in shared schemas.
+- [ ] Test with a controlled clock through real operator/API interfaces: default
+  and overridden timeout, invalid configuration, activity just before/at expiry,
+  no action after acquisition, disarmed inactivity, accepted action resetting the
+  deadline, polling/neutral/duplicate/other-client traffic not resetting it,
+  expiry during Start, shutdown failure/retry and a new owner after expiry.
+- [ ] Update terminal and bench clients for the shared protocol. Document their
+  explicit release/shutdown behavior and distinguish disconnect cleanup; retain
+  terminal stall disarming and hardware-test acknowledgments.
+- [ ] Exercise actual runtime/API/IPC behavior for stopped/running acquisition,
+  busy ownership, non-owner release, release during startup/arming, shutdown
+  timeout/failure/retry, simultaneous release/acquire, duplicate Start/Release,
+  delayed Start after Stop, removed routes and incompatible cached clients.
+  Preserve motion-safety and recovery tests; no source-text assertions.
+
+Exit: only acquire/release/start/stop remain as public control mutations. Release
+confirms shutdown before handoff; Start never commands motion or bypasses safety.
+Local tests do not certify physical stopping or Pi service behavior.
+
+### Milestone 14.6 — Simplified browser controls and client migration
+
+Status: pending M14.5; not implemented.
+
+- [ ] Remove Stop controller, Arm and Disarm buttons. Keep Take control and
+  Release control, plus one Start / Stop button with the §2 state rules.
+- [ ] Use the combined Release API; display shutdown progress and errors until
+  confirmed inactive. Prevent repeated setup and Start while release is pending.
+- [ ] Start explicitly arms if needed and enables only fresh direction presses;
+  Stop zeroes/disarms without giving up ownership. Space always sends Stop.
+  Never derive a Start action from stale/unknown status, reconnection or recovery.
+- [ ] Keep Stop available to observers and during startup, arming, input pause
+  and shutdown. Preserve pointer/keyboard/touch release tracking, neutral recovery,
+  focus-loss handling, bounded queues and all independent safety deadlines.
+- [ ] Poll status every second while visible and immediately on load/resume and
+  ownership changes. Reconcile the bound session and server revision; discard
+  stale responses, clear control on expiry and show its reason. Disable driving
+  on unknown/stale ownership, preserve Stop and never auto-reacquire.
+- [ ] Test automatic release with a shortened test configuration while polling
+  and neutral traffic continue. Cover another tab acquiring after expiry,
+  delayed/out-of-order polls, failed polls, background suspension/resume,
+  shutdown progress/failure, and fresh Take control after confirmed shutdown.
+- [ ] Update generated API usage, browser help, operator documentation and
+  acceptance tooling; remove calls to retired endpoints. Make cached older PWAs
+  fail compatibility checks before taking control or mutating controller state.
+- [ ] Run browser scenarios through real HTTP/WS/IPC for the normal
+  Take → Start → direction/release → Stop → Start → Release flow, held inputs
+  at Start, double-clicks, stale status, dropped responses, Stop during Start,
+  Release during setup/driving, shutdown failure, competing tabs, CLI handoff,
+  Space on a focused Start button, and PWA suspension/reconnection/update.
+
+Exit: everyday operation uses the simplified controls with no separate arming
+or controller-stop UI. Product tests pass; deployment and motor tests remain M15.
+
 ### Milestone 15 — Deployment and raised-track web acceptance
 
-Status: pending; revised-contract acceptance depends on M14.3 and M14.4.
+Status: pending; revised-contract acceptance depends on M14.3–M14.6.
 This milestone supplies the web-control evidence for container C5.
 
 - [ ] Build and smoke-test the paired ARM64 images, deploy through the current
@@ -1046,7 +1207,14 @@ This milestone supplies the web-control evidence for container C5.
   neutral plus a new press resumes without Arm. Exercise sustained outage until
   idle disarm, detected disconnect, Stop during recovery and controller faults.
 - [ ] Observe all four directions via buttons and keyboard at conservative speed;
-  verify release, Space, Disarm, Stop controller, idle timeout, and hold cap.
+  verify direction release, Start/Stop, Space, Release control shutdown, idle
+  timeout and hold cap. Confirm Take control restarts after Release without
+  arming, and Start requires a new direction press before any motion.
+- [ ] Verify the installed configurable ownership timeout with idle polling and
+  no user actions: automatic zero/disarm, controller inactive, ownership released
+  and the browser updated. Verify accepted actions reset it and a fresh Take
+  control/Start is required afterward. Record the tested value and restore the
+  intended configuration through the stopped deployment workflow.
 - [ ] Measure loss-of-focus, tab close, browser crash, Wi-Fi loss, delayed/buffered
   packets, web crash/hang, operator crash/hang, and reconnect behavior.
 - [ ] Repeat relevant controls and failure cases in installed Android/iOS PWAs,
@@ -1090,8 +1258,8 @@ Status: pending; release sign-off depends on M15 acceptance of the revised relea
 
 - [ ] Update the lease-expiry bug report with M14.3–M15 results and any remaining
   network limitations. Document pause/release/new-press recovery separately from
-  faults that require explicit Arm.
-- [ ] Document certificate setup and direct page access, normal start/arm/drive/stop flow,
+  faults that require explicit Start.
+- [ ] Document certificate setup and direct page access, Take/Start/drive/Stop/Release flow,
   input limitations, loss-of-connection recovery, CLI handoff, and rollback.
 - [ ] Document phone installation, tested browser/OS versions, offline behavior,
   update/recovery workflow, API schemas, and frontend build commands.
@@ -1108,9 +1276,10 @@ bounded motion, verified stopping, and a documented local recovery path.
 An installed Pi serves the Vue/TypeScript PWA through FastAPI/Uvicorn without an
 Internet dependency or a Node.js runtime. Mobile installation, offline status,
 disarmed updates, and cached-client compatibility/recovery pass their gates;
-start/stop, arm/disarm, mouse/touch buttons, W/S/A/D, and Space work as specified.
+Take/Release control, Start/Stop, direction buttons, W/S/A/D and Space work as
+specified. Release stops the controller; Start only arms for fresh direction input.
 Only one operator controls motion, loss of input or connectivity cannot latch
 movement, reconnection never resumes it, and production DDS/security confinement
-remains effective. M10–M16 evidence, including M11.1 and M14.1–M14.4, is complete
+remains effective. M10–M16 evidence, including M11.1 and M14.1–M14.6, is complete
 and distinguishable from native M1–M9 evidence. Raised-track completion still does
 not authorize on-ground use.

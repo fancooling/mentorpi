@@ -1,9 +1,54 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-27
+Last updated: 2026-09-29
 
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
+
+## Simplified web controls approved (2026-09-29)
+
+- Updated `docs/MENTORPI_WEB_CONTROL_DESIGN.md`; implementation is pending.
+- Take control starts the controller only if needed, then acquires without arming.
+  Release control zeroes/disarms, stops the controller and releases ownership
+  only after confirmed shutdown. Remove the separate Stop controller UI/API.
+- One Start / Stop button replaces Arm/Disarm/Stop. Start arms if needed but
+  never moves without fresh directional input; Stop zeroes/disarms and retains
+  ownership. Space always stops. Remove public Arm/Disarm endpoints; retain
+  internal safety operations and introduce `control/start`.
+- Added configurable `control_idle_timeout_sec` (default 300 seconds): runtime
+  automatically releases control and shuts down after no accepted owner action.
+  Polling, heartbeats and automatic neutral traffic do not renew ownership.
+  Browser polls status every second and clears stale/lost ownership; M14.5/M14.6
+  include expiry races, configuration, polling and session reconciliation tests.
+- Added M14.5 runtime/API and M14.6 browser/client migration before M15 physical
+  acceptance and M16 handoff. Preserve input recovery, Stop priority, ownership
+  fencing and old-client rejection. No runtime code or Pi changes for this task.
+
+## Browser origin correction (2026-09-29)
+
+- Added the owner's requested HTTPS browser origin to the Pi's installed
+  `web.yaml`; it was absent from the retained origin list. Backed up the file to
+  `/var/lib/ubuntu_tank-container/host-backup/web.yaml.20260929T175808Z`.
+- Redeployed the existing M14.4 images and passed `target-test`. A harmless POST
+  probe passed origin validation; an unlisted origin still returned HTTP 403.
+- Subsequent live status showed a browser owner with `OWNED_DISARMED`, confirming
+  acquisition after the fix. No Arm or motion commands were issued by the agent.
+
+## M14.4 Pi deployment verified stopped (2026-09-29)
+
+- Deployed build `ubuntu_tank/.work/build-m14-4`, release
+  `9b372bb3eb5da79a6bb2fe2373ff4d1803a6690d8a2f79904aa7e5969dbd620c`.
+- Initial deployment failed with an outdated installed Compose file missing the
+  runtime `web.yaml` mount. Refreshed the matching checkout host-tool bundle with
+  `sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py prepare-host`, then repeated
+  `deploy` and `target-test` using `/opt/ubuntu_tank-container/deploy.py`.
+- Both containers are healthy; target report is `PASS_STOPPED_INTEGRATION`, with
+  controller inactive and `NO_OWNER`. Applied current source `web.yaml` settings
+  while retaining the existing Pi browser origins; redeployment and target-test
+  confirm effective `lease_duration_sec: 1.0`. The previous host configuration is
+  backed up at `/var/lib/ubuntu_tank-container/host-backup/web.yaml.20260929T175419Z`.
+- Evidence: `/var/lib/ubuntu_tank-container/target-test.json`. No Arm or motion
+  commands were issued. M15 physical acceptance remains pending.
 
 ## M14.4 browser recovery implemented locally (2026-09-27)
 
@@ -18,7 +63,7 @@ current architecture and safety constraints; use `README.md` for commands.
   replacement and PWA hide/resume. See `CHANGES.md` for final validation.
 - Validation: full suite passed 555 Python tests and 27 Playwright scenarios;
   independent review PASS. Source/dependency gates and formatting checks pass.
-- Runtime M14.3 is commit `2c26015`; M14.4 is committed locally, not deployed.
+- Runtime M14.3 is commit `2c26015`; M14.4 is committed locally; subsequent Pi deployment is recorded above.
   M15 real-robot stopping and network acceptance remain pending.
 
 ## M14.3 backend implemented locally (2026-09-27)
