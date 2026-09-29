@@ -5,6 +5,27 @@ Last updated: 2026-09-29
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## M14.5 runtime implementation and local remediation (2026-09-29)
+
+- M14.5 implementation uses protocol 3 with `control/start` and combined
+  release/controller shutdown. Removed public Arm/controller-stop endpoints;
+  browser API adapters migrate to protocol 3, while M14.6 presentation remains
+  pending. No Pi deployment or physical acceptance for this implementation.
+- Release/expiry fence arming and driving until shutdown completes. Release waits
+  stay off the shared IPC loop; canceled startup cannot report early completion.
+  Failed release retains retry authority; after disconnect, a fresh Take first
+  confirms old-controller shutdown. Automatic expiry permits fresh acquisition.
+- Runtime now loads `control_idle_timeout_sec` through the production node.
+  Observer Stop still works but cannot renew another owner's inactivity timer.
+  Added runtime/API and browser regressions.
+- Final `./ubuntu_tank/deploy.sh test`: 579 Python tests passed, two skipped,
+  and 29 Playwright scenarios passed; 28 focused input-recovery tests also passed. Frontend
+  production build, source/dependency gates, shell lint, formatting and whitespace
+  checks passed. No Ruff diagnostics on changed lines; 39 inherited whole-file
+  diagnostics remain. Fresh independent review: `review.md` is `PASS`.
+- M14.5 is recorded as one local implementation commit; not pushed. M14.6
+  browser presentation and M15 Pi/physical acceptance remain pending.
+
 ## Simplified web controls approved (2026-09-29)
 
 - Updated `docs/MENTORPI_WEB_CONTROL_DESIGN.md`; implementation is pending.

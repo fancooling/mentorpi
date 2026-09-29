@@ -12,6 +12,7 @@ angular_speed_cap: 0.50
 lease_duration_sec: 1.0
 challenge_interval_sec: 0.050
 idle_timeout_sec: 30.0
+control_idle_timeout_sec: 300.0
 max_hold_duration_sec: 5.0
 operator_socket_path: "/run/ubuntu_tank/operator.sock"
 lifecycle_socket_path: "/run/ubuntu_tank/lifecycle.sock"

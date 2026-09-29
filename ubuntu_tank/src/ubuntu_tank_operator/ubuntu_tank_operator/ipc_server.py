@@ -105,6 +105,15 @@ class OperatorIpcServer:
         self._owner_id: str | None = None
         self._owner_pid: int | None = None
         self.acquisition = AcquisitionCoordinator(self, lifecycle_client)
+        self.state_machine.on_idle_timeout_release = self._handle_idle_timeout_release
+
+    def _handle_idle_timeout_release(self) -> None:
+        """Trigger automatic controller shutdown and release on ownership inactivity."""
+        with self._lock:
+            if self._owner_conn is not None:
+                owner_sock = self._owner_conn
+                owner_id = self._owner_id or ""
+                self.acquisition.begin_idle_release(owner_sock, owner_id)
 
     def start(self) -> None:
         """Bind socket, set permissions, and start background listening thread."""
@@ -410,7 +419,7 @@ class OperatorIpcServer:
             return {
                 "success": False,
                 "error": "INCOMPATIBLE_PROTOCOL",
-                "message": "Protocol 2.0.0 required",
+                "message": f"Protocol {PROTOCOL_VERSION} required",
             }
         req = {k: v for k, v in req.items() if k != "protocol_version"}
 
@@ -427,11 +436,11 @@ class OperatorIpcServer:
 
         # Stop has absolute priority and can be called by ANY client at ANY time
         if action in ("stop", "disarm"):
-            self.acquisition.cancel()
+            self.acquisition.cancel(stop_service=True)
 
         if action == "take_control":
             return self.acquisition.begin(sock, req, client)
-        if action == "acquisition_result":
+        if action in ("acquisition_result", "operation_result"):
             return self.acquisition.result(sock, req.get("operation_id", ""))
         if action == "bind_control":
             return {"success": self.acquisition.bind(sock, req.get("operation_id", ""))}
@@ -443,6 +452,7 @@ class OperatorIpcServer:
             return {"success": True}
 
         if action == "stop":
+            req_id = req.get("request_id")
             if self.stop_callback is not None:
                 try:
                     self.stop_callback()
@@ -450,7 +460,19 @@ class OperatorIpcServer:
                     logger.error("Error in stop_callback: %s", exc)
             with self._lock:
                 now_ns = time.monotonic_ns()
-                self.state_machine.stop(now_ns)
+                self.state_machine.stop(
+                    now_ns,
+                    requester_id=self._owner_id
+                    if (
+                        sock is self._owner_conn
+                        or (
+                            req.get("operator_id") == self._owner_id
+                            and req.get("epoch") == self.state_machine.epoch
+                        )
+                    )
+                    else None,
+                    request_id=req_id,
+                )
             return ControlStopResponse(success=True, disarmed=True).to_dict()
 
         if action == "acquire":
@@ -518,13 +540,29 @@ class OperatorIpcServer:
                     "message": msg,
                 }
 
-        if action == "release":
+        if action in ("release", "release_control"):
+            if self.stop_callback is not None:
+                try:
+                    self.stop_callback()
+                except Exception as exc:  # noqa: BLE001 - shutdown must continue if callback fails
+                    logger.error("Error in stop_callback during release: %s", exc)
+            result = self.acquisition.begin_release(sock, req, client)
+            return result
+
+        if action == "start":
             epoch = req.get("epoch")
-            if not isinstance(epoch, int) or isinstance(epoch, bool):
+            request_id = req.get("request_id")
+            if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 1:
                 return {
                     "success": False,
                     "error": WebControlErrorCode.INVALID_PAYLOAD.value,
-                    "message": "epoch must be integer",
+                    "message": "epoch must be a positive integer",
+                }
+            if not isinstance(request_id, str) or not request_id:
+                return {
+                    "success": False,
+                    "error": WebControlErrorCode.INVALID_PAYLOAD.value,
+                    "message": "request_id must be a non-empty string",
                 }
             with self._lock:
                 if self._owner_conn is not sock:
@@ -534,26 +572,57 @@ class OperatorIpcServer:
                         "message": "Caller does not hold operator ownership",
                     }
 
-            if self.stop_callback is not None:
-                try:
-                    self.stop_callback()
-                except Exception as exc:
-                    logger.error("Error in stop_callback during release: %s", exc)
-
-            with self._lock:
                 now_ns = time.monotonic_ns()
-                ok, err, msg = self.state_machine.release(
-                    self._owner_id or "", epoch, now_ns
+                ok, err, msg = self.state_machine.start(
+                    self._owner_id or "",
+                    epoch,
+                    now_ns,
+                    request_id=request_id,
                 )
-                if ok:
-                    self._owner_conn = None
-                    self._owner_id = None
-                    self._owner_pid = None
+                if not ok:
+                    return {
+                        "success": False,
+                        "status": "failed",
+                        "error": err.value
+                        if err
+                        else WebControlErrorCode.OPERATION_FAILED.value,
+                        "message": msg,
+                    }
+
+                if self.state_machine.state != OperatorState.ARMING:
+                    return {
+                        "success": True,
+                        "status": "completed",
+                        "error": None,
+                        "message": msg or "Already armed",
+                    }
+
+                arm_epoch = epoch
+                arm_req_id = request_id
+
+            if self.arm_callback is not None:
+                cb_ok, err_code, cb_msg = self.arm_callback(arm_epoch, arm_req_id)
                 return {
-                    "success": ok,
-                    "error": err.value if err else None,
-                    "message": msg,
+                    "success": cb_ok,
+                    "status": "completed" if cb_ok else "failed",
+                    "error": err_code,
+                    "message": cb_msg,
                 }
+            else:
+                with self._lock:
+                    ok, err, msg = self.state_machine.confirm_armed(
+                        guard_confirmed=True,
+                        downstream_zero_confirmed=True,
+                        current_monotonic_ns=time.monotonic_ns(),
+                        epoch=arm_epoch,
+                        request_id=arm_req_id,
+                    )
+                    return {
+                        "success": ok,
+                        "status": "completed" if ok else "failed",
+                        "error": err.value if err else None,
+                        "message": "Armed successfully" if ok else msg,
+                    }
 
         if action == "arm":
             with self._lock:

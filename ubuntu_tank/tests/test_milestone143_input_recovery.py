@@ -462,7 +462,7 @@ class TestTakeControl(unittest.TestCase):
             json={
                 "request_id": request,
                 "operator_id": operator,
-                "protocol_version": "2.0.0",
+                "protocol_version": "3.0.0",
             },
         ).json()
 
@@ -505,7 +505,7 @@ class TestTakeControl(unittest.TestCase):
         self.assertEqual(self.sm.state, OperatorState.OWNED_DISARMED)
         self.assertFalse(self.sm.telemetry.guard_armed)
         self.assertEqual(
-            self.client.get("/api/v1/operations/" + op["operation_id"]).status_code, 404
+            self.client.get("/api/v1/operations/" + op["operation_id"]).status_code, 200
         )
         self.assertNotIn("bind_token", self.client.get("/api/v1/status").json())
 
@@ -520,7 +520,7 @@ class TestTakeControl(unittest.TestCase):
             json={
                 "request_id": "take",
                 "operator_id": "browser",
-                "protocol_version": "2.0.0",
+                "protocol_version": "3.0.0",
                 "max_linear_speed": 0.05,
             },
         ).json()
@@ -549,7 +549,11 @@ class TestTakeControl(unittest.TestCase):
         released = self.client.post(
             "/api/v1/control/release",
             headers=self.headers,
-            json={"request_id": "release", "epoch": self.sm.epoch},
+            json={
+                "protocol_version": "3.0.0",
+                "request_id": "release",
+                "epoch": self.sm.epoch,
+            },
         ).json()
         self.assertTrue(released["success"])
         healthy(self.sm, time.monotonic_ns(), False)
@@ -614,9 +618,9 @@ class TestTakeControl(unittest.TestCase):
         self.acquire()
         self.assertTrue(self.lifecycle.entered.wait(1))
         stopped = self.client.post(
-            "/api/v1/controller/stop", headers=self.headers, json={"request_id": "stop"}
+            "/api/v1/control/stop", headers=self.headers, json={"request_id": "stop"}
         )
-        self.assertEqual(stopped.json()["status"], "completed")
+        self.assertTrue(stopped.json()["success"])
         self.lifecycle.proceed.set()
         end = time.monotonic() + 1
         while self.server.acquisition.pending and time.monotonic() < end:
@@ -632,6 +636,7 @@ class TestTakeControl(unittest.TestCase):
             "/api/v1/control/release",
             headers=self.headers,
             json={
+                "protocol_version": "3.0.0",
                 "request_id": "release",
                 "operation_id": op["operation_id"],
                 "operation_token": "wrong",
@@ -642,6 +647,7 @@ class TestTakeControl(unittest.TestCase):
             "/api/v1/control/release",
             headers=self.headers,
             json={
+                "protocol_version": "3.0.0",
                 "request_id": "release",
                 "operation_id": op["operation_id"],
                 "operation_token": op["operation_token"],
@@ -703,6 +709,7 @@ class TestTakeControl(unittest.TestCase):
                             "/api/v1/control/release",
                             headers=self.headers,
                             json={
+                                "protocol_version": "3.0.0",
                                 "request_id": "release",
                                 "operation_id": op["operation_id"],
                                 "operation_token": op["operation_token"],
@@ -723,12 +730,9 @@ class TestTakeControl(unittest.TestCase):
                             "cancelled"
                         ]
                     )
-                    stopped = self.client.post(
-                        "/api/v1/controller/stop",
-                        headers=self.headers,
-                        json={"request_id": "controller-stop"},
-                    ).json()
-                    self.assertEqual(stopped["status"], "completed")
+                    self.app.state.operator_relay.cancel_all_setups()
+                    lc_ok, _, _ = self.app.state.lifecycle_client.stop_controller()
+                    self.assertTrue(lc_ok)
                     self.assertEqual(state[0], "inactive")
                     proceed.set()
                     deadline = time.monotonic() + 2
@@ -763,12 +767,14 @@ class TestTakeControl(unittest.TestCase):
                         "/api/v1/control/release",
                         headers=self.headers,
                         json={
+                            "protocol_version": "3.0.0",
                             "request_id": "release",
                             "operation_id": op["operation_id"],
                             "operation_token": op["operation_token"],
                         },
                     ).json()
-                    self.assertTrue(result["success"])
+                    self.assertFalse(result["success"])
+                    self.assertEqual(result["error"], "CONTROLLER_UNAVAILABLE")
                 self.assertIsNone(self.app.state.operator_relay._owner_client)
                 self.server = OperatorIpcServer(
                     self.sm, self.path, [os.getuid()], lifecycle_client=self.lifecycle

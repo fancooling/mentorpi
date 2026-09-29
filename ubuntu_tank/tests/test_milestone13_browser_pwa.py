@@ -211,6 +211,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.service_active = True
         cls.start_delay = 0
         cls.start_fail = False
+        cls.stop_fail = False
 
         def _mock_systemctl(args):
             cmd = args[0]
@@ -227,6 +228,8 @@ class TestRealBrowserInteractions(unittest.TestCase):
                 cls.service_active = True
                 return 0, "", ""
             elif cmd == "stop":
+                if cls.stop_fail:
+                    return 1, "active", "Injected shutdown failure"
                 cls.service_active = False
                 return 0, "", ""
             return -1, "", "unknown command"
@@ -260,6 +263,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             cls.service_active = True
             cls.start_delay = 0
             cls.start_fail = False
+            cls.stop_fail = False
             cls.guard_failure = False
             now_ns = time.monotonic_ns()
             with cls.sm._lock:
@@ -284,6 +288,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             cls.service_active = data.get("active", cls.service_active)
             cls.start_delay = data.get("delay", 0)
             cls.start_fail = data.get("fail", False)
+            cls.stop_fail = data.get("stop_fail", False)
             cls.guard_failure = data.get("guard_failure", False)
             return {"configured": True}
 
@@ -321,7 +326,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.tmp_dir.cleanup()
 
     def test_playwright_browser_control_suite(self):
-        """Exercise protocol-2 setup, driving, recovery and fault handling in Chrome."""
+        """Exercise protocol-3 setup, driving, recovery and fault handling in Chrome."""
         env = os.environ.copy()
         env["TEST_BASE_URL"] = self.base_url
 

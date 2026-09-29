@@ -2,8 +2,8 @@
 import type {
   ControlAcquireRequest,
   ControlAcquireResponse,
-  ControlArmRequest,
-  ControlArmResponse,
+  ControlStartRequest,
+  ControlStartResponse,
   ControlReleaseRequest,
   ControlReleaseResponse,
   ControlStopRequest,
@@ -106,13 +106,6 @@ export class ApiClient {
     return this.request<LogsResponse>(`/api/v1/logs?limit=${lim}`, { method: 'GET' });
   }
 
-  async stopController(requestId: string): Promise<OperationStatusResponse> {
-    return this.request<OperationStatusResponse>('/api/v1/controller/stop', {
-      method: 'POST',
-      body: JSON.stringify({ request_id: requestId, action: 'stop' }),
-    });
-  }
-
   async getOperation(id: string, token?: string): Promise<OperationStatusResponse> {
     return this.request<OperationStatusResponse>(`/api/v1/operations/${encodeURIComponent(id)}${token ? "?operation_token=" + encodeURIComponent(token) : ""}`, {
       method: 'GET',
@@ -133,8 +126,8 @@ export class ApiClient {
     });
   }
 
-  async armControl(req: ControlArmRequest): Promise<ControlArmResponse> {
-    return this.request<ControlArmResponse>('/api/v1/control/arm', {
+  async startControl(req: ControlStartRequest): Promise<ControlStartResponse> {
+    return this.request<ControlStartResponse>('/api/v1/control/start', {
       method: 'POST',
       body: JSON.stringify(req),
     });

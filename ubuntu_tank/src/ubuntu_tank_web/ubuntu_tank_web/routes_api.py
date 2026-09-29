@@ -5,10 +5,9 @@ Implements all endpoints defined in docs/MENTORPI_WEB_CONTROL_DESIGN.md:
   GET  /api/v1/version
   GET  /api/v1/status
   GET  /api/v1/logs
-  POST /api/v1/controller/stop
   POST /api/v1/control/acquire
   POST /api/v1/control/release
-  POST /api/v1/control/arm
+  POST /api/v1/control/start
   POST /api/v1/control/stop
   GET  /api/v1/operations/{id}
 """
@@ -18,19 +17,24 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from ubuntu_tank_protocol.constants import (
+    API_VERSION,
+    PROTOCOL_VERSION,
+    SCHEMA_VERSION,
+    SUPPORTED_PROTOCOL_VERSIONS,
+)
+
 from .models import (
     ControlAcquireRequestModel,
     ControlAcquireResponseModel,
-    ControlArmRequestModel,
-    ControlArmResponseModel,
-    ControllerOperationRequestModel,
     ControlReleaseRequestModel,
     ControlReleaseResponseModel,
+    ControlStartRequestModel,
+    ControlStartResponseModel,
     ControlStopRequestModel,
     ControlStopResponseModel,
     LogsResponseModel,
@@ -67,11 +71,13 @@ async def get_version(request: Request) -> VersionResponseModel:
     relay = request.app.state.operator_relay
     ver_dict = await asyncio.to_thread(relay.get_version)
     return VersionResponseModel(
-        protocol_version=ver_dict.get("protocol_version", "2.0.0"),
-        api_version=ver_dict.get("api_version", "v1"),
-        schema_version=ver_dict.get("schema_version", 2),
+        protocol_version=ver_dict.get("protocol_version", PROTOCOL_VERSION),
+        api_version=ver_dict.get("api_version", API_VERSION),
+        schema_version=ver_dict.get("schema_version", SCHEMA_VERSION),
         release_id=ver_dict.get("release_id", "unknown"),
-        supported_protocols=ver_dict.get("supported_protocols", ["2.0.0"]),
+        supported_protocols=ver_dict.get(
+            "supported_protocols", list(SUPPORTED_PROTOCOL_VERSIONS)
+        ),
     )
 
 
@@ -110,7 +116,14 @@ async def get_status(request: Request) -> StatusResponseModel:
         freshness=st.get("freshness", {}),
         last_fault=st.get("last_fault"),
         release_id=st.get("release_id", "unknown"),
-        protocol_version=st.get("protocol_version", "1.0.0"),
+        protocol_version=st.get("protocol_version", PROTOCOL_VERSION),
+        status_revision=st.get("status_revision", 0),
+        session_id=st.get("session_id"),
+        control_idle_timeout_sec=st.get("control_idle_timeout_sec"),
+        remaining_inactivity_sec=st.get("remaining_inactivity_sec"),
+        release_progress=st.get("release_progress"),
+        last_release_reason=st.get("last_release_reason"),
+        last_released_session_id=st.get("last_released_session_id"),
     )
 
 
@@ -137,38 +150,6 @@ async def get_logs(
         total_lines=total_lines,
         total_bytes=total_bytes,
     )
-
-
-@router.post(
-    "/controller/stop",
-    response_model=OperationStatusResponseModel,
-    summary="Stop the motion controller systemd service",
-)
-async def controller_stop(
-    req: ControllerOperationRequestModel, request: Request
-) -> OperationStatusResponseModel:
-    """Invalidate driving and stop mentorpi-tank.service."""
-    relay = request.app.state.operator_relay
-    lifecycle = request.app.state.lifecycle_client
-
-    # Cancel late startup before requesting Stop; fallback remains available.
-    try:
-        await asyncio.to_thread(relay.cancel_all_setups)
-    except (OSError, RuntimeError, ValueError):
-        logger.warning("Operator unavailable while cancelling setup")
-    # Invalidate driving first
-    await asyncio.to_thread(relay.stop, request_id=req.request_id)
-
-    op_id = f"op-{uuid.uuid4().hex[:8]}"
-    success, _state, err_msg = await asyncio.to_thread(lifecycle.stop_controller)
-    op_status = OperationStatusResponseModel(
-        operation_id=op_id,
-        status="completed" if success else "failed",
-        error=err_msg if not success else None,
-    )
-    await asyncio.to_thread(relay.close)
-    _store_operation(op_status)
-    return op_status
 
 
 @router.post(
@@ -207,52 +188,48 @@ async def control_acquire(
 @router.post(
     "/control/release",
     response_model=ControlReleaseResponseModel,
-    summary="Relinquish operator control authority",
+    summary="Relinquish operator control authority and shut down controller",
 )
 async def control_release(
     req: ControlReleaseRequestModel, request: Request
 ) -> ControlReleaseResponseModel:
-    """Relinquish operator control authority and disarm."""
+    """Relinquish operator control authority, zero motion, shut down controller, and release."""
     relay = request.app.state.operator_relay
-    if req.operation_id is not None:
-        ok = await asyncio.to_thread(
-            relay.cancel_setup, req.operation_id, req.operation_token or ""
-        )
-        return ControlReleaseResponseModel(
-            success=ok, error=None if ok else "NOT_OWNER"
-        )
-    if req.epoch is None:
-        raise HTTPException(
-            status_code=422, detail="epoch or private operation credentials required"
-        )
-    success, err, msg = await asyncio.to_thread(
+    result = await asyncio.to_thread(
         relay.release,
-        epoch=req.epoch,
         request_id=req.request_id,
+        epoch=req.epoch,
+        operation_id=req.operation_id,
+        operation_token=req.operation_token,
+        operator_id=req.operator_id,
     )
     return ControlReleaseResponseModel(
-        success=success,
-        error=err,
-        message=msg,
+        status=result.get("status", "completed" if result.get("success") else "failed"),
+        operation_id=result.get("operation_id"),
+        operation_token=result.get("operation_token") or req.operation_token,
+        success=result.get("success", False),
+        error=result.get("error"),
+        message=result.get("message"),
     )
 
 
 @router.post(
-    "/control/arm",
-    response_model=ControlArmResponseModel,
-    summary="Arm the chassis controller",
+    "/control/start",
+    response_model=ControlStartResponseModel,
+    summary="Explicitly arm the chassis controller under owner authority",
 )
-async def control_arm(
-    req: ControlArmRequestModel, request: Request
-) -> ControlArmResponseModel:
-    """Arm the robot chassis; requires explicit ownership and healthy preflight."""
+async def control_start(
+    req: ControlStartRequestModel, request: Request
+) -> ControlStartResponseModel:
+    """Start/arm the chassis controller; requires explicit ownership and healthy preflight."""
     relay = request.app.state.operator_relay
     success, err, msg = await asyncio.to_thread(
-        relay.arm,
+        relay.start,
         epoch=req.epoch,
         request_id=req.request_id,
+        operator_id=req.operator_id,
     )
-    return ControlArmResponseModel(
+    return ControlStartResponseModel(
         success=success,
         error=err,
         message=msg,
@@ -271,7 +248,10 @@ async def control_stop(
     relay = request.app.state.operator_relay
     lifecycle = request.app.state.lifecycle_client
     relay_ok, _ = await asyncio.to_thread(
-        relay.stop, request_id=req.request_id, epoch=req.epoch
+        relay.stop,
+        request_id=req.request_id,
+        epoch=req.epoch,
+        operator_id=req.operator_id,
     )
     disarmed = False
     if relay_ok:
@@ -297,15 +277,25 @@ async def get_operation(
     id: str, request: Request, operation_token: str | None = None
 ) -> OperationStatusResponseModel:
     """Query status of a retained operation by its ID."""
-    if operation_token is not None:
-        result = await asyncio.to_thread(
-            request.app.state.operator_relay.acquisition_result, id, operation_token
-        )
-        return OperationStatusResponseModel(**result)
-    op = _operations.get(id)
-    if op is None:
+    result = await asyncio.to_thread(
+        request.app.state.operator_relay.operation_result, id, operation_token
+    )
+    if not result.get("success") and result.get("error") == "NOT_OWNER":
+        op = _operations.get(id)
+        if op is not None:
+            return op
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Operation '{id}' not found",
         )
-    return op
+    allowed_fields = {
+        "epoch",
+        "bind_token",
+        "success",
+        "message",
+        "operation_id",
+        "status",
+        "error",
+    }
+    filtered = {k: v for k, v in result.items() if k in allowed_fields}
+    return OperationStatusResponseModel(**filtered)

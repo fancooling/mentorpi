@@ -12,6 +12,7 @@ from typing import Any
 from .constants import (
     API_VERSION,
     BATTERY_FRESHNESS_MAX_AGE_SEC,
+    DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     GUARD_STATE_FRESHNESS_MAX_AGE_SEC,
     MAX_LOG_LINES_LIMIT,
     MIN_SAFE_BATTERY_VOLTAGE,
@@ -92,6 +93,13 @@ class StatusResponse:
     freshness: dict[str, float | None]
     last_fault: str | None
     release_id: str
+    status_revision: int = 0
+    session_id: str | None = None
+    control_idle_timeout_sec: float = DEFAULT_CONTROL_IDLE_TIMEOUT_SEC
+    remaining_inactivity_sec: float | None = None
+    release_progress: str | None = None
+    last_release_reason: str | None = None
+    last_released_session_id: str | None = None
     input_generation: int = 0
     pause_reason: str | None = None
     recovery_ready: bool = False
@@ -106,6 +114,13 @@ class StatusResponse:
             "current_epoch": self.current_epoch,
             "guard_armed": self.guard_armed,
             "disarm_pending": self.disarm_pending,
+            "status_revision": self.status_revision,
+            "session_id": self.session_id,
+            "control_idle_timeout_sec": self.control_idle_timeout_sec,
+            "remaining_inactivity_sec": self.remaining_inactivity_sec,
+            "release_progress": self.release_progress,
+            "last_release_reason": self.last_release_reason,
+            "last_released_session_id": self.last_released_session_id,
             "input_generation": self.input_generation,
             "pause_reason": self.pause_reason,
             "recovery_ready": self.recovery_ready,
@@ -234,22 +249,51 @@ class ControlReleaseRequest:
     """Request to relinquish operator authority."""
 
     request_id: str
-    epoch: int
+    protocol_version: str = PROTOCOL_VERSION
+    epoch: int | None = None
+    operation_id: str | None = None
+    operation_token: str | None = None
+    operator_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlReleaseRequest":
-        _check_no_extra_fields(data, {"request_id", "epoch"}, "ControlReleaseRequest")
+        _check_no_extra_fields(
+            data,
+            {
+                "request_id",
+                "epoch",
+                "operation_id",
+                "operation_token",
+                "operator_id",
+                "protocol_version",
+            },
+            "ControlReleaseRequest",
+        )
         req_id = data.get("request_id")
         epoch = data.get("epoch")
+        proto = data.get("protocol_version", PROTOCOL_VERSION)
         if not isinstance(req_id, str) or not req_id:
             raise ValueError(
                 "Validation error in ControlReleaseRequest: request_id must be non-empty string"
             )
-        if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 1:
+        if epoch is not None and (
+            not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 1
+        ):
             raise ValueError(
                 "Validation error in ControlReleaseRequest: epoch must be positive integer"
             )
-        return cls(request_id=req_id, epoch=epoch)
+        if proto != PROTOCOL_VERSION:
+            raise ValueError(
+                f"Validation error in ControlReleaseRequest: protocol_version must be {PROTOCOL_VERSION}"
+            )
+        return cls(
+            request_id=req_id,
+            protocol_version=proto,
+            epoch=epoch,
+            operation_id=data.get("operation_id"),
+            operation_token=data.get("operation_token"),
+            operator_id=data.get("operator_id"),
+        )
 
 
 @dataclass(frozen=True)
@@ -257,12 +301,69 @@ class ControlReleaseResponse:
     """Control release result."""
 
     success: bool
+    status: str = "completed"
+    operation_id: str | None = None
+    operation_token: str | None = None
     error: WebControlErrorCode | None = None
+    message: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
+            "status": self.status,
+            "operation_id": self.operation_id,
+            "operation_token": self.operation_token,
             "error": self.error.value if self.error else None,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class ControlStartRequest:
+    """Request to explicitly arm the robot controller chassis."""
+
+    request_id: str
+    epoch: int
+    protocol_version: str = PROTOCOL_VERSION
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ControlStartRequest":
+        _check_no_extra_fields(
+            data, {"request_id", "epoch", "protocol_version"}, "ControlStartRequest"
+        )
+        req_id = data.get("request_id")
+        epoch = data.get("epoch")
+        proto = data.get("protocol_version", PROTOCOL_VERSION)
+        if not isinstance(req_id, str) or not req_id:
+            raise ValueError(
+                "Validation error in ControlStartRequest: request_id must be non-empty string"
+            )
+        if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 1:
+            raise ValueError(
+                "Validation error in ControlStartRequest: epoch must be positive integer"
+            )
+        if proto != PROTOCOL_VERSION:
+            raise ValueError(
+                f"Validation error in ControlStartRequest: protocol_version must be {PROTOCOL_VERSION}"
+            )
+        return cls(request_id=req_id, epoch=epoch, protocol_version=proto)
+
+
+@dataclass(frozen=True)
+class ControlStartResponse:
+    """Control start/arming confirmation."""
+
+    success: bool
+    status: str = "completed"
+    error: WebControlErrorCode | None = None
+    message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "status": self.status,
+            "error": self.error.value if self.error else None,
+            "message": self.message,
         }
 
 
@@ -312,10 +413,13 @@ class ControlStopRequest:
 
     request_id: str
     epoch: int | None = None
+    operator_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ControlStopRequest":
-        _check_no_extra_fields(data, {"request_id", "epoch"}, "ControlStopRequest")
+        _check_no_extra_fields(
+            data, {"request_id", "epoch", "operator_id"}, "ControlStopRequest"
+        )
         req_id = data.get("request_id")
         if not isinstance(req_id, str) or not req_id:
             raise ValueError(
@@ -328,7 +432,12 @@ class ControlStopRequest:
             raise ValueError(
                 "Validation error in ControlStopRequest: epoch must be integer if provided"
             )
-        return cls(request_id=req_id, epoch=epoch)
+        operator_id = data.get("operator_id")
+        if operator_id is not None and (
+            not isinstance(operator_id, str) or not operator_id
+        ):
+            raise ValueError("operator_id must be non-empty when provided")
+        return cls(request_id=req_id, epoch=epoch, operator_id=operator_id)
 
 
 @dataclass(frozen=True)

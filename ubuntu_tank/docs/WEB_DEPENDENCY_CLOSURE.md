@@ -153,7 +153,7 @@ To guarantee complete deadlock freedom and ensure emergency stop availability, a
 ## M14.3 control contract
 
 `POST /api/v1/control/acquire` accepts `request_id`, `operator_id`, and
-`protocol_version: "2.0.0"` (optional speed caps remain ceilings). It returns
+`protocol_version: "3.0.0"` (optional speed caps remain ceilings). It returns
 `operation_id`, private `operation_token`, and pending/completed/failed status.
 The runtime starts the controller only if needed, waits for fresh readiness and
 acquires the sole operator slot. It does not arm. Poll
@@ -161,14 +161,19 @@ acquires the sole operator slot. It does not arm. Poll
 bind the WebSocket within five seconds of the runtime grant. Public status and
 logs contain no bind credentials. Do not share operation URLs or tokens.
 
-The public `controller/start` endpoint is removed. `control/release` accepts
-either the current epoch or the private operation ID/token to cancel setup.
-`controller/stop` cancels setup and stops the controller, including a late startup
-completion. Motion Stop cancels pending setup and disarms; a bound owner remains
-assigned. Repeated acquisition request IDs identify the same operation.
-
-Arm accepts only `request_id` and `epoch`; the `tracks_raised` affirmation field
-is removed. Hardware acceptance tools retain their own explicit acknowledgment.
+Public `controller/start`, `controller/stop`, and `control/arm` are removed.
+`control/start` accepts protocol 3, request ID and epoch, and explicitly arms
+without commanding movement. `control/stop` zeroes/disarms while retaining a
+bound owner and the running controller. Optional `operator_id` plus the current
+epoch attributes an owner Stop to inactivity accounting; missing/mismatched
+identity never blocks Stop and never renews another owner's deadline. `control/release` accepts protocol 3 and
+the epoch or private setup operation ID/token; it cancels setup or stops/disarms,
+shuts down the controller and relinquishes ownership. Poll pending operations
+until completion. Failed shutdown keeps driving blocked and preserves release
+retry authority; retry with a new request ID. If that connection is lost, a
+fresh Take control first retries shutdown and confirms inactive before starting
+or acquiring again. Stop remains responsive while lifecycle operations wait. No tracks-raised affirmation field is accepted; hardware
+acceptance tools retain their own explicit acknowledgment.
 
 Each challenge/intent/acknowledgment carries `input_generation`. Expiry advances
 it and clears queued challenges without changing the ownership epoch. Recovery
@@ -179,7 +184,7 @@ acknowledgment and a new physical press before sending a direction.
 
 Terminal and bench clients do not infer physical release after a stall. They
 explicitly stop and require a new Arm instead of recovering from cached input.
-The M14.4 browser targets protocol 2. Take control polls the private operation
+The browser API adapter now targets protocol 3; the M14.6 control layout is pending. Take control polls the private operation
 and waits for socket binding before enabling explicit Arm. Setup cancellation
 invalidates late responses; Stop remains available during startup and recovery.
 The tracks-raised checkbox and separate Start controller button are removed.
@@ -188,7 +193,7 @@ Input pause clears direction while retaining actual held-key/pointer tracking.
 Release all controls, acknowledge fresh neutral, then press again. Only neutral
 recovery responses are retried after loss; buffered motion is never replayed.
 Focus loss, page suspension, disconnect and hard faults still disarm. Cached
-protocol-1 clients remain blocked. Browser tests cover the full migrated driving
+protocol-1 and protocol-2 clients remain blocked. Browser tests cover the full migrated driving
 suite and recovery; deployment and physical acceptance remain M15.
 
 Both containers read `/etc/opt/ubuntu_tank/web/web.yaml`; the runtime receives a
@@ -200,6 +205,15 @@ stage/deploy the paired release through the host CLI so configuration hashes
 are revalidated. Deployment preserves valid existing overrides; changing the
 shipped default does not overwrite a retained 150 ms value. Restart is required;
 no browser request or hot reload changes an active deadline.
+
+`control_idle_timeout_sec` sets the runtime ownership inactivity timeout
+(default 300 seconds; finite, greater than zero and at most 3600 seconds).
+Accepted owner actions renew it; status polls and background neutral/challenge
+traffic do not. Expiry starts the same stopped-controller release and prevents
+further arming or driving. Status exposes the effective timeout, remaining time,
+session identity, release progress and reason. After completed expiry a fresh
+Take control can acquire again. Configure and restart through the same stopped
+release workflow described above; no hot reload.
 
 The runtime startup loader accepts `UBUNTU_TANK_WEB_CONFIG` for an explicit
 configuration path; missing or invalid files fail before ROS initialization.

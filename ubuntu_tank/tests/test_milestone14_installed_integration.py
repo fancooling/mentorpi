@@ -356,10 +356,34 @@ class TestCachedClientRecoveryAndIncompatibleProtocol(unittest.TestCase):
         )
         client = TestClient(app)
 
-        # Arm attempt without valid ownership must fail closed
-        res = client.post(
+        # Removed /api/v1/control/arm endpoint returns 404/405
+        res_removed = client.post(
             "/api/v1/control/arm",
             json={"epoch": 999, "request_id": "stale-arm"},
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertIn(res_removed.status_code, (404, 405))
+
+        # Start attempt with incompatible protocol version is rejected with 422
+        res_old = client.post(
+            "/api/v1/control/start",
+            json={
+                "protocol_version": "2.0.0",
+                "epoch": 999,
+                "request_id": "stale-start",
+            },
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res_old.status_code, 422)
+
+        # Start attempt without valid ownership must fail closed
+        res = client.post(
+            "/api/v1/control/start",
+            json={
+                "protocol_version": "3.0.0",
+                "epoch": 999,
+                "request_id": "stale-start",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res.status_code, 200)
@@ -378,7 +402,7 @@ class TestCachedClientRecoveryAndIncompatibleProtocol(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("protocol_version", data)
-        self.assertEqual(data["protocol_version"], "2.0.0")
+        self.assertEqual(data["protocol_version"], "3.0.0")
 
 
 if __name__ == "__main__":

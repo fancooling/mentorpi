@@ -106,6 +106,7 @@ def main(args: list[str] | None = None) -> int:
         or os.environ.get("UBUNTU_TANK_OPERATOR_SOCKET", config.operator_socket_path),
         lease_duration_sec=config.lease_duration_sec,
         challenge_interval_sec=config.challenge_interval_sec,
+        control_idle_timeout_sec=config.control_idle_timeout_sec,
         linear_speed_cap=config.linear_speed_cap,
         angular_speed_cap=config.angular_speed_cap,
         lifecycle_client=LifecycleClient(

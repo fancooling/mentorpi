@@ -356,11 +356,11 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          protocol_version: '3.0.0',
+          protocol_version: '4.0.0',
           api_version: 'v2',
           schema_version: 2,
           release_id: 'future-release',
-          supported_protocols: ['3.0.0'],
+          supported_protocols: ['4.0.0'],
         }),
       });
     });

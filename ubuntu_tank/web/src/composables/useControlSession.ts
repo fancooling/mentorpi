@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { apiClient } from '../services/apiClient';
 import { wsControlClient } from '../services/wsClient';
+import type { ControlReleaseResponse } from '../types/api';
 import type { OperationFeedback } from '../types/ui';
 const uuid = () => crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random()}`;
 /** Coordinate one tab's setup/Arm commands; stale asynchronous results never restore control. */
@@ -33,9 +34,26 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             currentEpoch.value = null;
         }
     });
+    async function waitForRelease(result: Omit<ControlReleaseResponse, 'error'> & { error?: string | null }) {
+        const deadline = performance.now() + 22000;
+        while (result.status === 'pending' && result.operation_id && performance.now() < deadline) {
+            const status = await apiClient.getOperation(result.operation_id, result.operation_token ?? undefined);
+            result = { ...result, ...status, success: status.success ?? false };
+            if (result.status === 'pending')
+                await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!result.success || result.status !== 'completed')
+            throw new Error(result.message || result.error || 'Controller shutdown unconfirmed; retry Release control');
+    }
     async function cancelOperation(operation: typeof setup) {
-        if (operation)
-            await apiClient.releaseControl({ request_id: uuid(), ...operation }).catch(() => { });
+        if (!operation) return true;
+        try {
+            await waitForRelease(await apiClient.releaseControl({ protocol_version: '3.0.0', request_id: uuid(), ...operation }));
+            return true;
+        } catch {
+            // Cleanup must not overwrite the original setup failure or timeout.
+            return false;
+        }
     }
     function invalidateSetup() {
         generation++;
@@ -44,7 +62,12 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         if (isOperating.value && !isBound.value)
             wsControlClient.disconnect();
         isOperating.value = false;
-        return cancelOperation(previous);
+        const cancellationGeneration = generation;
+        return cancelOperation(previous).then(ok => {
+            if (!ok && generation === cancellationGeneration && !isBound.value)
+                setup = previous;
+            return ok;
+        });
     }
     async function takeControl() {
         if (isOperating.value || isBound.value || !isProtocolCompatible())
@@ -54,7 +77,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         setFeedback('info', 'Starting controller and taking control…');
         let operation: typeof setup = null;
         try {
-            const result = await apiClient.acquireControl({ request_id: uuid(), operator_id: operatorId, protocol_version: '2.0.0' });
+            const result = await apiClient.acquireControl({ request_id: uuid(), operator_id: operatorId, protocol_version: '3.0.0' });
             if (!result.success || !result.operation_id || !result.operation_token)
                 throw new Error(result.message || result.error || 'Control acquisition failed');
             operation = { operation_id: result.operation_id, operation_token: result.operation_token };
@@ -116,7 +139,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         const request_id = uuid();
         wsControlClient.sendStop(request_id, currentEpoch.value);
         try {
-            const result = await apiClient.stopControl({ request_id, epoch: currentEpoch.value });
+            const result = await apiClient.stopControl({ request_id, epoch: currentEpoch.value, operator_id: operatorId });
             await cancellation;
             await pollStatus();
             return result.success;
@@ -126,21 +149,33 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         }
     }
     async function releaseControl() {
-        await invalidateSetup();
+        if (currentEpoch.value === null && setup === null && !isOperating.value) {
+            setFeedback('error', 'This tab does not hold control');
+            return false;
+        }
+        const cancellation = invalidateSetup();
+        isOperating.value = true;
         try {
-            if (currentEpoch.value !== null)
-                await apiClient.releaseControl({ request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
-            setFeedback('info', 'Control released');
+            if (!await cancellation) {
+                setFeedback('error', 'Controller shutdown unconfirmed; retry Release control');
+                return false;
+            }
+            if (currentEpoch.value !== null) {
+                await waitForRelease(await apiClient.releaseControl({ protocol_version: '3.0.0', request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value }));
+            }
+            wsControlClient.disconnect();
+            isBound.value = false;
+            currentEpoch.value = null;
+            setFeedback('info', 'Control released; controller stopped');
             return true;
         }
         catch (error: any) {
+            // Retain the bound session so a transient shutdown failure can be retried.
             setFeedback('error', error.message || 'Release failed');
             return false;
         }
         finally {
-            wsControlClient.disconnect();
-            isBound.value = false;
-            currentEpoch.value = null;
+            isOperating.value = false;
             await pollStatus();
         }
     }
@@ -150,7 +185,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         const transaction = generation;
         isOperating.value = true;
         try {
-            const result = await apiClient.armControl({ request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
+            const result = await apiClient.startControl({ protocol_version: '3.0.0', request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
             if (transaction !== generation)
                 return false;
             setFeedback(result.success ? 'success' : 'error', result.success ? 'Chassis armed. Ready to drive.' : result.message || 'Arming failed');
@@ -167,23 +202,9 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
                 isOperating.value = false;
         }
     }
+    // Transitional UI alias until M14.6 removes the redundant button.
     async function stopController() {
-        void emergencyStop();
-        try {
-            const result = await apiClient.stopController(uuid());
-            setFeedback(result.status === 'completed' ? 'info' : 'error', result.status === 'completed' ? 'Controller stopped' : result.error || 'Controller stop failed');
-            return result.status === 'completed';
-        }
-        catch (error: any) {
-            setFeedback('error', error.message || 'Controller stop failed');
-            return false;
-        }
-        finally {
-            wsControlClient.disconnect();
-            isBound.value = false;
-            currentEpoch.value = null;
-            await pollStatus();
-        }
+        return releaseControl();
     }
     wsControlClient.setHandlers({ onDisconnect: () => {
             isBound.value = false;

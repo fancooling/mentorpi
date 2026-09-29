@@ -9,10 +9,10 @@ docs/MENTORPI_WEB_CONTROL_DESIGN.md.
 from typing import Final
 
 # Protocol and schema identity
-PROTOCOL_VERSION: Final[str] = "2.0.0"
+PROTOCOL_VERSION: Final[str] = "3.0.0"
 API_VERSION: Final[str] = "v1"
-SCHEMA_VERSION: Final[int] = 2
-SUPPORTED_PROTOCOL_VERSIONS: Final[list[str]] = ["2.0.0"]
+SCHEMA_VERSION: Final[int] = 3
+SUPPORTED_PROTOCOL_VERSIONS: Final[list[str]] = ["3.0.0"]
 
 # Monotonic timing and lease parameters (seconds)
 LEASE_DURATION_SEC: Final[float] = (
@@ -22,6 +22,9 @@ CHALLENGE_INTERVAL_SEC: Final[float] = 0.050  # 50 ms challenge issue interval
 LEASE_CHECK_INTERVAL_SEC: Final[float] = 0.020  # 20 ms check tick interval
 MAX_CONTINUOUS_HOLD_SEC: Final[float] = 5.0  # 5.0 s continuous hold cap
 IDLE_TIMEOUT_SEC: Final[float] = 30.0  # 30.0 s idle timeout while armed
+DEFAULT_CONTROL_IDLE_TIMEOUT_SEC: Final[float] = (
+    300.0  # 300.0 s ownership inactivity timeout
+)
 FIRST_COMMAND_DEADLINE_SEC: Final[float] = (
     0.250  # 250 ms from arming to verified zero delivery
 )
@@ -35,6 +38,9 @@ CHALLENGE_INTERVAL_NS: Final[int] = int(CHALLENGE_INTERVAL_SEC * 1e9)
 LEASE_CHECK_INTERVAL_NS: Final[int] = int(LEASE_CHECK_INTERVAL_SEC * 1e9)
 MAX_CONTINUOUS_HOLD_NS: Final[int] = int(MAX_CONTINUOUS_HOLD_SEC * 1e9)
 IDLE_TIMEOUT_NS: Final[int] = int(IDLE_TIMEOUT_SEC * 1e9)
+DEFAULT_CONTROL_IDLE_TIMEOUT_NS: Final[int] = int(
+    DEFAULT_CONTROL_IDLE_TIMEOUT_SEC * 1e9
+)
 FIRST_COMMAND_DEADLINE_NS: Final[int] = int(FIRST_COMMAND_DEADLINE_SEC * 1e9)
 TARGET_ZERO_SUBMISSION_DEADLINE_NS: Final[int] = int(
     TARGET_ZERO_SUBMISSION_DEADLINE_SEC * 1e9

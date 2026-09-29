@@ -63,3 +63,12 @@ class ControllerServiceState(str, Enum):
     INACTIVE = "inactive"
     FAILED = "failed"
     UNKNOWN = "unknown"
+
+
+class ReleaseReason(str, Enum):
+    """Reasons recorded when operator authority is released."""
+
+    EXPLICIT_RELEASE = "EXPLICIT_RELEASE"
+    CONTROL_IDLE_TIMEOUT = "CONTROL_IDLE_TIMEOUT"
+    DISCONNECT = "DISCONNECT"
+    SHUTDOWN_FAILED = "SHUTDOWN_FAILED"

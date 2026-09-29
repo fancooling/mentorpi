@@ -17,7 +17,7 @@ test('combined Take control starts once without arming; Stop works during setup'
             acquisitions++;
         if (req.url().endsWith('/controller/start'))
             starts++;
-        if (req.url().endsWith('/control/arm'))
+        if (req.url().endsWith('/control/start'))
             arms++;
     });
     await page.goto('/');
@@ -108,7 +108,7 @@ for (const method of ['keyboard', 'touch']) {
     test(`repeated 1.1–1.5s gaps preserve Arm and require release/new ${method} press`, async ({ page }) => {
         let drop = false, arms = 0;
         const delivered: string[] = [];
-        page.on('request', req => { if (req.url().endsWith('/control/arm'))
+        page.on('request', req => { if (req.url().endsWith('/control/start'))
             arms++; });
         await page.routeWebSocket('**/api/v1/control', socket => {
             const server = socket.connectToServer();
@@ -311,4 +311,37 @@ test('delayed server frames cannot revive buffered motion after expiry', async (
     await expect(forward(page)).toBeEnabled();
     expect(sent.slice(boundary).every(direction => direction === 'neutral')).toBe(true);
     expect((await status(page)).guard_armed).toBe(true);
+});
+
+test('protocol-3 release failure preserves the bound session for retry', async ({ page, request }) => {
+    const retired: string[] = [];
+    page.on('request', req => {
+        if (req.url().endsWith('/control/arm') || req.url().endsWith('/controller/stop'))
+            retired.push(req.url());
+    });
+    await arm(page);
+    await request.post('/api/v1/test/lifecycle', { data: { stop_fail: true } });
+    await page.getByRole('button', { name: 'Release Control Authority' }).click();
+    await expect(page.locator('.feedback-error')).toBeVisible();
+    expect((await status(page)).release_progress).toBe('shutdown_failed');
+    await expect(page.locator('.owner-self')).toBeVisible();
+    await request.post('/api/v1/test/lifecycle', { data: { stop_fail: false } });
+    await page.getByRole('button', { name: 'Release Control Authority' }).click();
+    await expect.poll(async () => (await status(page)).service_state).toBe('inactive');
+    await expect(page.locator('.owner-none')).toBeVisible();
+    await page.getByRole('button', { name: 'Take Control Authority' }).click();
+    await expect(page.locator('.btn-arm')).toBeEnabled();
+    expect(retired).toEqual([]);
+});
+
+test('canceling slow setup reports shutdown only after completion', async ({ page, request }) => {
+    await request.post('/api/v1/test/lifecycle', { data: { active: false, delay: 1.5 } });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Take Control Authority' }).click();
+    await expect.poll(async () => (await status(page)).service_state).toBe('inactive');
+    await page.getByRole('button', { name: 'Stop Controller Service' }).click();
+    await expect(page.locator('.feedback-banner')).not.toContainText('controller stopped');
+    await expect(page.locator('.feedback-banner')).toContainText('controller stopped', { timeout: 8000 });
+    expect((await status(page)).service_state).toBe('inactive');
+    expect((await status(page)).active_owner).toBeNull();
 });

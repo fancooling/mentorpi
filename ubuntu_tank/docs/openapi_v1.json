@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MentorPi Pi 5 Web Control API",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "description": "Guarded web control, teleoperation, and lifecycle monitoring interface for MentorPi Tank on native Ubuntu 26.04 / ROS 2 Lyrical."
   },
   "servers": [
@@ -75,33 +75,6 @@
         }
       }
     },
-    "/controller/stop": {
-      "post": {
-        "summary": "Stop controller systemd service (invalidates driving first)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ControllerOperationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Operation result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OperationStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/control/acquire": {
       "post": {
         "summary": "Start if needed and acquire exclusive control asynchronously",
@@ -131,7 +104,7 @@
     },
     "/control/release": {
       "post": {
-        "summary": "Relinquish operator ownership",
+        "summary": "Relinquish operator authority, stop controller, and release ownership",
         "requestBody": {
           "required": true,
           "content": {
@@ -156,7 +129,7 @@
         }
       }
     },
-    "/control/arm": {
+    "/control/start": {
       "post": {
         "summary": "Explicitly arm after ownership and healthy preflight",
         "requestBody": {
@@ -164,18 +137,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ControlArmRequest"
+                "$ref": "#/components/schemas/ControlStartRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Arming result",
+            "description": "Start result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ControlArmResponse"
+                  "$ref": "#/components/schemas/ControlStartResponse"
                 }
               }
             }
@@ -347,7 +320,8 @@
           "limits",
           "freshness",
           "release_id",
-          "protocol_version"
+          "protocol_version",
+          "status_revision"
         ],
         "properties": {
           "service_state": {
@@ -369,6 +343,16 @@
             "nullable": true
           },
           "disarm_pending": {
+            "type": "boolean"
+          },
+          "input_generation": {
+            "type": "integer"
+          },
+          "pause_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "recovery_ready": {
             "type": "boolean"
           },
           "battery_voltage": {
@@ -404,15 +388,32 @@
           "protocol_version": {
             "type": "string"
           },
-          "input_generation": {
+          "status_revision": {
             "type": "integer"
           },
-          "pause_reason": {
+          "session_id": {
             "type": "string",
             "nullable": true
           },
-          "recovery_ready": {
-            "type": "boolean"
+          "control_idle_timeout_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "remaining_inactivity_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "release_progress": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_release_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_released_session_id": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -438,25 +439,6 @@
           }
         }
       },
-      "ControllerOperationRequest": {
-        "type": "object",
-        "required": [
-          "request_id",
-          "action"
-        ],
-        "properties": {
-          "request_id": {
-            "type": "string"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "start",
-              "stop"
-            ]
-          }
-        }
-      },
       "OperationStatusResponse": {
         "type": "object",
         "required": [
@@ -464,21 +446,6 @@
           "status"
         ],
         "properties": {
-          "operation_id": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "completed",
-              "failed"
-            ]
-          },
-          "error": {
-            "type": "string",
-            "nullable": true
-          },
           "epoch": {
             "type": "integer",
             "nullable": true
@@ -493,28 +460,51 @@
           "message": {
             "type": "string",
             "nullable": true
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
       "ControlAcquireRequest": {
         "type": "object",
         "required": [
+          "protocol_version",
           "request_id",
-          "operator_id",
-          "protocol_version"
+          "operator_id"
         ],
         "properties": {
+          "protocol_version": {
+            "type": "string",
+            "enum": [
+              "3.0.0"
+            ]
+          },
           "request_id": {
             "type": "string"
           },
           "operator_id": {
             "type": "string"
           },
-          "protocol_version": {
-            "type": "string",
-            "enum": [
-              "2.0.0"
-            ]
+          "max_linear_speed": {
+            "type": "number",
+            "nullable": true
+          },
+          "max_angular_speed": {
+            "type": "number",
+            "nullable": true
           }
         }
       },
@@ -524,6 +514,22 @@
           "success"
         ],
         "properties": {
+          "operation_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "operation_token": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
           "success": {
             "type": "boolean"
           },
@@ -546,38 +552,40 @@
           "message": {
             "type": "string",
             "nullable": true
-          },
-          "operation_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "operation_token": {
-            "type": "string",
-            "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "nullable": true
           }
         }
       },
       "ControlReleaseRequest": {
         "type": "object",
         "required": [
+          "protocol_version",
           "request_id"
         ],
         "properties": {
+          "protocol_version": {
+            "type": "string",
+            "enum": [
+              "3.0.0"
+            ]
+          },
           "request_id": {
             "type": "string"
           },
           "epoch": {
-            "type": "integer"
+            "type": "integer",
+            "nullable": true
           },
           "operation_id": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "operation_token": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
+          },
+          "operator_id": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -587,32 +595,62 @@
           "success"
         ],
         "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
+          "operation_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "operation_token": {
+            "type": "string",
+            "nullable": true
+          },
           "success": {
             "type": "boolean"
           },
           "error": {
             "$ref": "#/components/schemas/WebControlErrorCode",
             "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
-      "ControlArmRequest": {
+      "ControlStartRequest": {
         "type": "object",
         "required": [
+          "protocol_version",
           "request_id",
           "epoch"
         ],
         "properties": {
+          "protocol_version": {
+            "type": "string",
+            "enum": [
+              "3.0.0"
+            ]
+          },
           "request_id": {
             "type": "string"
           },
           "epoch": {
             "type": "integer"
+          },
+          "operator_id": {
+            "type": "string",
+            "nullable": true
           }
-        },
-        "additionalProperties": false
+        }
       },
-      "ControlArmResponse": {
+      "ControlStartResponse": {
         "type": "object",
         "required": [
           "success"
@@ -643,6 +681,10 @@
           "epoch": {
             "type": "integer",
             "nullable": true
+          },
+          "operator_id": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -664,13 +706,20 @@
       "Challenge": {
         "type": "object",
         "required": [
+          "input_generation",
           "token",
           "epoch",
           "deadline_monotonic_ns",
-          "issued_monotonic_ns",
-          "input_generation"
+          "issued_monotonic_ns"
         ],
         "properties": {
+          "input_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recovery_required": {
+            "type": "boolean"
+          },
           "token": {
             "type": "string"
           },
@@ -682,26 +731,23 @@
           },
           "issued_monotonic_ns": {
             "type": "integer"
-          },
-          "input_generation": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "recovery_required": {
-            "type": "boolean"
           }
         }
       },
       "ChallengeResponse": {
         "type": "object",
         "required": [
+          "input_generation",
           "token",
           "epoch",
           "sequence",
-          "direction",
-          "input_generation"
+          "direction"
         ],
         "properties": {
+          "input_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
           "token": {
             "type": "string"
           },
@@ -717,10 +763,6 @@
           "client_timestamp_ms": {
             "type": "integer",
             "nullable": true
-          },
-          "input_generation": {
-            "type": "integer",
-            "minimum": 0
           }
         }
       }

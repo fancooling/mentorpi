@@ -16,6 +16,7 @@ from collections.abc import Callable
 from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_protocol.constants import (
     CHALLENGE_INTERVAL_SEC,
+    DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     FIRST_COMMAND_DEADLINE_NS,
@@ -33,6 +34,7 @@ from ubuntu_tank_protocol.enums import (
     ControllerServiceState,
     MotionDirection,
     OperatorState,
+    ReleaseReason,
     WebControlErrorCode,
 )
 from ubuntu_tank_protocol.schemas import (
@@ -54,13 +56,26 @@ class OperatorStateMachine:
         lock: threading.RLock | None = None,
         lease_duration_sec: float = LEASE_DURATION_SEC,
         challenge_interval_sec: float = CHALLENGE_INTERVAL_SEC,
+        control_idle_timeout_sec: float = DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     ) -> None:
         WebControlConfig(
             lease_duration_sec=lease_duration_sec,
             challenge_interval_sec=challenge_interval_sec,
+            control_idle_timeout_sec=control_idle_timeout_sec,
         ).validate()
         self.lease_duration_sec = lease_duration_sec
         self.lease_duration_ns = int(lease_duration_sec * 1e9)
+        self.control_idle_timeout_sec = float(control_idle_timeout_sec)
+        self.control_idle_timeout_ns = int(control_idle_timeout_sec * 1e9)
+        self.inactivity_deadline_monotonic_ns: int = 0
+        self.status_revision: int = 0
+        self.session_id: str | None = None
+        self.release_progress: str | None = None
+        self.last_release_reason: str | None = None
+        self.last_released_session_id: str | None = None
+        self.last_start_request_id: str | None = None
+        self.last_stop_request_id: str | None = None
+        self.on_idle_timeout_release: Callable[[], None] | None = None
         self.input_generation = 0
         self.pause_reason: str | None = None
         self.pause_started_ns: int | None = None
@@ -93,6 +108,19 @@ class OperatorStateMachine:
         self.last_fault: str | None = None
         self.telemetry: TelemetrySnapshot = TelemetrySnapshot()
 
+    def _reset_inactivity_deadline_locked(self, current_monotonic_ns: int) -> None:
+        """Reset the ownership inactivity deadline to control_idle_timeout_sec from now."""
+        self.inactivity_deadline_monotonic_ns = (
+            current_monotonic_ns + self.control_idle_timeout_ns
+        )
+
+    def _release_blocks_control(self, now_ns: int) -> bool:
+        """Keep expired/releasing sessions motionless until shutdown and reacquisition."""
+        return self.release_progress is not None or (
+            self.inactivity_deadline_monotonic_ns > 0
+            and now_ns >= self.inactivity_deadline_monotonic_ns
+        )
+
     def acquire(
         self,
         owner_id: str,
@@ -102,6 +130,13 @@ class OperatorStateMachine:
     ) -> tuple[bool, int | None, WebControlErrorCode | None, str | None]:
         """Acquire single operator ownership while disarmed."""
         with self._lock:
+            if self.release_progress is not None:
+                return (
+                    False,
+                    None,
+                    WebControlErrorCode.DEPLOYMENT_BUSY,
+                    "Controller release pending",
+                )
             if not isinstance(owner_id, str) or not owner_id:
                 return (
                     False,
@@ -176,6 +211,7 @@ class OperatorStateMachine:
                 )
 
             self.owner_id = owner_id
+            self.session_id = owner_id
             self.epoch += 1
             self.state = OperatorState.OWNED_DISARMED
             self.outstanding_challenges.clear()
@@ -187,9 +223,14 @@ class OperatorStateMachine:
             self.arming_start_monotonic_ns = None
             self.active_arm_epoch = None
             self.active_arm_request_id = None
+            self.last_start_request_id = None
+            self.last_stop_request_id = None
+            self.release_progress = None
             self.active_linear_speed = target_linear
             self.active_angular_speed = target_angular
             self.last_fault = None
+            self._reset_inactivity_deadline_locked(current_monotonic_ns)
+            self.status_revision += 1
 
             return True, self.epoch, None, "Ownership acquired"
 
@@ -212,10 +253,15 @@ class OperatorStateMachine:
                 )
 
             self.stop(current_monotonic_ns, requester_id=owner_id)
+            self.last_release_reason = ReleaseReason.EXPLICIT_RELEASE.value
+            self.last_released_session_id = self.owner_id
+            self.inactivity_deadline_monotonic_ns = 0
             self.owner_id = None
+            self.session_id = None
             self.state = OperatorState.NO_OWNER
             self.active_linear_speed = self.linear_speed_cap
             self.active_angular_speed = self.angular_speed_cap
+            self.status_revision += 1
             return True, None, "Ownership released"
 
     def arm(
@@ -227,6 +273,12 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Initiate explicit arming after ownership, neutral and health checks."""
         with self._lock:
+            if self._release_blocks_control(current_monotonic_ns):
+                return (
+                    False,
+                    WebControlErrorCode.LEASE_EXPIRED,
+                    "Ownership expired or release pending",
+                )
             if not admitted():
                 return (
                     False,
@@ -287,7 +339,77 @@ class OperatorStateMachine:
             self.arming_start_monotonic_ns = current_monotonic_ns
             self.active_arm_epoch = epoch
             self.active_arm_request_id = request_id or secrets.token_hex(8)
+            if request_id is not None and request_id != self.last_start_request_id:
+                self._reset_inactivity_deadline_locked(current_monotonic_ns)
+                self.last_start_request_id = request_id
+            self.status_revision += 1
             return True, None, "Arming transaction initiated"
+
+    def start(
+        self,
+        owner_id: str,
+        epoch: int,
+        current_monotonic_ns: int,
+        request_id: str | None = None,
+    ) -> tuple[bool, WebControlErrorCode | None, str | None]:
+        """Explicit, idempotent start/arming command for authorized operator."""
+        with self._lock:
+            if self._release_blocks_control(current_monotonic_ns):
+                return (
+                    False,
+                    WebControlErrorCode.LEASE_EXPIRED,
+                    "Ownership expired or release pending",
+                )
+            if not admitted():
+                return (
+                    False,
+                    WebControlErrorCode.DEPLOYMENT_BUSY,
+                    "Deployment is not admitted",
+                )
+            if self.owner_id != owner_id:
+                return (
+                    False,
+                    WebControlErrorCode.NOT_OWNER,
+                    f"Caller '{owner_id}' is not the authorized operator",
+                )
+            if epoch != self.epoch:
+                return (
+                    False,
+                    WebControlErrorCode.INVALID_EPOCH,
+                    f"Stale or invalid control epoch {epoch} (current is {self.epoch})",
+                )
+            if (
+                self.inactivity_deadline_monotonic_ns > 0
+                and current_monotonic_ns >= self.inactivity_deadline_monotonic_ns
+            ):
+                return (
+                    False,
+                    WebControlErrorCode.LEASE_EXPIRED,
+                    "Ownership inactive/expired",
+                )
+
+            # If already armed, return idempotent success
+            if self.state in (
+                OperatorState.ARMED_IDLE,
+                OperatorState.DRIVING,
+                OperatorState.INPUT_PAUSED,
+            ):
+                if request_id is not None and request_id != self.last_start_request_id:
+                    self._reset_inactivity_deadline_locked(current_monotonic_ns)
+                    self.last_start_request_id = request_id
+                self.status_revision += 1
+                return True, None, "Already armed"
+
+            if self.state == OperatorState.ARMING:
+                if request_id is not None and request_id != self.last_start_request_id:
+                    self._reset_inactivity_deadline_locked(current_monotonic_ns)
+                    self.last_start_request_id = request_id
+                self.status_revision += 1
+                return True, None, "Arming transaction initiated"
+
+            return self.arm(
+                owner_id, epoch, current_monotonic_ns, request_id=request_id
+            )
 
     def confirm_armed(
         self,
@@ -299,7 +421,7 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Confirm arming response and downstream zero within first-command deadline."""
         with self._lock:
-            if not admitted():
+            if not admitted() or self._release_blocks_control(current_monotonic_ns):
                 self.stop(current_monotonic_ns)
             if self.state != OperatorState.ARMING:
                 if guard_confirmed:
@@ -381,6 +503,7 @@ class OperatorStateMachine:
             self.disarm_pending = False
             self.compensating_disarm_required = False
             self.last_seen_sequence = -1
+            self.status_revision += 1
             if self.telemetry:
                 self.telemetry.guard_armed = True
                 self.telemetry.guard_monotonic_ns = current_monotonic_ns
@@ -402,6 +525,7 @@ class OperatorStateMachine:
         self.zero_confirmed_ns = None
         self.pause_reason = reason
         self.state = OperatorState.INPUT_PAUSED
+        self.status_revision += 1
         if self.on_zero_required:
             self.on_zero_required()
 
@@ -418,6 +542,8 @@ class OperatorStateMachine:
     def issue_challenge(self, current_monotonic_ns: int) -> Challenge | None:
         """Issue an unpredictable single-use challenge with monotonic deadline."""
         with self._lock:
+            if self._release_blocks_control(current_monotonic_ns):
+                return None
             if self.state not in (
                 OperatorState.ARMED_IDLE,
                 OperatorState.DRIVING,
@@ -471,6 +597,22 @@ class OperatorStateMachine:
     ) -> tuple[bool, WebControlErrorCode | None, str | None]:
         """Validate client challenge response and apply discrete motion intent."""
         with self._lock:
+            if self._release_blocks_control(current_monotonic_ns):
+                return (
+                    False,
+                    WebControlErrorCode.LEASE_EXPIRED,
+                    "Ownership expired or release pending",
+                )
+            if (
+                self.inactivity_deadline_monotonic_ns > 0
+                and current_monotonic_ns >= self.inactivity_deadline_monotonic_ns
+            ):
+                return (
+                    False,
+                    WebControlErrorCode.LEASE_EXPIRED,
+                    "Ownership inactive/expired",
+                )
+
             if self.state not in (
                 OperatorState.ARMED_IDLE,
                 OperatorState.DRIVING,
@@ -605,6 +747,8 @@ class OperatorStateMachine:
                 self.outstanding_challenges.clear()
                 self.input_generation += 1
 
+            prev_direction = self.active_direction
+
             # Non-zero motion handling
             if response.direction in (
                 MotionDirection.FORWARD,
@@ -644,6 +788,10 @@ class OperatorStateMachine:
                 self.direction_hold_start_monotonic_ns = None
                 self.state = OperatorState.ARMED_IDLE
 
+            if response.direction != prev_direction:
+                self._reset_inactivity_deadline_locked(current_monotonic_ns)
+
+            self.status_revision += 1
             self.last_seen_sequence = response.sequence
             self.lease_deadline_monotonic_ns = challenge.deadline_monotonic_ns
 
@@ -769,15 +917,50 @@ class OperatorStateMachine:
                     )
                     return False, WebControlErrorCode.TIMEOUT, self.last_fault
 
+            # 5. Ownership inactivity timeout check (§4.1.1)
+            if (
+                self.state != OperatorState.NO_OWNER
+                and self.inactivity_deadline_monotonic_ns > 0
+                and current_monotonic_ns >= self.inactivity_deadline_monotonic_ns
+            ):
+                self.inactivity_deadline_monotonic_ns = 0
+                expired_owner = self.owner_id
+                self.stop(current_monotonic_ns, requester_id=expired_owner)
+                self.last_release_reason = ReleaseReason.CONTROL_IDLE_TIMEOUT.value
+                self.last_released_session_id = expired_owner
+                self.release_progress = "stopping_controller"
+                self.status_revision += 1
+                if self.on_idle_timeout_release is not None:
+                    self.on_idle_timeout_release()
+                return (
+                    False,
+                    WebControlErrorCode.TIMEOUT,
+                    "Control released due to inactivity",
+                )
+
             return True, None, None
 
     def stop(
         self,
         current_monotonic_ns: int,
         requester_id: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Immediate stop priority: halt motion, disarm, and invalidate epoch."""
         with self._lock:
+            # Count a fresh owner Stop once, without renewing expired authority.
+            if (
+                requester_id is not None
+                and requester_id == self.owner_id
+                and self.release_progress is None
+                and 0 < self.inactivity_deadline_monotonic_ns
+                and current_monotonic_ns < self.inactivity_deadline_monotonic_ns
+                and request_id is not None
+                and request_id != self.last_stop_request_id
+            ):
+                self._reset_inactivity_deadline_locked(current_monotonic_ns)
+                self.last_stop_request_id = request_id
+
             self.input_generation += 1
             self.pause_reason = None
             self.pause_started_ns = None
@@ -790,6 +973,7 @@ class OperatorStateMachine:
             self.active_arm_request_id = None
             self.outstanding_challenges.clear()
             self.last_seen_sequence = -1
+            self.status_revision += 1
             was_armed = (
                 self.state
                 in (
@@ -859,7 +1043,7 @@ class OperatorStateMachine:
     def get_velocity_command(self) -> tuple[float, float]:
         """Map current active direction to (linear_x, angular_z) velocities."""
         with self._lock:
-            if self.state != OperatorState.DRIVING:
+            if self.release_progress is not None or self.state != OperatorState.DRIVING:
                 return 0.0, 0.0
 
             if self.active_direction == MotionDirection.FORWARD:
@@ -882,6 +1066,16 @@ class OperatorStateMachine:
         with self._lock:
             vx, wz = self.get_velocity_command()
             freshness = self.telemetry.get_freshness_dict(current_monotonic_ns)
+            remaining_inactivity_sec: float | None = None
+            if (
+                self.state != OperatorState.NO_OWNER
+                and self.inactivity_deadline_monotonic_ns > 0
+            ):
+                remaining_inactivity_sec = max(
+                    0.0,
+                    (self.inactivity_deadline_monotonic_ns - current_monotonic_ns)
+                    / 1e9,
+                )
 
             return StatusResponse(
                 service_state=service_state,
@@ -909,9 +1103,17 @@ class OperatorStateMachine:
                     "lease_duration_sec": self.lease_duration_sec,
                     "max_hold_sec": MAX_CONTINUOUS_HOLD_SEC,
                     "idle_timeout_sec": IDLE_TIMEOUT_SEC,
+                    "control_idle_timeout_sec": self.control_idle_timeout_sec,
                 },
                 freshness=freshness,
                 last_fault=self.last_fault,
                 release_id=self.release_id,
                 protocol_version=PROTOCOL_VERSION,
+                status_revision=self.status_revision,
+                session_id=self.session_id,
+                control_idle_timeout_sec=self.control_idle_timeout_sec,
+                remaining_inactivity_sec=remaining_inactivity_sec,
+                release_progress=self.release_progress,
+                last_release_reason=self.last_release_reason,
+                last_released_session_id=self.last_released_session_id,
             )

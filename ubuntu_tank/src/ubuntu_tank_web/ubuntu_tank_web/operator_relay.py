@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+import time
+import uuid
 from typing import Any
 
 from ubuntu_tank_protocol.constants import (
@@ -39,6 +41,24 @@ class OperatorRelay:
         self._setup_operation: str | None = None
         self._setup_token: str | None = None
         self._setup_request: str | None = None
+        self._release_operation: str | None = None
+        self._release_token: str | None = None
+        self._completed_operations: dict[str, dict[str, Any]] = {}
+        self._operation_tokens: dict[str, str] = {}
+
+    def _record_completed_operation(
+        self,
+        operation_id: str,
+        result: dict[str, Any],
+        token: str | None = None,
+    ) -> None:
+        while len(self._completed_operations) >= 100:
+            oldest_id = next(iter(self._completed_operations))
+            del self._completed_operations[oldest_id]
+            self._operation_tokens.pop(oldest_id, None)
+        self._completed_operations[operation_id] = dict(result)
+        if token:
+            self._operation_tokens[operation_id] = token
 
     def _clear_owner_state_locked(self) -> None:
         """Clear active owner connection and binding state while holding self._lock."""
@@ -50,6 +70,8 @@ class OperatorRelay:
         self._setup_operation = None
         self._setup_token = None
         self._setup_request = None
+        self._release_operation = None
+        self._release_token = None
 
     def create_client(self) -> OperatorIpcClient:
         """Create a new dedicated IPC client instance."""
@@ -168,6 +190,7 @@ class OperatorRelay:
         request_id: str | None = None,
         epoch: int | None = None,
         timeout_sec: float = 3.0,
+        operator_id: str | None = None,
     ) -> tuple[bool, str | None]:
         """
         Issue immediate stop request to operator agent without revoking ownership.
@@ -178,7 +201,10 @@ class OperatorRelay:
         try:
             fallback_client.connect(timeout_sec=timeout_sec)
             return fallback_client.stop(
-                request_id=request_id, epoch=epoch, timeout_sec=timeout_sec
+                request_id=request_id,
+                epoch=epoch,
+                timeout_sec=timeout_sec,
+                operator_id=operator_id,
             )
         except Exception as exc:
             logger.warning("Stop request to operator agent failed: %s", exc)
@@ -261,16 +287,49 @@ class OperatorRelay:
                     "message": str(exc),
                 }
 
-    def acquisition_result(
-        self, operation_id: str, operation_token: str
+    def operation_result(
+        self, operation_id: str, operation_token: str | None = None
     ) -> dict[str, Any]:
-        """Retrieve private setup outcome; never include bind credentials in public status."""
+        """Retrieve private setup or release outcome; never include bind credentials in public status."""
         with self._lock:
-            if (
-                self._owner_client is None
-                or operation_id != self._setup_operation
-                or not self._setup_token
-                or not secrets.compare_digest(self._setup_token, operation_token)
+            cached = self._completed_operations.get(operation_id)
+            if cached is not None:
+                token_expected = self._operation_tokens.get(operation_id)
+                if (
+                    token_expected
+                    and operation_token is not None
+                    and not secrets.compare_digest(token_expected, operation_token)
+                ):
+                    return {
+                        "success": False,
+                        "error": "NOT_OWNER",
+                        "status": "failed",
+                        "operation_id": operation_id,
+                    }
+                res = dict(cached)
+                if token_expected and (
+                    not operation_token
+                    or not secrets.compare_digest(token_expected, operation_token)
+                ):
+                    res.pop("bind_token", None)
+                return res
+
+            is_setup = operation_id == self._setup_operation
+            is_release = operation_id == self._release_operation
+
+            if not is_setup and not is_release:
+                return {
+                    "success": False,
+                    "error": "NOT_OWNER",
+                    "status": "failed",
+                    "operation_id": operation_id,
+                }
+
+            expected_token = self._setup_token if is_setup else self._release_token
+
+            if operation_token is not None and (
+                not expected_token
+                or not secrets.compare_digest(expected_token, operation_token)
             ):
                 return {
                     "success": False,
@@ -278,30 +337,89 @@ class OperatorRelay:
                     "status": "failed",
                     "operation_id": operation_id,
                 }
+
+            if self._owner_client is None:
+                return {
+                    "success": False,
+                    "error": "NOT_OWNER",
+                    "status": "failed",
+                    "operation_id": operation_id,
+                }
+
+            client = self._owner_client
             try:
-                result = self._owner_client._send_request(
+                result = client._send_request(
                     {"action": "acquisition_result", "operation_id": operation_id}
                 )
             except (OSError, ValueError) as exc:
-                self._owner_client.close()
                 self._clear_owner_state_locked()
-                return {
+                client.close()
+                failed_res = {
                     "success": False,
                     "status": "failed",
                     "error": "CONTROLLER_UNAVAILABLE",
                     "operation_id": operation_id,
                     "message": str(exc),
                 }
+                self._record_completed_operation(
+                    operation_id, failed_res, expected_token
+                )
+                return failed_res
+
             if not result.get("success") and result.get("error") == "NOT_OWNER":
-                self._owner_client.close()
                 self._clear_owner_state_locked()
-                return {**result, "status": "failed", "operation_id": operation_id}
-            if result.get("status") == "completed":
-                self._active_epoch = result["epoch"]
-                if self._bound_session_id is None and self._active_bind_token is None:
-                    self._active_bind_token = secrets.token_urlsafe(24)
-                result["bind_token"] = self._active_bind_token
-            return result
+                client.close()
+                failed_res = {
+                    **result,
+                    "status": "failed",
+                    "operation_id": operation_id,
+                }
+                self._record_completed_operation(
+                    operation_id, failed_res, expected_token
+                )
+                return failed_res
+
+            if is_setup:
+                if result.get("status") == "completed":
+                    self._active_epoch = result.get("epoch")
+                    if (
+                        self._bound_session_id is None
+                        and self._active_bind_token is None
+                    ):
+                        self._active_bind_token = secrets.token_urlsafe(24)
+                    result["bind_token"] = self._active_bind_token
+                elif result.get("status") == "failed":
+                    self._clear_owner_state_locked()
+                    client.close()
+                    self._record_completed_operation(
+                        operation_id, result, expected_token
+                    )
+
+                res = dict(result)
+                if (
+                    not operation_token
+                    or not expected_token
+                    or not secrets.compare_digest(expected_token, operation_token)
+                ):
+                    res.pop("bind_token", None)
+                return res
+
+            if is_release:
+                if result.get("status") in ("completed", "failed"):
+                    # Failed shutdown must retain the connection needed to retry.
+                    if result.get("status") == "failed":
+                        self._record_completed_operation(
+                            operation_id, result, expected_token
+                        )
+                        return result
+                    self._clear_owner_state_locked()
+                    client.close()
+                    self._record_completed_operation(
+                        operation_id, result, expected_token
+                    )
+                return result
+
+    acquisition_result = operation_result
 
     def cancel_setup(self, operation_id: str, operation_token: str) -> bool:
         """Cancel only the session holding the private setup token."""
@@ -379,38 +497,123 @@ class OperatorRelay:
 
     def release(
         self,
-        epoch: int,
-        request_id: str | None = None,
-        timeout_sec: float = 3.0,
-    ) -> tuple[bool, str | None, str | None]:
-        """Relinquish operator authority and close the owner connection."""
+        request_id: str,
+        epoch: int | None = None,
+        operation_id: str | None = None,
+        operation_token: str | None = None,
+        operator_id: str | None = None,
+        timeout_sec: float = 5.0,
+    ) -> dict[str, Any]:
+        """Relinquish operator authority, shut down controller, and release ownership."""
         with self._lock:
             client = self._owner_client
-            self._clear_owner_state_locked()
+            active_op = self._setup_operation
+            active_token = self._setup_token
+            active_owner_id = self._active_operator_id
 
         if client is None:
-            return (
-                False,
-                WebControlErrorCode.NOT_OWNER.value,
-                "No active control connection holding ownership",
-            )
+            return {
+                "success": False,
+                "status": "failed",
+                "error": WebControlErrorCode.NOT_OWNER.value,
+                "message": "No active control connection holding ownership",
+            }
+
+        if (
+            operator_id is not None
+            and active_owner_id is not None
+            and active_owner_id != operator_id
+        ):
+            return {
+                "success": False,
+                "status": "failed",
+                "error": WebControlErrorCode.NOT_OWNER.value,
+                "message": "Operator identity mismatch",
+            }
+
+        if operation_id is not None and (
+            active_op != operation_id
+            or not active_token
+            or not operation_token
+            or not secrets.compare_digest(active_token, operation_token)
+        ):
+            return {
+                "success": False,
+                "status": "failed",
+                "error": WebControlErrorCode.NOT_OWNER.value,
+                "message": "Setup operation identity mismatch",
+            }
 
         try:
-            return client.release(
-                epoch=epoch, request_id=request_id, timeout_sec=timeout_sec
-            )
-        except Exception as exc:
-            return False, WebControlErrorCode.CONTROLLER_UNAVAILABLE.value, str(exc)
-        finally:
-            client.close()
+            req: dict[str, Any] = {
+                "action": "release_control",
+                "request_id": request_id,
+            }
+            if epoch is not None:
+                req["epoch"] = epoch
+            if operation_id is not None:
+                req["operation_id"] = operation_id
+            if operation_token is not None:
+                req["operation_token"] = operation_token
+            if operator_id is not None:
+                req["operator_id"] = operator_id
 
-    def arm(
+            rel_token = operation_token or secrets.token_urlsafe(24)
+            res = client._send_request(req, timeout_sec=timeout_sec)
+            # Poll on the request worker, never in the shared runtime IPC loop.
+            deadline = time.monotonic() + min(timeout_sec, 0.1)
+            while res.get("status") == "pending" and time.monotonic() < deadline:
+                time.sleep(0.01)
+                res = client._send_request(
+                    {
+                        "action": "acquisition_result",
+                        "operation_id": res["operation_id"],
+                    },
+                    timeout_sec=timeout_sec,
+                )
+            status_val = res.get("status")
+            if status_val == "failed":
+                # Keep authority for a new release request after a transient failure.
+                if res.get("operation_id"):
+                    with self._lock:
+                        self._record_completed_operation(
+                            res["operation_id"], res, rel_token
+                        )
+                return {**res, "operation_token": rel_token}
+            if status_val == "completed":
+                op_to_record = res.get("operation_id") or operation_id
+                with self._lock:
+                    self._clear_owner_state_locked()
+                    if op_to_record:
+                        self._record_completed_operation(op_to_record, res, rel_token)
+                client.close()
+                return {**res, "operation_token": rel_token}
+            elif status_val == "pending":
+                rel_op_id = res.get("operation_id")
+                with self._lock:
+                    self._release_operation = rel_op_id
+                    self._release_token = rel_token
+                return {**res, "operation_token": rel_token}
+            return res
+        except Exception as exc:
+            with self._lock:
+                self._clear_owner_state_locked()
+            client.close()
+            return {
+                "success": False,
+                "status": "failed",
+                "error": WebControlErrorCode.CONTROLLER_UNAVAILABLE.value,
+                "message": str(exc),
+            }
+
+    def start(
         self,
         epoch: int,
-        request_id: str | None = None,
+        request_id: str,
+        operator_id: str | None = None,
         timeout_sec: float = 5.0,
     ) -> tuple[bool, str | None, str | None]:
-        """Arm the chassis controller using the active owner connection."""
+        """Start/arm the chassis controller using the active owner connection."""
         with self._lock:
             client = self._owner_client
             if client is None:
@@ -419,17 +622,36 @@ class OperatorRelay:
                     WebControlErrorCode.NOT_OWNER.value,
                     "No active control connection holding ownership",
                 )
-            try:
-                ok, err, msg = client.arm(
-                    epoch=epoch,
-                    request_id=request_id,
-                    timeout_sec=timeout_sec,
+            if operator_id is not None and self._active_operator_id != operator_id:
+                return (
+                    False,
+                    WebControlErrorCode.NOT_OWNER.value,
+                    "Operator identity mismatch",
                 )
-                if ok:
+        try:
+            ok, err, msg = client.start(
+                epoch=epoch,
+                request_id=request_id,
+                timeout_sec=timeout_sec,
+            )
+            if ok:
+                with self._lock:
                     self._active_epoch = epoch
-                return ok, err, msg
-            except Exception as exc:
-                return False, WebControlErrorCode.CONTROLLER_UNAVAILABLE.value, str(exc)
+            return ok, err, msg
+        except (OSError, ValueError) as exc:
+            return False, WebControlErrorCode.CONTROLLER_UNAVAILABLE.value, str(exc)
+
+    def arm(
+        self,
+        epoch: int,
+        request_id: str | None = None,
+        timeout_sec: float = 5.0,
+    ) -> tuple[bool, str | None, str | None]:
+        """Arm the chassis controller (alias for start)."""
+        req_id = request_id or f"arm-{uuid.uuid4().hex[:8]}"
+        return self.start(epoch=epoch, request_id=req_id, timeout_sec=timeout_sec)
+
+    operation_result = acquisition_result
 
     def close(self) -> None:
         """Close active owner connection if held."""

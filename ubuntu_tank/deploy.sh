@@ -98,6 +98,8 @@ cmd_test() {
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone12_web_api.py" -v
 
   echo ""
+  "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone145_control_lifecycle.py" -v
+
   echo "--> Running Milestone 13 Vue Browser & PWA Driving Interface tests..."
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_web:${SCRIPT_DIR}/src/ubuntu_tank_operator:${SCRIPT_DIR}/src/ubuntu_tank_supervisor:${SCRIPT_DIR}/src/ubuntu_tank_protocol" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone13_browser_pwa.py" -v
 

@@ -189,14 +189,50 @@ class OperatorIpcClient:
         timeout_sec: float = 3.0,
     ) -> tuple[bool, str | None, str | None]:
         """
-        Relinquish operator authority and disarm.
+        Stop the controller and relinquish authority, polling outside the server.
 
-        Returns (success, error_code, message).
+        Return success only after confirmed shutdown. A timed-out pending operation
+        remains fenced in the runtime and can be retried without blocking Stop.
         """
         if request_id is None:
             request_id = f"rel-{uuid.uuid4().hex[:8]}"
         res = self._send_request(
             {"action": "release", "epoch": epoch, "request_id": request_id},
+            timeout_sec=timeout_sec,
+        )
+        deadline = time.monotonic() + timeout_sec
+        while res.get("status") == "pending" and time.monotonic() < deadline:
+            time.sleep(0.02)
+            res = self._send_request(
+                {"action": "acquisition_result", "operation_id": res["operation_id"]},
+                timeout_sec=max(0.05, deadline - time.monotonic()),
+            )
+        if res.get("status") == "pending":
+            return False, "TIMEOUT", "Controller shutdown still pending"
+        return bool(res.get("success", False)), res.get("error"), res.get("message")
+
+    def start(
+        self,
+        epoch: int,
+        request_id: str | None = None,
+        timeout_sec: float = 5.0,
+    ) -> tuple[bool, str | None, str | None]:
+        """
+        Explicitly start/arm the robot chassis controller under owner authority.
+
+        Idempotent: if already armed, returns success. Requires neutral input, fresh
+        telemetry and valid active ownership epoch.
+
+        Returns (success, error_code, message).
+        """
+        if request_id is None:
+            request_id = f"start-{uuid.uuid4().hex[:8]}"
+        res = self._send_request(
+            {
+                "action": "start",
+                "epoch": epoch,
+                "request_id": request_id,
+            },
             timeout_sec=timeout_sec,
         )
         return bool(res.get("success", False)), res.get("error"), res.get("message")
@@ -207,22 +243,8 @@ class OperatorIpcClient:
         request_id: str | None = None,
         timeout_sec: float = 5.0,
     ) -> tuple[bool, str | None, str | None]:
-        """
-        Explicitly arm the robot chassis controller.
-
-        Returns (success, error_code, message).
-        """
-        if request_id is None:
-            request_id = f"arm-{uuid.uuid4().hex[:8]}"
-        res = self._send_request(
-            {
-                "action": "arm",
-                "epoch": epoch,
-                "request_id": request_id,
-            },
-            timeout_sec=timeout_sec,
-        )
-        return bool(res.get("success", False)), res.get("error"), res.get("message")
+        """Arm the chassis controller (alias for start)."""
+        return self.start(epoch=epoch, request_id=request_id, timeout_sec=timeout_sec)
 
     def disarm(
         self,
@@ -248,10 +270,13 @@ class OperatorIpcClient:
         request_id: str | None = None,
         epoch: int | None = None,
         timeout_sec: float = 3.0,
+        operator_id: str | None = None,
     ) -> tuple[bool, str | None]:
         """
         Request immediate stop and disarm, independent of control ownership.
 
+        Optional operator_id and epoch attribute a web owner action for inactivity
+        accounting only; missing/mismatched attribution never prevents Stop.
         Returns (success, message).
         """
         if request_id is None:
@@ -259,6 +284,8 @@ class OperatorIpcClient:
         req: dict[str, Any] = {"action": "stop", "request_id": request_id}
         if epoch is not None:
             req["epoch"] = epoch
+        if operator_id is not None:
+            req["operator_id"] = operator_id
         res = self._send_request(req, timeout_sec=timeout_sec)
         return bool(res.get("success", False)), res.get("message")
 

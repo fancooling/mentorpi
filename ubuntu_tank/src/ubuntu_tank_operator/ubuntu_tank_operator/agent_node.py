@@ -45,6 +45,7 @@ except ImportError:
     SetBool = None
 
 from ubuntu_tank_protocol.constants import (
+    DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     FIRST_COMMAND_DEADLINE_NS,
@@ -60,7 +61,12 @@ logger = logging.getLogger(__name__)
 
 
 class OperatorAgentNode(Node):
-    """ROS 2 Node providing central operator authority, leases, and command arbitration."""
+    """Provide ROS operator authority, leases and command arbitration.
+
+    Input and ownership inactivity durations come from validated runtime config.
+    Ownership expiry disarms and delegates controller shutdown to the lifecycle
+    coordinator; it never depends on browser polling.
+    """
 
     def __init__(
         self,
@@ -73,6 +79,7 @@ class OperatorAgentNode(Node):
         context: Any = None,
         lease_duration_sec: float = 1.0,
         challenge_interval_sec: float = 0.05,
+        control_idle_timeout_sec: float = DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
         lifecycle_client: Any = None,
     ) -> None:
         self.release_id = release_id
@@ -89,6 +96,7 @@ class OperatorAgentNode(Node):
             lock=self._lock,
             lease_duration_sec=lease_duration_sec,
             challenge_interval_sec=challenge_interval_sec,
+            control_idle_timeout_sec=control_idle_timeout_sec,
         )
 
         # Wire disarm callback from state machine to physical ROS stop

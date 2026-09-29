@@ -115,73 +115,11 @@ def generate_openapi_spec() -> dict[str, Any]:
                     },
                 }
             },
-            "/controller/start": {
-                "post": {
-                    "summary": "Start controller systemd service unit",
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": (
-                                        "#/components/schemas/ControllerOperationRequest"
-                                    )
-                                }
-                            }
-                        },
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Operation result",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": (
-                                            "#/components/schemas/OperationStatusResponse"
-                                        )
-                                    }
-                                }
-                            },
-                        }
-                    },
-                }
-            },
-            "/controller/stop": {
-                "post": {
-                    "summary": (
-                        "Stop controller systemd service (invalidates driving first)"
-                    ),
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": (
-                                        "#/components/schemas/ControllerOperationRequest"
-                                    )
-                                }
-                            }
-                        },
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Operation result",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": (
-                                            "#/components/schemas/OperationStatusResponse"
-                                        )
-                                    }
-                                }
-                            },
-                        }
-                    },
-                }
-            },
             "/control/acquire": {
                 "post": {
-                    "summary": "Acquire single operator ownership slot",
+                    "summary": (
+                        "Start if needed and acquire exclusive control asynchronously"
+                    ),
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -212,7 +150,10 @@ def generate_openapi_spec() -> dict[str, Any]:
             },
             "/control/release": {
                 "post": {
-                    "summary": "Relinquish operator ownership",
+                    "summary": (
+                        "Relinquish operator authority, stop controller, and release"
+                        " ownership"
+                    ),
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -241,27 +182,27 @@ def generate_openapi_spec() -> dict[str, Any]:
                     },
                 }
             },
-            "/control/arm": {
+            "/control/start": {
                 "post": {
-                    "summary": "Arm motor guard with tracks_raised affirmation",
+                    "summary": ("Explicitly arm after ownership and healthy preflight"),
                     "requestBody": {
                         "required": True,
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": ("#/components/schemas/ControlArmRequest")
+                                    "$ref": "#/components/schemas/ControlStartRequest"
                                 }
                             }
                         },
                     },
                     "responses": {
                         "200": {
-                            "description": "Arming result",
+                            "description": "Start result",
                             "content": {
                                 "application/json": {
                                     "schema": {
                                         "$ref": (
-                                            "#/components/schemas/ControlArmResponse"
+                                            "#/components/schemas/ControlStartResponse"
                                         )
                                     }
                                 }
@@ -380,6 +321,7 @@ def generate_openapi_spec() -> dict[str, Any]:
                         "freshness",
                         "release_id",
                         "protocol_version",
+                        "status_revision",
                     ],
                     "properties": {
                         "service_state": {
@@ -392,6 +334,9 @@ def generate_openapi_spec() -> dict[str, Any]:
                         "current_epoch": {"type": "integer", "nullable": True},
                         "guard_armed": {"type": "boolean", "nullable": True},
                         "disarm_pending": {"type": "boolean"},
+                        "input_generation": {"type": "integer"},
+                        "pause_reason": {"type": "string", "nullable": True},
+                        "recovery_ready": {"type": "boolean"},
                         "battery_voltage": {"type": "number", "nullable": True},
                         "linear_speed": {"type": "number"},
                         "angular_speed": {"type": "number"},
@@ -409,6 +354,22 @@ def generate_openapi_spec() -> dict[str, Any]:
                         "last_fault": {"type": "string", "nullable": True},
                         "release_id": {"type": "string"},
                         "protocol_version": {"type": "string"},
+                        "status_revision": {"type": "integer"},
+                        "session_id": {"type": "string", "nullable": True},
+                        "control_idle_timeout_sec": {
+                            "type": "number",
+                            "nullable": True,
+                        },
+                        "remaining_inactivity_sec": {
+                            "type": "number",
+                            "nullable": True,
+                        },
+                        "release_progress": {"type": "string", "nullable": True},
+                        "last_release_reason": {"type": "string", "nullable": True},
+                        "last_released_session_id": {
+                            "type": "string",
+                            "nullable": True,
+                        },
                     },
                 },
                 "LogsResponse": {
@@ -420,18 +381,14 @@ def generate_openapi_spec() -> dict[str, Any]:
                         "total_bytes": {"type": "integer"},
                     },
                 },
-                "ControllerOperationRequest": {
-                    "type": "object",
-                    "required": ["request_id", "action"],
-                    "properties": {
-                        "request_id": {"type": "string"},
-                        "action": {"type": "string", "enum": ["start", "stop"]},
-                    },
-                },
                 "OperationStatusResponse": {
                     "type": "object",
                     "required": ["operation_id", "status"],
                     "properties": {
+                        "epoch": {"type": "integer", "nullable": True},
+                        "bind_token": {"type": "string", "nullable": True},
+                        "success": {"type": "boolean"},
+                        "message": {"type": "string", "nullable": True},
                         "operation_id": {"type": "string"},
                         "status": {
                             "type": "string",
@@ -442,16 +399,28 @@ def generate_openapi_spec() -> dict[str, Any]:
                 },
                 "ControlAcquireRequest": {
                     "type": "object",
-                    "required": ["request_id", "operator_id"],
+                    "required": ["protocol_version", "request_id", "operator_id"],
                     "properties": {
+                        "protocol_version": {
+                            "type": "string",
+                            "enum": [PROTOCOL_VERSION],
+                        },
                         "request_id": {"type": "string"},
                         "operator_id": {"type": "string"},
+                        "max_linear_speed": {"type": "number", "nullable": True},
+                        "max_angular_speed": {"type": "number", "nullable": True},
                     },
                 },
                 "ControlAcquireResponse": {
                     "type": "object",
                     "required": ["success"],
                     "properties": {
+                        "operation_id": {"type": "string", "nullable": True},
+                        "operation_token": {"type": "string", "nullable": True},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "completed", "failed"],
+                        },
                         "success": {"type": "boolean"},
                         "epoch": {"type": "integer", "nullable": True},
                         "bind_token": {"type": "string", "nullable": True},
@@ -465,33 +434,51 @@ def generate_openapi_spec() -> dict[str, Any]:
                 },
                 "ControlReleaseRequest": {
                     "type": "object",
-                    "required": ["request_id", "epoch"],
+                    "required": ["protocol_version", "request_id"],
                     "properties": {
+                        "protocol_version": {
+                            "type": "string",
+                            "enum": [PROTOCOL_VERSION],
+                        },
                         "request_id": {"type": "string"},
-                        "epoch": {"type": "integer"},
+                        "epoch": {"type": "integer", "nullable": True},
+                        "operation_id": {"type": "string", "nullable": True},
+                        "operation_token": {"type": "string", "nullable": True},
+                        "operator_id": {"type": "string", "nullable": True},
                     },
                 },
                 "ControlReleaseResponse": {
                     "type": "object",
                     "required": ["success"],
                     "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "completed", "failed"],
+                        },
+                        "operation_id": {"type": "string", "nullable": True},
+                        "operation_token": {"type": "string", "nullable": True},
                         "success": {"type": "boolean"},
                         "error": {
                             "$ref": "#/components/schemas/WebControlErrorCode",
                             "nullable": True,
                         },
+                        "message": {"type": "string", "nullable": True},
                     },
                 },
-                "ControlArmRequest": {
+                "ControlStartRequest": {
                     "type": "object",
-                    "required": ["request_id", "epoch", "tracks_raised"],
+                    "required": ["protocol_version", "request_id", "epoch"],
                     "properties": {
+                        "protocol_version": {
+                            "type": "string",
+                            "enum": [PROTOCOL_VERSION],
+                        },
                         "request_id": {"type": "string"},
                         "epoch": {"type": "integer"},
-                        "tracks_raised": {"type": "boolean", "enum": [True]},
+                        "operator_id": {"type": "string", "nullable": True},
                     },
                 },
-                "ControlArmResponse": {
+                "ControlStartResponse": {
                     "type": "object",
                     "required": ["success"],
                     "properties": {
@@ -509,6 +496,7 @@ def generate_openapi_spec() -> dict[str, Any]:
                     "properties": {
                         "request_id": {"type": "string"},
                         "epoch": {"type": "integer", "nullable": True},
+                        "operator_id": {"type": "string", "nullable": True},
                     },
                 },
                 "ControlStopResponse": {
@@ -522,12 +510,18 @@ def generate_openapi_spec() -> dict[str, Any]:
                 "Challenge": {
                     "type": "object",
                     "required": [
+                        "input_generation",
                         "token",
                         "epoch",
                         "deadline_monotonic_ns",
                         "issued_monotonic_ns",
                     ],
                     "properties": {
+                        "input_generation": {
+                            "type": "integer",
+                            "minimum": 0,
+                        },
+                        "recovery_required": {"type": "boolean"},
                         "token": {"type": "string"},
                         "epoch": {"type": "integer"},
                         "deadline_monotonic_ns": {"type": "integer"},
@@ -536,8 +530,18 @@ def generate_openapi_spec() -> dict[str, Any]:
                 },
                 "ChallengeResponse": {
                     "type": "object",
-                    "required": ["token", "epoch", "sequence", "direction"],
+                    "required": [
+                        "input_generation",
+                        "token",
+                        "epoch",
+                        "sequence",
+                        "direction",
+                    ],
                     "properties": {
+                        "input_generation": {
+                            "type": "integer",
+                            "minimum": 0,
+                        },
                         "token": {"type": "string"},
                         "epoch": {"type": "integer"},
                         "sequence": {"type": "integer"},
@@ -552,45 +556,6 @@ def generate_openapi_spec() -> dict[str, Any]:
         },
     }
 
-    spec["paths"].pop("/controller/start", None)
-    schemas = spec["components"]["schemas"]
-    arm = schemas["ControlArmRequest"]
-    arm["required"] = ["request_id", "epoch"]
-    arm["properties"].pop("tracks_raised", None)
-    arm["additionalProperties"] = False
-    for name in ("Challenge", "ChallengeResponse"):
-        schemas[name]["properties"]["input_generation"] = {
-            "type": "integer",
-            "minimum": 0,
-        }
-        schemas[name]["required"].append("input_generation")
-    schemas["Challenge"]["properties"]["recovery_required"] = {"type": "boolean"}
-    for name, shape in {
-        "input_generation": {"type": "integer"},
-        "pause_reason": {"type": "string", "nullable": True},
-        "recovery_ready": {"type": "boolean"},
-    }.items():
-        schemas["StatusResponse"]["properties"][name] = shape
-    schemas["ControlAcquireRequest"]["properties"]["protocol_version"] = {
-        "type": "string",
-        "enum": [PROTOCOL_VERSION],
-    }
-    schemas["ControlAcquireRequest"]["required"].append("protocol_version")
-    for name in ("operation_id", "operation_token", "status"):
-        schemas["ControlAcquireResponse"]["properties"][name] = {
-            "type": "string",
-            "nullable": True,
-        }
-    for name in ("operation_id", "operation_token"):
-        schemas["ControlReleaseRequest"]["properties"][name] = {"type": "string"}
-    schemas["ControlReleaseRequest"]["required"] = ["request_id"]
-    for name, shape in {
-        "epoch": {"type": "integer", "nullable": True},
-        "bind_token": {"type": "string", "nullable": True},
-        "success": {"type": "boolean"},
-        "message": {"type": "string", "nullable": True},
-    }.items():
-        schemas["OperationStatusResponse"]["properties"][name] = shape
     spec["paths"]["/operations/{id}"]["get"].setdefault("parameters", []).append(
         {
             "name": "operation_token",
@@ -598,12 +563,6 @@ def generate_openapi_spec() -> dict[str, Any]:
             "required": False,
             "schema": {"type": "string"},
         }
-    )
-    spec["paths"]["/control/acquire"]["post"]["summary"] = (
-        "Start if needed and acquire exclusive control asynchronously"
-    )
-    spec["paths"]["/control/arm"]["post"]["summary"] = (
-        "Explicitly arm after ownership and healthy preflight"
     )
     return spec
 
@@ -683,17 +642,19 @@ export interface StatusResponse {{
   last_fault: string | null;
   release_id: string;
   protocol_version: string;
+  status_revision: number;
+  session_id?: string | null;
+  control_idle_timeout_sec?: number | null;
+  remaining_inactivity_sec?: number | null;
+  release_progress?: string | null;
+  last_release_reason?: string | null;
+  last_released_session_id?: string | null;
 }}
 
 export interface LogsResponse {{
   lines: string[];
   total_lines: number;
   total_bytes: number;
-}}
-
-export interface ControllerOperationRequest {{
-  request_id: string;
-  action: 'start' | 'stop';
 }}
 
 export interface OperationStatusResponse {{
@@ -707,9 +668,11 @@ export interface OperationStatusResponse {{
 }}
 
 export interface ControlAcquireRequest {{
-  protocol_version: "2.0.0";
+  protocol_version: "3.0.0";
   request_id: string;
   operator_id: string;
+  max_linear_speed?: number | null;
+  max_angular_speed?: number | null;
 }}
 
 export interface ControlAcquireResponse {{
@@ -725,23 +688,31 @@ export interface ControlAcquireResponse {{
 }}
 
 export interface ControlReleaseRequest {{
+  protocol_version: "3.0.0";
   request_id: string;
   epoch?: number | null;
-  operation_id?: string;
-  operation_token?: string;
+  operation_id?: string | null;
+  operation_token?: string | null;
+  operator_id?: string | null;
 }}
 
 export interface ControlReleaseResponse {{
+  status?: "pending" | "completed" | "failed";
+  operation_id?: string | null;
+  operation_token?: string | null;
   success: boolean;
   error: WebControlErrorCode | null;
+  message?: string | null;
 }}
 
-export interface ControlArmRequest {{
+export interface ControlStartRequest {{
+  protocol_version: "3.0.0";
   request_id: string;
   epoch: number;
+  operator_id?: string | null;
 }}
 
-export interface ControlArmResponse {{
+export interface ControlStartResponse {{
   success: boolean;
   error: WebControlErrorCode | null;
   message: string | null;
@@ -750,6 +721,7 @@ export interface ControlArmResponse {{
 export interface ControlStopRequest {{
   request_id: string;
   epoch?: number | null;
+  operator_id?: string | null;
 }}
 
 export interface ControlStopResponse {{

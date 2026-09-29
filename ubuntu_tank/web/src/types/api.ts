@@ -1,5 +1,5 @@
 // Auto-generated TypeScript definitions for MentorPi Pi 5 Web Control.
-// Protocol Version: 2.0.0, API Version: v1, Schema Version: 2
+// Protocol Version: 3.0.0, API Version: v1, Schema Version: 3
 
 export type OperatorState =
   | 'NO_OWNER'
@@ -71,17 +71,19 @@ export interface StatusResponse {
   last_fault: string | null;
   release_id: string;
   protocol_version: string;
+  status_revision: number;
+  session_id?: string | null;
+  control_idle_timeout_sec?: number | null;
+  remaining_inactivity_sec?: number | null;
+  release_progress?: string | null;
+  last_release_reason?: string | null;
+  last_released_session_id?: string | null;
 }
 
 export interface LogsResponse {
   lines: string[];
   total_lines: number;
   total_bytes: number;
-}
-
-export interface ControllerOperationRequest {
-  request_id: string;
-  action: 'start' | 'stop';
 }
 
 export interface OperationStatusResponse {
@@ -95,9 +97,11 @@ export interface OperationStatusResponse {
 }
 
 export interface ControlAcquireRequest {
-  protocol_version: "2.0.0";
+  protocol_version: "3.0.0";
   request_id: string;
   operator_id: string;
+  max_linear_speed?: number | null;
+  max_angular_speed?: number | null;
 }
 
 export interface ControlAcquireResponse {
@@ -113,23 +117,31 @@ export interface ControlAcquireResponse {
 }
 
 export interface ControlReleaseRequest {
+  protocol_version: "3.0.0";
   request_id: string;
   epoch?: number | null;
-  operation_id?: string;
-  operation_token?: string;
+  operation_id?: string | null;
+  operation_token?: string | null;
+  operator_id?: string | null;
 }
 
 export interface ControlReleaseResponse {
+  status?: "pending" | "completed" | "failed";
+  operation_id?: string | null;
+  operation_token?: string | null;
   success: boolean;
   error: WebControlErrorCode | null;
+  message?: string | null;
 }
 
-export interface ControlArmRequest {
+export interface ControlStartRequest {
+  protocol_version: "3.0.0";
   request_id: string;
   epoch: number;
+  operator_id?: string | null;
 }
 
-export interface ControlArmResponse {
+export interface ControlStartResponse {
   success: boolean;
   error: WebControlErrorCode | null;
   message: string | null;
@@ -138,6 +150,7 @@ export interface ControlArmResponse {
 export interface ControlStopRequest {
   request_id: string;
   epoch?: number | null;
+  operator_id?: string | null;
 }
 
 export interface ControlStopResponse {

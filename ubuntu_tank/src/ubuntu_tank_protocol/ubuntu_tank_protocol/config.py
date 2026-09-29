@@ -12,6 +12,7 @@ from typing import Any
 
 from .constants import (
     CHALLENGE_INTERVAL_SEC,
+    DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
     IDLE_TIMEOUT_SEC,
@@ -41,6 +42,7 @@ class WebControlConfig:
     lease_duration_sec: float = LEASE_DURATION_SEC
     challenge_interval_sec: float = CHALLENGE_INTERVAL_SEC
     idle_timeout_sec: float = IDLE_TIMEOUT_SEC
+    control_idle_timeout_sec: float = DEFAULT_CONTROL_IDLE_TIMEOUT_SEC
     max_hold_duration_sec: float = MAX_CONTINUOUS_HOLD_SEC
     operator_socket_path: str = "/run/ubuntu_tank/operator.sock"
     lifecycle_socket_path: str = "/run/ubuntu_tank/lifecycle.sock"
@@ -92,7 +94,11 @@ class WebControlConfig:
             )
 
         # Reject coercions and NaN before comparisons, which NaN can bypass.
-        for name in ("lease_duration_sec", "challenge_interval_sec"):
+        for name in (
+            "lease_duration_sec",
+            "challenge_interval_sec",
+            "control_idle_timeout_sec",
+        ):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value):
                 raise ValueError(f"{name} must be a finite number")
@@ -114,6 +120,14 @@ class WebControlConfig:
             raise ValueError(
                 f"idle_timeout_sec {self.idle_timeout_sec} outside valid range (1.0 to"
                 " 300.0 s)"
+            )
+        if (
+            self.control_idle_timeout_sec <= 0.0
+            or self.control_idle_timeout_sec > 3600.0
+        ):
+            raise ValueError(
+                f"control_idle_timeout_sec {self.control_idle_timeout_sec} outside valid"
+                " range (0.0 < timeout <= 3600.0 s)"
             )
         if self.max_hold_duration_sec < 0.5 or self.max_hold_duration_sec > 10.0:
             raise ValueError(
@@ -145,6 +159,9 @@ class WebControlConfig:
                 "challenge_interval_sec", CHALLENGE_INTERVAL_SEC
             ),
             idle_timeout_sec=data.get("idle_timeout_sec", IDLE_TIMEOUT_SEC),
+            control_idle_timeout_sec=data.get(
+                "control_idle_timeout_sec", DEFAULT_CONTROL_IDLE_TIMEOUT_SEC
+            ),
             max_hold_duration_sec=data.get(
                 "max_hold_duration_sec", MAX_CONTINUOUS_HOLD_SEC
             ),

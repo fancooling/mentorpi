@@ -21,7 +21,7 @@ export function useRobotState(myOperatorId: string) {
     freshness: {},
     lastFault: null,
     releaseId: 'unknown',
-    protocolVersion: '2.0.0',
+    protocolVersion: '3.0.0',
     isProtocolCompatible: false,
     lastUpdateTimestamp: null,
   });
@@ -51,7 +51,7 @@ export function useRobotState(myOperatorId: string) {
       telemetry.protocolVersion = v.protocol_version;
 
       const major = parseInt(v.protocol_version.split('.')[0] || '1', 10);
-      telemetry.isProtocolCompatible = major === 2;
+      telemetry.isProtocolCompatible = major === 3;
       return telemetry.isProtocolCompatible;
     } catch {
       telemetry.isProtocolCompatible = false;

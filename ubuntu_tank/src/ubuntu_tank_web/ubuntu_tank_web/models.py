@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from ubuntu_tank_protocol.constants import (
     API_VERSION,
     PROTOCOL_VERSION,
@@ -64,6 +64,13 @@ class StatusResponseModel(BaseStrictModel):
     last_fault: str | None = None
     release_id: str = Field(default="unknown")
     protocol_version: str = Field(default=PROTOCOL_VERSION)
+    status_revision: int = 0
+    session_id: str | None = None
+    control_idle_timeout_sec: float | None = None
+    remaining_inactivity_sec: float | None = None
+    release_progress: str | None = None
+    last_release_reason: str | None = None
+    last_released_session_id: str | None = None
 
 
 class LogsRequestModel(BaseStrictModel):
@@ -102,7 +109,7 @@ class OperationStatusResponseModel(BaseStrictModel):
 class ControlAcquireRequestModel(BaseStrictModel):
     """Request to acquire exclusive operator control authority."""
 
-    protocol_version: Literal["2.0.0"]
+    protocol_version: Literal["3.0.0"]
     request_id: str = Field(..., min_length=1)
     operator_id: str = Field(..., min_length=1)
     max_linear_speed: float | None = Field(default=None, gt=0.0)
@@ -126,8 +133,9 @@ class ControlAcquireResponseModel(BaseStrictModel):
 class ControlReleaseRequestModel(BaseStrictModel):
     """Request to relinquish operator control authority and disarm."""
 
+    protocol_version: Literal["3.0.0"]
     request_id: str = Field(..., min_length=1)
-    epoch: int | None = Field(default=None, ge=1)
+    epoch: StrictInt | None = Field(default=None, ge=1)
     operation_id: str | None = None
     operation_token: str | None = None
     operator_id: str | None = None
@@ -136,20 +144,25 @@ class ControlReleaseRequestModel(BaseStrictModel):
 class ControlReleaseResponseModel(BaseStrictModel):
     """Response to an operator release request."""
 
+    status: Literal["pending", "completed", "failed"] = "completed"
+    operation_id: str | None = None
+    operation_token: str | None = None
     success: bool
     error: WebControlErrorCode | None = None
     message: str | None = None
 
 
-class ControlArmRequestModel(BaseStrictModel):
-    """Request to arm the robot controller chassis."""
+class ControlStartRequestModel(BaseStrictModel):
+    """Request to explicitly arm the chassis controller under owner authority."""
 
+    protocol_version: Literal["3.0.0"]
+    epoch: StrictInt = Field(..., ge=1)
     request_id: str = Field(..., min_length=1)
-    epoch: int = Field(..., ge=1)
+    operator_id: str | None = None
 
 
-class ControlArmResponseModel(BaseStrictModel):
-    """Response to a chassis arming request."""
+class ControlStartResponseModel(BaseStrictModel):
+    """Response to a chassis arming/starting request."""
 
     success: bool
     error: WebControlErrorCode | None = None
@@ -157,10 +170,11 @@ class ControlArmResponseModel(BaseStrictModel):
 
 
 class ControlStopRequestModel(BaseStrictModel):
-    """Stop request independent of control ownership."""
+    """Always stop; optional owner identity attributes inactivity activity only."""
 
     request_id: str = Field(..., min_length=1)
     epoch: int | None = Field(default=None, ge=0)
+    operator_id: str | None = Field(default=None, min_length=1)
 
 
 class ControlStopResponseModel(BaseStrictModel):

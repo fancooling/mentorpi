@@ -93,6 +93,31 @@ def complete_acquisition(client, path, **kwargs):
     raise AssertionError("Take control did not finish")
 
 
+def complete_release(client, path="/api/v1/control/release", **kwargs):
+    """Poll the real asynchronous release API for tests of subsequent controls."""
+    import httpx
+
+    kwargs["json"] = {"protocol_version": PROTOCOL_VERSION, **kwargs.get("json", {})}
+    response = client.post(path, **kwargs)
+    if response.status_code != 200:
+        return response
+    data = response.json()
+    if not data.get("success") or not data.get("operation_id"):
+        return response
+    if data.get("status") in ("completed", "failed"):
+        return response
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        result = client.get(
+            "/api/v1/operations/" + data["operation_id"],
+            params={"operation_token": data.get("operation_token")},
+        ).json()
+        if result.get("status") != "pending":
+            return httpx.Response(200, json={**data, **result})
+        time.sleep(0.01)
+    raise AssertionError("Release control did not finish")
+
+
 class TestTlsProvisioning(unittest.TestCase):
     """Test owner-trusted TLS certificate generation and permission enforcement."""
 
@@ -204,12 +229,12 @@ class TestSecurityHeadersAndSameOrigin(unittest.TestCase):
     def test_cross_origin_mutation_rejected(self):
         """Mutating request with unauthorized Origin is rejected with 403."""
         payload = {
+            "protocol_version": PROTOCOL_VERSION,
             "epoch": 1,
-            "tracks_raised": True,
             "request_id": "req-1",
         }
         res = self.client.post(
-            "/api/v1/control/arm",
+            "/api/v1/control/start",
             json=payload,
             headers={"Origin": "https://attacker.site"},
         )
@@ -264,14 +289,26 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         )
         self.op_server.start()
 
+        service_state = {"state": "active"}
+
+        def fake_runner(args):
+            if "stop" in args:
+                service_state["state"] = "inactive"
+                return (0, "", "")
+            if "start" in args:
+                service_state["state"] = "active"
+                return (0, "", "")
+            if "is-active" in args:
+                if service_state["state"] == "active":
+                    return (0, "active", "")
+                else:
+                    return (3, "inactive", "")
+            return (0, "", "")
+
         self.lc_service = LifecycleHelperService(
             socket_path=self.lc_sock,
             allowed_uids={os.getuid()},
-            process_runner=lambda args: (
-                0,
-                "active" if "is-active" in args else "",
-                "",
-            ),
+            process_runner=fake_runner,
             log_runner=lambda limit: [f"log entry {i}" for i in range(limit)],
         )
         self.lc_service.start()
@@ -317,28 +354,49 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 422)
 
-    def test_strict_boolean_validation_on_arm(self):
-        """Arm endpoint requires exact boolean tracks_raised: true (rejects strings/integers)."""
-        # String "true" must be rejected
+    def test_strict_validation_on_start(self):
+        """Start endpoint requires exact protocol_version and integer epoch (rejects strings/booleans)."""
+        # Missing protocol_version must be rejected
         res = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": 1, "tracks_raised": "true", "request_id": "req-arm"},
+            "/api/v1/control/start",
+            json={"epoch": 1, "request_id": "req-arm"},
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res.status_code, 422)
 
-        # Integer 1 must be rejected
+        # String epoch "1" must be rejected
         res = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": 1, "tracks_raised": 1, "request_id": "req-arm"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": "1",
+                "request_id": "req-arm",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res.status_code, 422)
 
-        # Boolean False must be rejected
+        # Boolean epoch True must be rejected
         res = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": 1, "tracks_raised": False, "request_id": "req-arm"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": True,
+                "request_id": "req-arm",
+            },
+            headers={"Origin": "https://127.0.0.1:8443"},
+        )
+        self.assertEqual(res.status_code, 422)
+
+        # Unexpected extra field must be rejected
+        res = self.client.post(
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": 1,
+                "request_id": "req-arm",
+                "tracks_raised": True,
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res.status_code, 422)
@@ -496,8 +554,12 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
 
         # 2. Arm with correct epoch
         res_arm = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": epoch, "request_id": "req-arm"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": epoch,
+                "request_id": "req-arm",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res_arm.status_code, 200)
@@ -505,7 +567,8 @@ class TestFastApiStrictModelsAndRest(unittest.TestCase):
         self.assertTrue(arm_data["success"])
 
         # 3. Release
-        res_rel = self.client.post(
+        res_rel = complete_release(
+            self.client,
             "/api/v1/control/release",
             json={"epoch": epoch, "request_id": "req-rel"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -587,10 +650,26 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         )
         self.op_server.start()
 
+        service_state = {"state": "active"}
+
+        def fake_runner(args):
+            if "stop" in args:
+                service_state["state"] = "inactive"
+                return (0, "", "")
+            if "start" in args:
+                service_state["state"] = "active"
+                return (0, "", "")
+            if "is-active" in args:
+                if service_state["state"] == "active":
+                    return (0, "active", "")
+                else:
+                    return (3, "inactive", "")
+            return (0, "", "")
+
         self.lc_service = LifecycleHelperService(
             socket_path=self.lc_sock,
             allowed_uids={os.getuid()},
-            process_runner=lambda args: (0, "active", ""),
+            process_runner=fake_runner,
             log_runner=lambda limit: [],
         )
         self.lc_service.start()
@@ -660,8 +739,12 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
 
         # Arm
         res_arm = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": epoch, "request_id": "req-arm-ws"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": epoch,
+                "request_id": "req-arm-ws",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertTrue(res_arm.json()["success"])
@@ -747,8 +830,9 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
             )
             self.assertTrue(ws.receive_json()["payload"]["success"])
             armed = self.client.post(
-                "/api/v1/control/arm",
+                "/api/v1/control/start",
                 json={
+                    "protocol_version": PROTOCOL_VERSION,
                     "epoch": acquired["epoch"],
                     "request_id": "arm-delayed",
                 },
@@ -795,8 +879,12 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         bind_token = res.json()["bind_token"]
         self.assertIsNotNone(bind_token)
         self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": epoch, "request_id": "req-arm-dc"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": epoch,
+                "request_id": "req-arm-dc",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
@@ -838,8 +926,12 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
 
         # 2. Arm chassis
         res_arm = self.client.post(
-            "/api/v1/control/arm",
-            json={"epoch": epoch, "request_id": "req-arm-1"},
+            "/api/v1/control/start",
+            json={
+                "protocol_version": PROTOCOL_VERSION,
+                "epoch": epoch,
+                "request_id": "req-arm-1",
+            },
             headers={"Origin": "https://127.0.0.1:8443"},
         )
         self.assertEqual(res_arm.status_code, 200)
@@ -880,8 +972,9 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
 
         # 5. Re-arm chassis under new epoch
         res_rearm = self.client.post(
-            "/api/v1/control/arm",
+            "/api/v1/control/start",
             json={
+                "protocol_version": PROTOCOL_VERSION,
                 "epoch": new_epoch,
                 "request_id": "req-rearm-2",
             },
@@ -892,7 +985,8 @@ class TestWebSocketControlAndRelay(unittest.TestCase):
         self.assertEqual(self.sm.state, OperatorState.ARMED_IDLE)
 
         # 6. Release ownership
-        res_release = self.client.post(
+        res_release = complete_release(
+            self.client,
             "/api/v1/control/release",
             json={"epoch": new_epoch, "request_id": "req-rel-stop"},
             headers={"Origin": "https://127.0.0.1:8443"},
@@ -1166,11 +1260,12 @@ class TestOpenApiExport(unittest.TestCase):
         self.assertIn("/api/v1/status", paths)
         self.assertIn("/api/v1/logs", paths)
         self.assertIn("/api/v1/control/acquire", paths)
-        self.assertIn("/api/v1/control/arm", paths)
+        self.assertIn("/api/v1/control/start", paths)
+        self.assertNotIn("/api/v1/control/arm", paths)
         self.assertIn("/api/v1/control/release", paths)
         self.assertIn("/api/v1/control/stop", paths)
         self.assertNotIn("/api/v1/controller/start", paths)
-        self.assertIn("/api/v1/controller/stop", paths)
+        self.assertNotIn("/api/v1/controller/stop", paths)
         self.assertIn("/api/v1/operations/{id}", paths)
 
 
@@ -1283,8 +1378,9 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
 
             # Arm
             client.post(
-                "/api/v1/control/arm",
+                "/api/v1/control/start",
                 json={
+                    "protocol_version": PROTOCOL_VERSION,
                     "epoch": epoch,
                     "request_id": "req-arm-a",
                 },
@@ -1537,7 +1633,9 @@ class TestMilestone12ReviewRemediations(unittest.TestCase):
                 time.sleep(0.3)  # slow status
                 return {"service_state": "active", "operator_state": "NO_OWNER"}
 
-            def stop(self, request_id=None, epoch=None, timeout_sec=3.0):
+            def stop(
+                self, request_id=None, epoch=None, timeout_sec=3.0, operator_id=None
+            ):
                 return True, "Stopped"
 
         slow_relay = SlowRelay()
