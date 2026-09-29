@@ -87,10 +87,10 @@ login/logout schemas, generated API artifacts, and credential configurations wer
 removed in Milestone 12. No password-hashing dependency is required by this design.
 Existing native SROS2 credentials and process-identity safeguards remain unchanged.
 
-- **Protocol Version**: `2.0.0`
+- **Protocol Version**: `3.0.0`
 - **API Version**: `v1`
-- **Schema Version**: `2`
-- **Supported Releases**: Only protocol `2.0.0` is currently accepted for control mutations.
+- **Schema Version**: `3`
+- **Supported Releases**: Protocol `3.0.0` is required for acquisition, Start and Release; Stop remains available without a version field.
 
 ### Client Compatibility Handshake
 
@@ -150,73 +150,10 @@ To guarantee complete deadlock freedom and ensure emergency stop availability, a
 **Rule**: Locks MUST be acquired in increasing numerical order (`1 -> 2 -> 3`).
 **Emergency Exception**: Stop requests MUST NEVER block behind `DEPLOYMENT_LOCK`. Stop routines use non-blocking attempts (timeout <= 50 ms) and invoke immediate fail-closed zeroing regardless of lock contention.
 
-## M14.3 control contract
+## Controller and web interfaces
 
-`POST /api/v1/control/acquire` accepts `request_id`, `operator_id`, and
-`protocol_version: "3.0.0"` (optional speed caps remain ceilings). It returns
-`operation_id`, private `operation_token`, and pending/completed/failed status.
-The runtime starts the controller only if needed, waits for fresh readiness and
-acquires the sole operator slot. It does not arm. Poll
-`GET /api/v1/operations/{id}?operation_token=...` for the epoch and bind token;
-bind the WebSocket within five seconds of the runtime grant. Public status and
-logs contain no bind credentials. Do not share operation URLs or tokens.
-
-Public `controller/start`, `controller/stop`, and `control/arm` are removed.
-`control/start` accepts protocol 3, request ID and epoch, and explicitly arms
-without commanding movement. `control/stop` zeroes/disarms while retaining a
-bound owner and the running controller. Optional `operator_id` plus the current
-epoch attributes an owner Stop to inactivity accounting; missing/mismatched
-identity never blocks Stop and never renews another owner's deadline. `control/release` accepts protocol 3 and
-the epoch or private setup operation ID/token; it cancels setup or stops/disarms,
-shuts down the controller and relinquishes ownership. Poll pending operations
-until completion. Failed shutdown keeps driving blocked and preserves release
-retry authority; retry with a new request ID. If that connection is lost, a
-fresh Take control first retries shutdown and confirms inactive before starting
-or acquiring again. Stop remains responsive while lifecycle operations wait. No tracks-raised affirmation field is accepted; hardware
-acceptance tools retain their own explicit acknowledgment.
-
-Each challenge/intent/acknowledgment carries `input_generation`. Expiry advances
-it and clears queued challenges without changing the ownership epoch. Recovery
-challenges set `recovery_required`; only fresh neutral after a confirmed complete
-bridge zero write can recover. The acknowledgment advances the generation again,
-invalidating challenges issued before recovery. The browser must wait for that
-acknowledgment and a new physical press before sending a direction.
-
-Terminal and bench clients do not infer physical release after a stall. They
-explicitly stop and require a new Arm instead of recovering from cached input.
-The browser API adapter now targets protocol 3; the M14.6 control layout is pending. Take control polls the private operation
-and waits for socket binding before enabling explicit Arm. Setup cancellation
-invalidates late responses; Stop remains available during startup and recovery.
-The tracks-raised checkbox and separate Start controller button are removed.
-
-Input pause clears direction while retaining actual held-key/pointer tracking.
-Release all controls, acknowledge fresh neutral, then press again. Only neutral
-recovery responses are retried after loss; buffered motion is never replayed.
-Focus loss, page suspension, disconnect and hard faults still disarm. Cached
-protocol-1 and protocol-2 clients remain blocked. Browser tests cover the full migrated driving
-suite and recovery; deployment and physical acceptance remain M15.
-
-Both containers read `/etc/opt/ubuntu_tank/web/web.yaml`; the runtime receives a
-read-only mount. `lease_duration_sec` must be finite, between 0.050 and 1.000
-seconds inclusive, and greater than `challenge_interval_sec`. The latter stays
-50 ms by default. To select the new timeout for an existing installation, stop
-and disarm, explicitly edit the retained YAML to `lease_duration_sec: 1.0`, and
-stage/deploy the paired release through the host CLI so configuration hashes
-are revalidated. Deployment preserves valid existing overrides; changing the
-shipped default does not overwrite a retained 150 ms value. Restart is required;
-no browser request or hot reload changes an active deadline.
-
-`control_idle_timeout_sec` sets the runtime ownership inactivity timeout
-(default 300 seconds; finite, greater than zero and at most 3600 seconds).
-Accepted owner actions renew it; status polls and background neutral/challenge
-traffic do not. Expiry starts the same stopped-controller release and prevents
-further arming or driving. Status exposes the effective timeout, remaining time,
-session identity, release progress and reason. After completed expiry a fresh
-Take control can acquire again. Configure and restart through the same stopped
-release workflow described above; no hot reload.
-
-The runtime startup loader accepts `UBUNTU_TANK_WEB_CONFIG` for an explicit
-configuration path; missing or invalid files fail before ROS initialization.
-The 250 ms first-command and independent guard/bridge watchdogs remain unchanged.
-The proposed 1.2-second input-loss physical-rest target is unverified; M15 must
-measure stopping time and distance on the actual robot.
+The [interface reference](CONTROL_INTERFACES.md) contains the implemented M14.5
+operator/lifecycle Unix socket commands, HTTP routes, WebSocket messages,
+version requirements, ownership/recovery rules and timeout configuration.
+FastAPI serves its own route-derived schema; `openapi_v1.json` is a separate
+generated artifact. Generation commands remain in §3 above.

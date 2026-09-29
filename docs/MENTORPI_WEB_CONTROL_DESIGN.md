@@ -2,8 +2,9 @@
 
 Status: Existing implementation and acceptance status are recorded per milestone.
 M14.3 and M14.4 are deployed; stopped Pi integration passed on 2026-09-29.
-M14.5 and M14.6 below specify the approved control simplification and are not
-implemented. M15 physical acceptance and M16 release handoff remain pending.
+M14.5 runtime/API implementation and local validation are complete; it is not
+deployed. M14.6 browser controls, M15 physical acceptance and M16 release handoff
+remain pending.
 
 Date: 2026-09-29
 
@@ -497,17 +498,10 @@ only the input generation while the conditions in §4 permit retaining Arm.
 Existing native SROS2 and local process-identity checks remain internal controller
 safeguards; they add no web login or user-authentication workflow.
 
-| Proposed API | Input, result, and side effect |
-| --- | --- |
-| `GET /api/v1/status` | Service/agent/guard status, freshness, battery, owner/session ID, status revision, limits, inactivity timeout/remaining time, release progress/reason/session, release ID and last fault. Read-only; never arms or renews activity. |
-| `GET /api/v1/version` | Network-only protocol compatibility and release identity; no robot state or credentials. Used before control and to recover incompatible cached clients. |
-| `GET /api/v1/logs?limit=N` | Recent controller/web/agent logs, maximum 200 lines and 64 KiB; no arbitrary journal filters. |
-| `POST /api/v1/control/acquire` | Request ID and operator ID; one Take control operation starts the controller if needed, waits for readiness, then acquires ownership. Returns operation ID; successful completion provides epoch and a short-lived socket bind token. Never arms. |
-| `POST /api/v1/control/release` | Request ID and session ownership/setup identity; cancel its acquisition, invalidate input, zero/disarm, stop the controller and release ownership. Return a pollable operation; complete only after confirmed inactive, otherwise return explicit failure. |
-| `POST /api/v1/control/start` | Epoch and request ID; owner-only explicit permission to drive. Arm if disarmed after preflight and neutral-input checks; already armed is an idempotent success. Return pending then confirmed or failed. Never start the controller, acquire ownership or command motion. No tracks-raised field. |
-| `POST /api/v1/control/stop` | Stop independent of ownership; immediate invalidation and asynchronous zero/disarm confirmation. |
-| `GET /api/v1/operations/{id}` | Status of a bounded retained operation; timeouts/errors explicit. |
-| `WSS /api/v1/control` | Control connection binding, agent challenges, input generation, enumerated direction/neutral intent, neutral recovery, stop, acknowledgments, and live state. |
+The implemented HTTP, WebSocket and controller Unix socket interfaces are listed
+in the [controller and web interface reference](../ubuntu_tank/docs/CONTROL_INTERFACES.md).
+It documents request/result fields, ownership, operation polling and failures.
+This design retains the behavioral requirements and milestone acceptance criteria.
 
 The M14.5 public API mirrors the page: Take control, Release control, Start and
 Stop. Remove `controller/stop` and `control/arm`, and any public disarm alias;
@@ -1113,38 +1107,43 @@ recovery and a new press, and no automatic movement on reconnect.
 
 ### Milestone 14.5 — Unified ownership lifecycle and Start/Stop API
 
-Status: approved design (2026-09-29); not implemented. Supersedes the public
-Arm and controller Stop interfaces delivered by M14.3/M14.4.
+Status: implemented and locally validated (2026-09-29), commit `8a5d2fd`;
+independent review PASS. Supersedes the public Arm and controller Stop interfaces
+delivered by M14.3/M14.4. Not pushed or deployed to the Pi.
 
-- [ ] Keep Take control as one runtime operation: inspect controller state, start
+Validation: 97 focused lifecycle/API/input-recovery tests, frontend build and
+29 browser scenarios passed. Pi service behavior and physical stopping remain
+pending M15.
+
+- [x] Keep Take control as one runtime operation: inspect controller state, start
   only when needed, verify readiness and acquire/bind without arming or moving.
-- [ ] Make Release control perform owner-scoped cancellation, zero/disarm,
+- [x] Make Release control perform owner-scoped cancellation, zero/disarm,
   controller shutdown and ownership release. Return bounded operation progress,
   confirmed inactive completion or explicit failure. Prevent new acquisition
   until shutdown is confirmed; do not strand retries behind stale ownership.
-- [ ] Add `control/start` for owner-only, explicit, idempotent arming with existing
+- [x] Add `control/start` for owner-only, explicit, idempotent arming with existing
   preflight, neutral-input and ready-path gates. Preserve `control/stop` for
   immediate zero/disarm while retaining ownership and the running controller.
-- [ ] Remove public `controller/stop`, `control/arm` and any disarm aliases.
+- [x] Remove public `controller/stop`, `control/arm` and any disarm aliases.
   Preserve internal safety/lifecycle operations. Update schemas, OpenAPI,
   generated clients, relay and protocol version; reject old clients/routes
   before mutation, including old Release requests.
-- [ ] Fence Stop/Release against late acquisition, startup and arming. Deduplicate
+- [x] Fence Stop/Release against late acquisition, startup and arming. Deduplicate
   retries without repeating side effects or reviving canceled operations. Keep
   Stop responsive during shutdown, stalled ROS and closed deployment admission.
-- [ ] Implement runtime ownership inactivity per §4.1.1: configurable
+- [x] Implement runtime ownership inactivity per §4.1.1: configurable
   `control_idle_timeout_sec` default 300 seconds, accepted owner-action accounting,
   monotonic expiry and automatic Release including shutdown. Publish session IDs,
   status revisions, remaining time and release progress/reason in shared schemas.
-- [ ] Test with a controlled clock through real operator/API interfaces: default
+- [x] Test with a controlled clock through real operator/API interfaces: default
   and overridden timeout, invalid configuration, activity just before/at expiry,
   no action after acquisition, disarmed inactivity, accepted action resetting the
   deadline, polling/neutral/duplicate/other-client traffic not resetting it,
   expiry during Start, shutdown failure/retry and a new owner after expiry.
-- [ ] Update terminal and bench clients for the shared protocol. Document their
+- [x] Update terminal and bench clients for the shared protocol. Document their
   explicit release/shutdown behavior and distinguish disconnect cleanup; retain
   terminal stall disarming and hardware-test acknowledgments.
-- [ ] Exercise actual runtime/API/IPC behavior for stopped/running acquisition,
+- [x] Exercise actual runtime/API/IPC behavior for stopped/running acquisition,
   busy ownership, non-owner release, release during startup/arming, shutdown
   timeout/failure/retry, simultaneous release/acquire, duplicate Start/Release,
   delayed Start after Stop, removed routes and incompatible cached clients.
@@ -1156,7 +1155,8 @@ Local tests do not certify physical stopping or Pi service behavior.
 
 ### Milestone 14.6 — Simplified browser controls and client migration
 
-Status: pending M14.5; not implemented.
+Status: pending; M14.5 runtime/API prerequisite is complete. Browser presentation
+is not implemented; protocol-3 API adapters are already in place.
 
 - [ ] Remove Stop controller, Arm and Disarm buttons. Keep Take control and
   Release control, plus one Start / Stop button with the §2 state rules.
