@@ -7,6 +7,24 @@ passed; the owner waived other C4 fault tests. C5 robot testing remains required
 
 ## Build
 
+For an already provisioned Pi, the development-host wrapper runs build, smoke,
+image export/SSH transfer and stopped deployment together:
+
+The wrapper uses `python` from `PATH`. Activate your virtual environment or use
+an already configured global Python development environment before running it.
+
+```bash
+./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS
+# Optional: --build-dir EXISTING_BUILD, --remote-dir PI_RELEASE_PARENT,
+# --builder NAME, --emulator /absolute/path/to/buildkit-qemu-aarch64.
+```
+
+It honors `~/.ssh/config` and defaults to unique release directories below
+`~/mentorpi-releases` on the Pi. Sudo may prompt during deployment. It preserves
+installed configuration and keys, stops on failure and never starts or arms the
+controller. See the [complete workflow](../../ubuntu_tank/README.md#build-and-deploy-to-pi-5)
+for options, prerequisites and manual commands.
+
 Run from the repository root with its `.venv`. You may activate it once with
 `source .venv/bin/activate` and use `python` for the development commands below.
 Pi host operations use system Python as shown later. Initial supported baseline:
@@ -200,16 +218,21 @@ images do not need another export at boot. Discovery also accepts the original
 manifest digest and previously verified local IDs, so registry pulls and subsequent
 boots do not require the original build tag.
 
-For host-tool updates, transfer `deploy.py`, `image_identity.py`, `tls_setup.py`,
+For host-tool updates, transfer `install.py`, `image_identity.py`, `tls_setup.py`,
 `compose.yaml` and `ubuntu-tank-container.service` together. `prepare-host` rejects
 incomplete bundles before cutover and refreshes installed copies. Existing C4
 release manifests and images remain valid.
+
+The Pi CLI is now `install.py`; the development-host orchestrator is `deploy.sh`.
+For an existing installation, use the transferred `install.py stop` before
+`prepare-host`, which installs the renamed CLI and updates systemd references.
+This also supports Pi hosts whose old installed CLI was named `deploy.py`.
 
 For an empty HTTPS certificate directory, after loading the images and stopping
 native/container applications, run from the directory containing `release.json`:
 
 ```bash
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py setup-tls \
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py setup-tls \
   --hostname rpitank --hostname rpitank.local --ip YOUR_PI_LAN_IP
 # Optional: --release /path/to/release.json; repeat --hostname/--ip as needed.
 ```
@@ -233,22 +256,22 @@ From the target repository checkout:
 ```bash
 # Explicit cutover: stops/disables/masks the native application units.
 # It preserves files and records their previous ownership and service state.
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py prepare-host
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py prepare-host
 # First provisioning without /dev/rrc: append --serial-device /dev/ttyACM0
 
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py stage /path/to/release.json
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py deploy /path/to/release.json
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py target-test
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py stage /path/to/release.json
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py deploy /path/to/release.json
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py target-test
 # Explicitly repeat production stop-and-replace, then verify the installed pair:
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py target-test --redeploy
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py target-test --redeploy
 
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py status
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py logs
-sudo /usr/bin/python3 docker/ubuntu_tank/deploy.py stop
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py status
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py logs
+sudo /usr/bin/python3 docker/ubuntu_tank/install.py stop
 ```
 
 After preparation, the installed host CLI is also available as
-`sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py COMMAND`.
+`sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py COMMAND`.
 `ubuntu-tank-container.service` provides boot/shutdown ordering around Docker;
 application processes remain supervised inside runtime. A manual first deploy
 activates that unit, which verifies/redeploys the selected pair once more.

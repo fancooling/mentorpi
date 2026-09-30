@@ -128,10 +128,10 @@ case "${1:-help}" in
     ;;
   help | -h | --help)
     echo './ubuntu_tank/deploy.sh test: development and browser checks'
-    echo 'Pi host operations: /usr/bin/python3 docker/ubuntu_tank/deploy.py --help'
+    echo 'Pi host operations: /usr/bin/python3 docker/ubuntu_tank/install.py --help'
     ;;
   *)
-    echo 'Native operations have been removed. Use docker/ubuntu_tank/deploy.py.' >&2
+    echo 'Native operations have been removed. Use docker/ubuntu_tank/install.py.' >&2
     exit 1
     ;;
 esac

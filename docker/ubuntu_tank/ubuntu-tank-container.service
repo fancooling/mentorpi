@@ -9,8 +9,8 @@ RequiresMountsFor=/var/lib/ubuntu_tank-container /var/opt/ubuntu_tank /etc/opt/u
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/python3 /opt/ubuntu_tank-container/deploy.py boot
-ExecStop=/usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stop
+ExecStart=/usr/bin/python3 /opt/ubuntu_tank-container/install.py boot
+ExecStop=/usr/bin/python3 /opt/ubuntu_tank-container/install.py stop
 TimeoutStartSec=180
 TimeoutStopSec=45
 

@@ -326,7 +326,7 @@ process that does not use it, so verify actual device ownership as well.
 
 ## 7. Deployment, update, and Git fallback
 
-Use `docker/ubuntu_tank/deploy.py` with system Python for Pi host operations;
+Use `docker/ubuntu_tank/install.py` with system Python for Pi host operations;
 no Pi virtual environment is required. Build images separately with
 `docker/ubuntu_tank/build.py` using the development repository `.venv`.
 These Python entrypoints replace native application deployment commands.

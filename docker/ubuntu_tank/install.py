@@ -5,6 +5,10 @@ Stage never starts applications. Deploy blocks control before stopping the old
 pair and admits only a verified, stopped replacement. Failure leaves admission
 closed; recovery is an explicit redeploy. Persistent configuration is retained.
 The installed copy uses only Python's standard library; development uses .venv.
+Run this CLI on the Pi with prebuilt images already loaded. Building, smoke
+testing and SSH transfer belong to the development-host deploy.sh workflow.
+Configuration, TLS and health probes run in those images on the Pi; image
+identity verification may export a temporary archive but never builds images.
 """
 
 import argparse
@@ -35,7 +39,7 @@ RUN = Path("/run/ubuntu_tank-container")
 INSTALL = Path("/opt/ubuntu_tank-container")
 LOCK = Path("/run/lock/ubuntu_tank/deploy.lock")
 HOST_FILES = (
-    "deploy.py",
+    "install.py",
     "image_identity.py",
     "tls_setup.py",
     "compose.yaml",

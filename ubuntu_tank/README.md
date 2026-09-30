@@ -141,6 +141,58 @@ behavior or physical motor stopping.
 
 ## Build and deploy to Pi 5
 
+### One command from the development computer
+
+For an already provisioned Pi, run from the repository root with its SSH alias
+from `~/.ssh/config`. The wrapper uses `python` from `PATH`: activate your virtual
+environment first, or use an already configured global Python development environment.
+
+```bash
+./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS
+
+# Reuse a completed build; it is smoke-tested again before transfer.
+./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS \
+  --build-dir ubuntu_tank/.work/build-m14-6
+
+# Override the parent directory used to retain releases on the Pi.
+./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS \
+  --remote-dir /home/ubuntu/robot-releases
+```
+
+Choose one command above. The default remote parent is `~/mentorpi-releases`
+under the SSH user's home; each run creates a unique release subdirectory.
+Relative overrides are also home-relative. The SSH user must be able to write
+there and run sudo; passwords are requested through the remote terminal.
+
+The wrapper builds both ARM64 images, smoke-tests them, exports and transfers the
+images, manifest and five host tools, then runs Stop → prepare-host → stage →
+deploy → target-test → status on the Pi. Existing configuration and certificates
+are retained. It finishes stopped, disarmed and ownerless, without motor tests.
+The Pi must already have the installed C4 CLI and prerequisites listed in step 3.
+The wrapper uses the transferred `install.py` to stop the old pair, so it can
+upgrade a Pi whose installed CLI is still named `deploy.py`. Preparation installs
+the new name and refreshes the systemd boot/stop commands.
+
+Local output defaults to a unique directory under `ubuntu_tank/.work`.
+`--output PATH` selects a new build directory; `--build-dir PATH` reuses a completed
+one. The default builder is `mentorpi-c3`; override with `--builder NAME`.
+On x86, the wrapper copies the emulator from that builder's first local container;
+use `--emulator /absolute/path/to/buildkit-qemu-aarch64` for a remote builder or
+another trusted emulator. Native ARM64 development hosts need no emulator.
+
+Failures stop subsequent steps and retain local/remote files for diagnosis.
+Stdout and stderr remain visible and are saved to `deploy-<run ID>.log` in the
+selected build directory on exit, including failed runs. During execution, the
+log is spooled to a temporary file beside that directory so a new build can
+still require a nonexistent output directory. Each retry gets a separate log.
+Ensure space for the exported images and transfer archive on the development
+computer, and for the images and verification exports on the Pi. No cleanup or
+rollback is automatic. After SSH interruption, check Pi status before retrying:
+remote work may still be running. Success covers stopped integration only;
+continue with step 4 for browser and raised-track acceptance.
+
+The following steps describe the equivalent manual workflow.
+
 ### 1. Build and smoke-test on the development computer
 
 Use the container workflow for image and target verification. On the current
@@ -179,30 +231,30 @@ uses the emulator only inside its test containers without changing host emulatio
 ### 2. Export and transfer the release
 
 Continue in the same development-computer shell after the smoke test passes.
+If resuming an existing build, set `build_output` to its directory first
+(for example, `build_output=ubuntu_tank/.work/build-m14-6`). Do not generate a
+new timestamp or rebuild just to export it. Run from the repository root.
 Set `pi_host` to your Pi's SSH alias or `user@hostname`. Export both image tags
-from the generated manifest and copy the host tools from the same checkout:
+from the generated manifest and copy the host tools from the same checkout.
+Run each command only after the preceding command succeeds:
 
 ```bash
 pi_host="YOUR_PI_SSH_ALIAS"
 pi_release_dir="mentorpi-releases/$(basename "$build_output")"
 
-.venv/bin/python - "$build_output" <<'PY'
-import json
-import subprocess
-import sys
-from pathlib import Path
+# Read the exact image tags from this build's manifest.
+runtime_tag="$(.venv/bin/python -c \
+  'import json, sys; print(json.load(open(sys.argv[1]))["images"]["runtime"]["local_tag"])' \
+  "$build_output/release.json")"
+web_tag="$(.venv/bin/python -c \
+  'import json, sys; print(json.load(open(sys.argv[1]))["images"]["web"]["local_tag"])' \
+  "$build_output/release.json")"
 
-output = Path(sys.argv[1])
-release = json.loads((output / "release.json").read_text())
-tags = [release["images"][role]["local_tag"] for role in ("runtime", "web")]
-subprocess.run(
-    ["docker", "image", "save", "-o", str(output / "images.tar"), *tags],
-    check=True,
-)
-PY
+# Export both images into one archive; building alone does not create this file.
+docker image save -o "$build_output/images.tar" "$runtime_tag" "$web_tag"
 
 mkdir -p "$build_output/host-tools"
-cp docker/ubuntu_tank/{deploy.py,image_identity.py,tls_setup.py,compose.yaml,ubuntu-tank-container.service} \
+cp docker/ubuntu_tank/{install.py,image_identity.py,tls_setup.py,compose.yaml,ubuntu-tank-container.service} \
   "$build_output/host-tools/"
 ssh "$pi_host" "mkdir -p '$pi_release_dir'"
 scp -r "$build_output/images.tar" "$build_output/release.json" \
@@ -210,6 +262,10 @@ scp -r "$build_output/images.tar" "$build_output/release.json" \
 printf 'On the Pi, run: cd ~/%s\n' "$pi_release_dir"
 ssh "$pi_host"
 ```
+
+The transfer contains `images.tar`, `release.json` and the five files in
+`host-tools/`. The Pi does not need the build context, runtime/web manifest
+directories, build metadata or development-computer emulator.
 
 ### 3. Deploy on the Pi 5
 
@@ -229,19 +285,19 @@ Use the Pi's system Python, without a virtual environment:
 sudo docker image load -i images.tar
 
 # Stop the existing pair before refreshing the installed host tools.
-sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stop
-sudo /usr/bin/python3 host-tools/deploy.py prepare-host
+sudo /usr/bin/python3 host-tools/install.py stop
+sudo /usr/bin/python3 host-tools/install.py prepare-host
 
-sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stage "$PWD/release.json"
-sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py deploy "$PWD/release.json"
-sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py target-test
-sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py status
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py stage "$PWD/release.json"
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py deploy "$PWD/release.json"
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py target-test
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py status
 ```
 
 Run each command only after the preceding command succeeds. Initial image
 verification can take up to 15 minutes per image on slow storage and needs
 temporary space for an uncompressed image export. If deployment fails, inspect
-`sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py logs`, resolve the
+`sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py logs`, resolve the
 error, then repeat deployment and verification.
 
 ### 4. Verify before browser driving
@@ -258,7 +314,7 @@ Release must confirm controller shutdown. Follow the
 [Milestone 15 checklist](../docs/MENTORPI_WEB_CONTROL_DESIGN.md#milestone-15--deployment-and-raised-track-web-acceptance)
 for physical and network acceptance.
 
-`deploy.sh` no longer provides native build, install, start, arm, teleop or
+The legacy `ubuntu_tank/deploy.sh` no longer provides native build, install, start, arm, teleop or
 acceptance commands.
 
 Tests that move motors or use connected robot hardware require the explicit

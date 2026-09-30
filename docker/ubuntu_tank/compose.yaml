@@ -1,4 +1,4 @@
-# Paired deployment; deploy.py supplies immutable images and verified host identity.
+# Paired deployment; install.py supplies immutable images and verified host identity.
 name: ubuntu-tank
 x-common: &common
   platform: linux/arm64
@@ -9,7 +9,7 @@ x-common: &common
   security_opt: [no-new-privileges:true]
   environment:
     UBUNTU_TANK_DEPLOYMENT_DIR: /run/ubuntu_tank-deployment
-    UBUNTU_TANK_DEPLOYMENT_TOKEN: ${DEPLOYMENT_TOKEN:?Deploy through deploy.py}
+    UBUNTU_TANK_DEPLOYMENT_TOKEN: ${DEPLOYMENT_TOKEN:?Deploy through install.py}
     UBUNTU_TANK_RELEASE_ID: ${RELEASE_ID:?Set the verified release}
     UBUNTU_TANK_CONTEXT_SHA256: ${CONTEXT_SHA256:?Set the verified build}
   labels:
