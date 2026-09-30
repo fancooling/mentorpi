@@ -11,6 +11,23 @@ const take = async (page: Page) => {
 };
 test.beforeEach(async ({ request }) => { await request.post('/api/v1/test/reset'); });
 
+test('Release retains its operation when status observes shutdown before the result poll', async ({ page, request }) => {
+  await take(page);
+  await request.post('/api/v1/test/lifecycle', { data: { stop_delay: 0.4 } });
+  // Let real status polling observe NO_OWNER before delivering the release poll.
+  await page.route('**/api/v1/operations/*', async route => {
+    await page.waitForTimeout(1800);
+    await route.continue();
+  });
+  await page.getByRole('button', { name: 'Release Control Authority' }).click();
+  await expect(page.locator('.feedback-banner')).toContainText('Control released; controller stopped');
+  expect((await status(page)).active_owner).toBeNull();
+  expect((await status(page)).service_state).toBe('inactive');
+  await page.unroute('**/api/v1/operations/*');
+  await page.getByRole('button', { name: 'Take Control Authority' }).click();
+  await expect(start(page)).toBeEnabled();
+});
+
 test('Take, Start, direction/release, Stop, Start, Release confirms shutdown', async ({ page }) => {
   await take(page);
   await expect(page.getByRole('button', { name: /Arm Chassis|Disarm Chassis|Stop Controller/ })).toHaveCount(0);

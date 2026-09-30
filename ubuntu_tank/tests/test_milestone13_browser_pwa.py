@@ -216,6 +216,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.start_delay = 0
         cls.start_fail = False
         cls.stop_fail = False
+        cls.stop_delay = 0
 
         def _mock_systemctl(args):
             cmd = args[0]
@@ -232,6 +233,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
                 cls.service_active = True
                 return 0, "", ""
             elif cmd == "stop":
+                time.sleep(cls.stop_delay)
                 if cls.stop_fail:
                     return 1, "active", "Injected shutdown failure"
                 cls.service_active = False
@@ -290,6 +292,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             cls.start_delay = 0
             cls.start_fail = False
             cls.stop_fail = False
+            cls.stop_delay = 0
             cls.guard_failure = False
             cls.sm.control_idle_timeout_sec = 300.0
             cls.sm.control_idle_timeout_ns = 300_000_000_000
@@ -320,6 +323,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
             cls.start_delay = data.get("delay", 0)
             cls.start_fail = data.get("fail", False)
             cls.stop_fail = data.get("stop_fail", False)
+            cls.stop_delay = data.get("stop_delay", 0)
             cls.guard_failure = data.get("guard_failure", False)
             return {"configured": True}
 

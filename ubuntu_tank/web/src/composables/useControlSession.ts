@@ -31,8 +31,10 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             wsControlClient.updateEpoch(epoch);
         }
     });
-    watch([getActiveOwner, getSessionId], ([owner, session]) => {
-        if (isBound.value && (owner !== operatorId || session !== operatorId)) {
+    watch([getActiveOwner, getSessionId, isReleasing], ([owner, session]) => {
+        // Release must consume its terminal result before WebSocket cleanup closes
+        // the IPC connection holding that operation. Reconcile again when it ends.
+        if (!isReleasing.value && isBound.value && (owner !== operatorId || session !== operatorId)) {
             void invalidateSetup();
             wsControlClient.disconnect();
             isBound.value = false;

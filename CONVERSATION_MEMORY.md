@@ -27,6 +27,12 @@ pushbefore relying on recorded observations.
 
 ## Current control contract
 
+- Local Release fix pending deployment: status polling could observe ownership
+  loss before the shutdown result, disconnect the WebSocket and discard its
+  operation, producing “Operation not found.” Defer ownership-loss cleanup while
+  Release awaits its result, then reconcile. A delayed-shutdown browser regression
+  reproduced the error before the fix; all 43 browser scenarios, frontend build,
+  lint and independent review passed afterward. Requires fresh images/PWA update.
 - Protocol 3: Take control starts the controller if needed and acquires ownership
   without arming. Start arms but requires a fresh direction press before motion.
   Stop/Space zeroes and disarms while retaining ownership. Release stops the
