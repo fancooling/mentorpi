@@ -6,7 +6,7 @@ Verifies:
 2. PWA manifest compliance: standalone display, 192x192 and 512x512 icons, start URL, theme color.
 3. Service worker cache safety: asset-only precache, explicit /api/ denylist, NetworkOnly for API requests,
    no background sync for motion commands, and explicit SKIP_WAITING update handling.
-4. Playwright exercises protocol-2 acquisition, browser driving, input recovery,
+4. Playwright exercises protocol-3 acquisition, browser driving, input recovery,
    cancellation, stale clients and fail-closed lifecycle events.
 """
 
@@ -23,6 +23,7 @@ import time
 import unittest
 
 import uvicorn
+from fastapi.responses import Response
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
@@ -46,6 +47,7 @@ from ubuntu_tank_operator.ipc_server import OperatorIpcServer
 from ubuntu_tank_operator.state_machine import OperatorStateMachine
 from ubuntu_tank_protocol.config import WebControlConfig
 from ubuntu_tank_protocol.enums import MotionDirection, OperatorState
+from ubuntu_tank_protocol.ipc_client import OperatorIpcClient
 from ubuntu_tank_protocol.lifecycle_client import LifecycleClient
 from ubuntu_tank_protocol.schemas import TelemetrySnapshot
 from ubuntu_tank_supervisor.lifecycle_service import LifecycleHelperService
@@ -206,6 +208,8 @@ class TestRealBrowserInteractions(unittest.TestCase):
             allowed_uids=[os.getuid()],
         )
         cls.op_server.start()
+        cls.cli_client = OperatorIpcClient(cls.op_sock)
+        cls.cli_epoch = None
 
         # 5. Initialize Lifecycle Helper Service
         cls.service_active = True
@@ -258,13 +262,37 @@ class TestRealBrowserInteractions(unittest.TestCase):
             lifecycle_socket_path=cls.lc_sock,
         )
 
+        cls.worker_generation = 0
+
+        @cls.app.post("/api/v1/test/pwa-update")
+        def advance_worker():
+            """Change generated worker bytes to exercise Chrome's real update lifecycle."""
+            cls.worker_generation += 1
+            return {"generation": cls.worker_generation}
+
+        @cls.app.get("/sw.js")
+        def generated_worker():
+            with open(os.path.join(DIST_DIR, "sw.js"), encoding="utf-8") as worker:
+                script = worker.read()
+            return Response(
+                script + f"\n// Test release {cls.worker_generation}\n",
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        # The generated worker fixture must precede the static-file mount.
+        cls.app.router.routes.insert(0, cls.app.router.routes.pop())
+
         @cls.app.post("/api/v1/test/reset")
         def reset_operator_state():
+            cls.cli_client.close()
             cls.service_active = True
             cls.start_delay = 0
             cls.start_fail = False
             cls.stop_fail = False
             cls.guard_failure = False
+            cls.sm.control_idle_timeout_sec = 300.0
+            cls.sm.control_idle_timeout_ns = 300_000_000_000
             now_ns = time.monotonic_ns()
             with cls.sm._lock:
                 cls.sm.stop(now_ns)
@@ -285,12 +313,25 @@ class TestRealBrowserInteractions(unittest.TestCase):
 
         @cls.app.post("/api/v1/test/lifecycle")
         def configure_lifecycle(data: dict):
+            if "idle_timeout" in data:
+                cls.sm.control_idle_timeout_sec = float(data["idle_timeout"])
+                cls.sm.control_idle_timeout_ns = int(float(data["idle_timeout"]) * 1e9)
             cls.service_active = data.get("active", cls.service_active)
             cls.start_delay = data.get("delay", 0)
             cls.start_fail = data.get("fail", False)
             cls.stop_fail = data.get("stop_fail", False)
             cls.guard_failure = data.get("guard_failure", False)
             return {"configured": True}
+
+        @cls.app.post("/api/v1/test/cli")
+        def cli_handoff(data: dict):
+            """Exercise the terminal client's real IPC ownership surface, without motion."""
+            if data.get("action") == "acquire":
+                ok, cls.cli_epoch, error, message = cls.cli_client.acquire("test-cli")
+            else:
+                ok, error, message = cls.cli_client.release(cls.cli_epoch)
+                cls.cli_client.close()
+            return {"success": ok, "error": error, "message": message}
 
         # 7. Start Uvicorn in background thread
         uv_config = uvicorn.Config(
@@ -321,6 +362,7 @@ class TestRealBrowserInteractions(unittest.TestCase):
         cls.server_thread.join(timeout=3.0)
         cls.telemetry_running = False
         cls.telemetry_thread.join(timeout=1)
+        cls.cli_client.close()
         cls.lc_service.stop()
         cls.op_server.stop()
         cls.tmp_dir.cleanup()

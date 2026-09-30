@@ -8,6 +8,7 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'prompt',
+      injectRegister: false, // usePwaUpdate owns registration and shutdown-before-update.
       includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
         name: 'MentorPi Tank Controller',

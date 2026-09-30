@@ -12,7 +12,7 @@ Verifies:
    - Verifies all 4 directions (forward, reverse, spin_left, spin_right).
    - Enforces boolean correctness, direction match, burst stop, and observer identity.
 4. Web driving safety controls observation validation:
-   - Verifies key release, Space emergency stop, Disarm, Stop controller,
+   - Verifies key release, Space emergency stop, Stop, Release control,
      idle timeout, and continuous hold cap.
 5. PWA / mobile controls validation:
    - Verifies touch cancellation, app switching, screen lock, resume, and disarmed updates.
@@ -40,8 +40,6 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
-
-import yaml
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 UBUNTU_TANK_DIR = os.path.join(REPO_ROOT, "ubuntu_tank")
@@ -114,12 +112,13 @@ SAMPLE_VALID_OBSERVATIONS = {
             "motion_disarmed": True,
             "observer": "owner",
         },
-        "disarm": {
+        "stop": {
             "verified": True,
             "motion_disarmed": True,
             "observer": "owner",
         },
-        "stop_controller": {
+        "release_control": {
+            "controller_inactive": True,
             "verified": True,
             "motion_disarmed": True,
             "observer": "owner",
@@ -285,6 +284,17 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     # 1. Validation helper tests
+    def test_release_requires_confirmed_shutdown(self):
+        """Motion stopping alone cannot certify combined Release completion."""
+        import copy
+
+        controls = copy.deepcopy(SAMPLE_VALID_OBSERVATIONS["safety_controls"])
+        controls["release_control"]["controller_inactive"] = False
+        orchestrator = WebAcceptanceOrchestrator(mock=True)
+        ok, errors = orchestrator.validate_safety_control_observations(controls)
+        self.assertFalse(ok)
+        self.assertTrue(any("controller inactive" in error for error in errors))
+
     def test_duration_ms_validation(self) -> None:
         """Verify is_valid_duration_ms enforces finite, nonnegative numbers and rejects booleans."""
         self.assertTrue(is_valid_duration_ms(0))
@@ -508,12 +518,12 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("was not verified to halt motion" in e for e in errors))
 
-        # 4. Controls requiring disarm (space_stop, disarm, stop_controller, idle_timeout, hold_cap)
+        # 4. Controls requiring disarm (space_stop, stop, release_control, idle_timeout, hold_cap)
         # must continue to reject motion_disarmed=False
         for ctrl in (
             "space_stop",
-            "disarm",
-            "stop_controller",
+            "stop",
+            "release_control",
             "idle_timeout",
             "hold_cap",
         ):
@@ -660,7 +670,7 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
             "y",
         ]
         responses.extend(["y"] * (len(REQUIRED_MOTIONS) * 5))
-        responses.extend(["y"] * (len(REQUIRED_SAFETY_CONTROLS) * 2))
+        responses.extend(["y"] * (len(REQUIRED_SAFETY_CONTROLS) * 2 + 1))
         responses.extend(["y"] * (len(REQUIRED_PWA_CONTROLS) * 2))
         for condition in REQUIRED_FAILURE_CONDITIONS:
             if condition == "host_shutdown":
@@ -879,9 +889,7 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
                 "check_target_platform",
                 return_value=(True, "Raspberry Pi 5"),
             ),
-            patch.object(
-                orch_pre, "verify_usb_identity", return_value=(True, "")
-            ),
+            patch.object(orch_pre, "verify_usb_identity", return_value=(True, "")),
             patch.object(
                 orch_pre,
                 "probe_web_runtime",
@@ -898,9 +906,7 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
                     "motor_fault": False,
                 },
             ),
-            patch.object(
-                orch_pre, "request_safe_stop", return_value=(True, "Stopped")
-            ),
+            patch.object(orch_pre, "request_safe_stop", return_value=(True, "Stopped")),
             patch.object(
                 orch_pre,
                 "managed_bridge_pid",
@@ -933,8 +939,12 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
             ckpt_data = json.load(f)
         self.assertEqual(ckpt_data["active_release_id"], "release-test-01")
         self.assertEqual(ckpt_data["boot_id"], "boot-id-pre-shutdown")
-        self.assertIn("forward", ckpt_data["partial_observations"]["observed_movements"])
-        self.assertNotIn("host_shutdown", ckpt_data["partial_observations"]["latencies"])
+        self.assertIn(
+            "forward", ckpt_data["partial_observations"]["observed_movements"]
+        )
+        self.assertNotIn(
+            "host_shutdown", ckpt_data["partial_observations"]["latencies"]
+        )
 
         # Step 2: Resuming with wrong release ID fails validation
         orch_resume_bad_release = WebAcceptanceOrchestrator(
@@ -1029,9 +1039,7 @@ class TestMilestone15WebAcceptance(unittest.TestCase):
                 "check_target_platform",
                 return_value=(True, "Raspberry Pi 5"),
             ),
-            patch.object(
-                orch_resume, "verify_usb_identity", return_value=(True, "")
-            ),
+            patch.object(orch_resume, "verify_usb_identity", return_value=(True, "")),
             patch.object(
                 orch_resume,
                 "probe_web_runtime",

@@ -13,7 +13,7 @@ Validates:
    DeploymentLock exclusivity, container/service mutual exclusion.
 3. Web movement acceptance across all four directions (forward, reverse, spin_left, spin_right)
    via buttons and keyboard at conservative speed.
-4. Safety controls: button/key release, Space emergency stop, Disarm, Stop controller,
+4. Safety controls: button/key release, Space emergency stop, Stop, Release control,
    30-second idle timeout, and 5.0-second continuous hold cap.
 5. Instrumented stop latencies across all 8 web failure conditions (Target <= 300.0 ms):
    - loss_of_focus: window blur / focus loss -> local input cleared, lease cancelled
@@ -144,15 +144,15 @@ REQUIRED_MOTIONS = ("forward", "reverse", "spin_left", "spin_right")
 REQUIRED_SAFETY_CONTROLS = (
     "key_release",
     "space_stop",
-    "disarm",
-    "stop_controller",
+    "stop",
+    "release_control",
     "idle_timeout",
     "hold_cap",
 )
 CONTROLS_REQUIRING_DISARM = (
     "space_stop",
-    "disarm",
-    "stop_controller",
+    "stop",
+    "release_control",
     "idle_timeout",
     "hold_cap",
 )
@@ -697,7 +697,7 @@ class WebAcceptanceOrchestrator:
     def validate_safety_control_observations(
         self, obs_controls: Any
     ) -> tuple[bool, list[str]]:
-        """Validate observed web driving safety controls (release, Space, disarm, stop, timeout, cap)."""
+        """Validate observed web driving safety controls (direction release, Space, Stop, Release control, timeout, cap)."""
         errors: list[str] = []
         if not obs_controls or not isinstance(obs_controls, dict):
             return False, [
@@ -731,6 +731,10 @@ class WebAcceptanceOrchestrator:
                     errors.append(
                         f"Safety control '{c}' did not physically halt motion (must be boolean true)"
                     )
+            if c == "release_control" and not is_exact_bool_true(
+                entry.get("controller_inactive")
+            ):
+                errors.append("Release control did not confirm the controller inactive")
             obs_name = entry.get("observer")
             if not obs_name or not isinstance(obs_name, str) or not obs_name.strip():
                 errors.append(f"Safety control '{c}' lacks non-empty observer identity")
@@ -1097,6 +1101,11 @@ class WebAcceptanceOrchestrator:
                         "motion_disarmed": False,
                         "observer": observer,
                     }
+
+                if control == "release_control":
+                    controls[control]["controller_inactive"] = ask_yes(
+                        "  Did Release control confirm the controller stopped? [y/N]: "
+                    )
 
             print("\n--> Verify Installed PWA / Mobile Controls:")
             pwa: dict[str, Any] = {}

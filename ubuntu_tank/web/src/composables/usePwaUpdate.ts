@@ -1,59 +1,73 @@
-// Composable for PWA lifecycle, service worker updates, and offline status
+// Register the asset-only worker and activate updates only after confirmed control cleanup.
 import { onMounted, onUnmounted, ref } from 'vue';
 
+/** Expose offline/update state; failed shutdown leaves the current page and worker active. */
 export function usePwaUpdate() {
   const isOffline = ref(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const needRefresh = ref(false);
-  const updateSW = ref<((reloadPage?: boolean) => Promise<void>) | null>(null);
+  let registration: ServiceWorkerRegistration | null = null;
+  let installing: ServiceWorker | null = null;
+  let updateRequested = false;
+  let disposed = false;
 
-  function onOnline() {
-    isOffline.value = false;
+  function onOnline() { isOffline.value = false; }
+  function onOffline() { isOffline.value = true; }
+  function inspectWorker() {
+    needRefresh.value = Boolean(registration?.waiting && navigator.serviceWorker.controller);
+  }
+  function onUpdateFound() {
+    installing?.removeEventListener('statechange', inspectWorker);
+    installing = registration?.installing ?? null;
+    installing?.addEventListener('statechange', inspectWorker);
+    inspectWorker();
+  }
+  function onControllerChange() {
+    inspectWorker();
+    if (updateRequested) window.location.reload();
   }
 
-  function onOffline() {
-    isOffline.value = true;
-  }
-
-  async function applyUpdate(disarmAndRelease: () => Promise<any>): Promise<void> {
-    // Crucial safety constraint: Must stop/disarm and relinquish ownership before updating!
+  async function applyUpdate(stopAndRelease: () => Promise<boolean>): Promise<void> {
+    if (updateRequested) return;
+    updateRequested = true;
     try {
-      await disarmAndRelease();
-    } catch (err) {
-      console.warn('Failed to disarm before update:', err);
-    }
-
-    if (updateSW.value) {
-      await updateSW.value(true);
-    } else if (typeof window !== 'undefined') {
-      window.location.reload();
+      if (!await stopAndRelease()) {
+        updateRequested = false;
+        return;
+      }
+      if (registration?.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      } else {
+        window.location.reload();
+      }
+    } catch {
+      updateRequested = false;
     }
   }
 
-  onMounted(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', onOnline);
-      window.addEventListener('offline', onOffline);
-
-      // Register service worker update check if supported
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          // New service worker activated
-        });
-      }
+  onMounted(async () => {
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    try {
+      const registered = await navigator.serviceWorker.register('/sw.js');
+      if (disposed) return;
+      registration = registered;
+      registration.addEventListener('updatefound', onUpdateFound);
+      onUpdateFound();
+    } catch {
+      // Service-worker availability does not grant or remove robot authority.
     }
   });
 
   onUnmounted(() => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-    }
+    disposed = true;
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('offline', onOffline);
+    registration?.removeEventListener('updatefound', onUpdateFound);
+    installing?.removeEventListener('statechange', inspectWorker);
+    navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
   });
 
-  return {
-    isOffline,
-    needRefresh,
-    applyUpdate,
-  };
+  return { isOffline, needRefresh, applyUpdate };
 }
-

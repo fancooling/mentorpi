@@ -3,8 +3,8 @@
 Status: Existing implementation and acceptance status are recorded per milestone.
 M14.3 and M14.4 are deployed; stopped Pi integration passed on 2026-09-29.
 M14.5 runtime/API implementation and local validation are complete; it is not
-deployed. M14.6 browser controls, M15 physical acceptance and M16 release handoff
-remain pending.
+deployed. M14.6 browser controls are implemented locally; M15 physical acceptance
+and M16 release handoff remain pending.
 
 Date: 2026-09-29
 
@@ -1155,31 +1155,37 @@ Local tests do not certify physical stopping or Pi service behavior.
 
 ### Milestone 14.6 — Simplified browser controls and client migration
 
-Status: pending; M14.5 runtime/API prerequisite is complete. Browser presentation
-is not implemented; protocol-3 API adapters are already in place.
+Status: implemented and locally validated (2026-09-29); independent review PASS.
+Recorded as one M14.6 implementation commit. No Pi deployment or physical
+motion acceptance.
 
-- [ ] Remove Stop controller, Arm and Disarm buttons. Keep Take control and
+Validation: `./ubuntu_tank/deploy.sh test` passed 580 Python tests (two skipped)
+and 42 browser scenarios. Frontend build/type checking, Python formatting/lint
+and whitespace checks passed. Browser tests exercise real HTTP/WS/IPC and worker
+updates with simulated controller telemetry.
+
+- [x] Remove Stop controller, Arm and Disarm buttons. Keep Take control and
   Release control, plus one Start / Stop button with the §2 state rules.
-- [ ] Use the combined Release API; display shutdown progress and errors until
+- [x] Use the combined Release API; display shutdown progress and errors until
   confirmed inactive. Prevent repeated setup and Start while release is pending.
-- [ ] Start explicitly arms if needed and enables only fresh direction presses;
+- [x] Start explicitly arms if needed and enables only fresh direction presses;
   Stop zeroes/disarms without giving up ownership. Space always sends Stop.
   Never derive a Start action from stale/unknown status, reconnection or recovery.
-- [ ] Keep Stop available to observers and during startup, arming, input pause
+- [x] Keep Stop available to observers and during startup, arming, input pause
   and shutdown. Preserve pointer/keyboard/touch release tracking, neutral recovery,
   focus-loss handling, bounded queues and all independent safety deadlines.
-- [ ] Poll status every second while visible and immediately on load/resume and
+- [x] Poll status every second while visible and immediately on load/resume and
   ownership changes. Reconcile the bound session and server revision; discard
   stale responses, clear control on expiry and show its reason. Disable driving
   on unknown/stale ownership, preserve Stop and never auto-reacquire.
-- [ ] Test automatic release with a shortened test configuration while polling
+- [x] Test automatic release with a shortened test configuration while polling
   and neutral traffic continue. Cover another tab acquiring after expiry,
   delayed/out-of-order polls, failed polls, background suspension/resume,
   shutdown progress/failure, and fresh Take control after confirmed shutdown.
-- [ ] Update generated API usage, browser help, operator documentation and
+- [x] Update generated API usage, browser help, operator documentation and
   acceptance tooling; remove calls to retired endpoints. Make cached older PWAs
   fail compatibility checks before taking control or mutating controller state.
-- [ ] Run browser scenarios through real HTTP/WS/IPC for the normal
+- [x] Run browser scenarios through real HTTP/WS/IPC for the normal
   Take → Start → direction/release → Stop → Start → Release flow, held inputs
   at Start, double-clicks, stale status, dropped responses, Stop during Start,
   Release during setup/driving, shutdown failure, competing tabs, CLI handoff,

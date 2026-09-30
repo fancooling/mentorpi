@@ -2,20 +2,9 @@
   <section class="service-controls" aria-label="System and Operator Authority Controls">
     <!-- Row 1: Controller Service Lifecycle & Control Ownership -->
     <div class="control-row">
-      <div class="button-group" role="group" aria-label="Controller Service Actions">
-        <button
-          class="btn btn-secondary"
-          :disabled="false"
-          @click="onStopController"
-          aria-label="Stop Controller Service"
-        >
-          Stop controller
-        </button>
-      </div>
-
       <div class="button-group" role="group" aria-label="Control Authority Actions">
         <button
-          v-if="!isOwner"
+          v-if="!hasSession"
           class="btn btn-primary"
           :disabled="isOperating || !isProtocolCompatible"
           @click="onTakeControl"
@@ -26,35 +15,13 @@
         <button
           v-else
           class="btn btn-warning"
-          :disabled="isOperating"
+          :disabled="isReleasing"
           @click="onReleaseControl"
           aria-label="Release Control Authority"
         >
           Release control
         </button>
       </div>
-    </div>
-
-    <!-- Row 3: Arm / Disarm Controls -->
-    <div class="arm-row">
-      <button
-        class="btn btn-arm"
-        :disabled="!canArm"
-        @click="onArm"
-        aria-label="Arm Chassis Motors"
-      >
-        <span class="btn-icon" aria-hidden="true">⚡</span>
-        Arm
-      </button>
-      <button
-        class="btn btn-disarm"
-        :disabled="!canDisarm"
-        @click="onDisarm"
-        aria-label="Disarm Chassis Motors"
-      >
-        <span class="btn-icon" aria-hidden="true">🛑</span>
-        Disarm
-      </button>
     </div>
 
     <!-- User Feedback Banner -->
@@ -73,71 +40,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 import type { OperationFeedback } from '../types/ui';
 
-const props = withDefaults(
-  defineProps<{
-    isOwner: boolean;
-    isArmed: boolean;
-    isControllerRunning: boolean;
-    isBound: boolean;
-    isOperating: boolean;
-    isProtocolCompatible?: boolean;
-    feedback: OperationFeedback | null;
-  }>(),
-  {
-    isProtocolCompatible: true,
-  }
-);
-
+/** Ownership actions remain separate from the direction pad's Start / Stop. */
+defineProps<{
+  hasSession: boolean;
+  isOperating: boolean;
+  isReleasing: boolean;
+  isProtocolCompatible: boolean;
+  feedback: OperationFeedback | null;
+}>();
 const emit = defineEmits<{
-  (e: 'stop-controller'): void;
   (e: 'take-control'): void;
   (e: 'release-control'): void;
-  (e: 'arm'): void;
-  (e: 'disarm'): void;
   (e: 'clear-feedback'): void;
 }>();
-
-const canArm = computed(() => {
-  return (
-    props.isOwner &&
-    props.isControllerRunning &&
-    props.isBound &&
-    props.isProtocolCompatible &&
-    !props.isArmed &&
-    !props.isOperating
-  );
-});
-
-const canDisarm = computed(() => {
-  return props.isArmed && !props.isOperating;
-});
-
-function onStopController() {
-  emit('stop-controller');
-}
-
-function onTakeControl() {
-  emit('take-control');
-}
-
-function onReleaseControl() {
-  emit('release-control');
-}
-
-function onArm() {
-  emit('arm');
-}
-
-function onDisarm() {
-  emit('disarm');
-}
-
-function onClearFeedback() {
-  emit('clear-feedback');
-}
+const onTakeControl = () => emit('take-control');
+const onReleaseControl = () => emit('release-control');
+const onClearFeedback = () => emit('clear-feedback');
 </script>
 
 <style scoped>

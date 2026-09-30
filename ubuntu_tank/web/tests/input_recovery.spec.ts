@@ -3,13 +3,13 @@ const forward = (page: Page) => page.getByRole('button', { name: 'Drive Forward 
 async function arm(page: Page) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Take Control Authority' }).click();
-    await expect(page.locator('.btn-arm')).toBeEnabled();
-    await page.locator('.btn-arm').click();
+    await expect(page.locator('.btn-start')).toBeEnabled();
+    await page.locator('.btn-start').click();
     await expect(forward(page)).toBeEnabled();
 }
 async function status(page: Page) { return (await page.request.get('/api/v1/status')).json(); }
 test.beforeEach(async ({ request }) => { await request.post('/api/v1/test/reset'); });
-test('combined Take control starts once without arming; Stop works during setup', async ({ page, request }) => {
+test('combined Take control starts once without arming; Release works during setup', async ({ page, request }) => {
     await request.post('/api/v1/test/lifecycle', { data: { active: false, delay: 0.8 } });
     let acquisitions = 0, starts = 0, arms = 0;
     page.on('request', req => {
@@ -25,8 +25,8 @@ test('combined Take control starts once without arming; Stop works during setup'
     const take = page.getByRole('button', { name: 'Take Control Authority' });
     await expect(take).toBeEnabled();
     await take.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
-    await expect(take).toBeDisabled();
-    await page.getByRole('button', { name: 'Stop Controller Service' }).click();
+    await expect(take).toHaveCount(0);
+    await page.getByRole('button', { name: 'Release Control Authority' }).click();
     await page.waitForTimeout(1100);
     expect(acquisitions).toBe(1);
     expect(starts).toBe(0);
@@ -34,7 +34,7 @@ test('combined Take control starts once without arming; Stop works during setup'
     await expect.poll(async () => (await status(page)).service_state).toBe('inactive');
     await expect.poll(async () => (await status(page)).active_owner).toBeNull();
     await take.click();
-    await expect(page.locator('.btn-arm')).toBeEnabled();
+    await expect(page.locator('.btn-start')).toBeEnabled();
     expect((await status(page)).guard_armed).toBe(false);
     expect(arms).toBe(0);
 });
@@ -49,7 +49,7 @@ test('late acquisition response after Stop cannot restore ownership', async ({ p
     await page.locator('.btn-stop').click();
     await page.waitForTimeout(1000);
     await expect.poll(async () => (await status(page)).active_owner).toBeNull();
-    await expect(page.locator('.btn-arm')).toBeDisabled();
+    await expect(page.locator('.btn-start')).toHaveCount(0);
 });
 for (const failure of ['startup', 'binding']) {
     test(`${failure} failure releases setup and permits retry`, async ({ page, request }) => {
@@ -69,11 +69,11 @@ for (const failure of ['startup', 'binding']) {
         await page.getByRole('button', { name: 'Take Control Authority' }).click();
         await expect(page.locator('.feedback-error')).toBeVisible();
         await expect.poll(async () => (await status(page)).active_owner).toBeNull();
-        await expect(page.locator('.btn-arm')).toBeDisabled();
+        await expect(page.locator('.btn-start')).toHaveCount(0);
         if (failure === 'startup') {
             await request.post('/api/v1/test/lifecycle', { data: { active: false, fail: false } });
             await page.getByRole('button', { name: 'Take Control Authority' }).click();
-            await expect(page.locator('.btn-arm')).toBeEnabled();
+            await expect(page.locator('.btn-start')).toBeEnabled();
         }
     });
 }
@@ -260,7 +260,7 @@ test('socket replacement is ownerless and disarmed until explicit reacquisition'
     await expect.poll(async () => (await status(page)).active_owner).toBeNull();
     await expect(page.getByRole('button', { name: 'Take Control Authority' })).toBeEnabled();
     await page.getByRole('button', { name: 'Take Control Authority' }).click();
-    await expect(page.locator('.btn-arm')).toBeEnabled();
+    await expect(page.locator('.btn-start')).toBeEnabled();
     expect((await status(page)).guard_armed).toBe(false);
     await expect(forward(page)).toBeDisabled();
 });
@@ -273,7 +273,7 @@ test('operation polling timeout cancels setup without enabling Arm', async ({ pa
     await page.goto('/');
     await page.getByRole('button', { name: 'Take Control Authority' }).click();
     await expect(page.locator('.feedback-error')).toContainText('timed out', { timeout: 26000 });
-    await expect(page.locator('.btn-arm')).toBeDisabled();
+    await expect(page.locator('.btn-start')).toHaveCount(0);
     await expect.poll(async () => (await status(page)).active_owner).toBeNull();
 });
 test('delayed server frames cannot revive buffered motion after expiry', async ({ page }) => {
@@ -330,7 +330,7 @@ test('protocol-3 release failure preserves the bound session for retry', async (
     await expect.poll(async () => (await status(page)).service_state).toBe('inactive');
     await expect(page.locator('.owner-none')).toBeVisible();
     await page.getByRole('button', { name: 'Take Control Authority' }).click();
-    await expect(page.locator('.btn-arm')).toBeEnabled();
+    await expect(page.locator('.btn-start')).toBeEnabled();
     expect(retired).toEqual([]);
 });
 
@@ -339,7 +339,7 @@ test('canceling slow setup reports shutdown only after completion', async ({ pag
     await page.goto('/');
     await page.getByRole('button', { name: 'Take Control Authority' }).click();
     await expect.poll(async () => (await status(page)).service_state).toBe('inactive');
-    await page.getByRole('button', { name: 'Stop Controller Service' }).click();
+    await page.getByRole('button', { name: 'Release Control Authority' }).click();
     await expect(page.locator('.feedback-banner')).not.toContainText('controller stopped');
     await expect(page.locator('.feedback-banner')).toContainText('controller stopped', { timeout: 8000 });
     expect((await status(page)).service_state).toBe('inactive');

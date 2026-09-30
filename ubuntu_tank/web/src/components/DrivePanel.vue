@@ -59,12 +59,14 @@
       <!-- STOP / Space (Center) -->
       <div class="dpad-cell dpad-stop">
         <button
-          class="drive-btn btn-stop"
-          aria-label="Emergency Stop and Disarm (Press Space)"
-          @click="emit('emergency-stop')"
+          class="drive-btn"
+          :class="showStart ? 'btn-start' : 'btn-stop'"
+          :disabled="showStart && !canStart"
+          :aria-label="showStart ? 'Start' : 'Stop'"
+          @click="showStart ? emit('start') : emit('emergency-stop')"
         >
-          <span class="btn-stop-icon" aria-hidden="true">🛑</span>
-          <span class="btn-stop-text">STOP</span>
+          <span class="btn-stop-icon" aria-hidden="true">{{ showStart ? '▶' : '🛑' }}</span>
+          <span class="btn-stop-text">{{ showStart ? 'Start' : 'Stop' }}</span>
           <kbd class="btn-kbd kbd-stop">Space</kbd>
         </button>
       </div>
@@ -113,7 +115,7 @@
     <!-- Instruction Subtext -->
     <div class="panel-footer" aria-live="polite">
       <p class="instruction-text">
-        Hold a direction to move. Release to stop. Space stops and disarms immediately.
+        Start enables driving. Hold a direction to move. Release direction to stop moving. Stop / Space also disarms.
       </p>
     </div>
   </section>
@@ -124,6 +126,8 @@ import { computed, ref } from 'vue';
 import type { MotionDirection } from '../types/api';
 
 const props = defineProps<{
+  showStart: boolean;
+  canStart: boolean;
   isOwner: boolean;
   isArmed: boolean;
   activeDirection: MotionDirection;
@@ -137,6 +141,7 @@ const emit = defineEmits<{
   (e: 'pointer-cancel', event: PointerEvent): void;
   (e: 'pointer-leave', event: PointerEvent): void;
   (e: 'emergency-stop'): void;
+  (e: 'start'): void;
   (e: 'focus-change', focused: boolean): void;
 }>();
 
@@ -314,6 +319,9 @@ function onBlur() {
   color: #cbd5e1;
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
+
+ .btn-start { background: #15803d; color: white; border-color: #22c55e; }
+.btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* STOP Button */
 .btn-stop {

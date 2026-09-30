@@ -17,18 +17,13 @@
 
       <!-- Service Lifecycle & Control Ownership -->
       <ServiceControls
-        :is-owner="isOwner"
-        :is-armed="isArmed"
-        :is-controller-running="isControllerRunning"
-        :is-bound="isBound"
-        :is-operating="isOperating"
+        :has-session="hasSession"
+        :is-releasing="isReleasing"
+        :is-operating="isOperating || isStopping"
         :is-protocol-compatible="telemetry.isProtocolCompatible"
         :feedback="feedback"
-        @stop-controller="handleStopController"
         @take-control="takeControl"
         @release-control="handleReleaseControl"
-        @arm="arm"
-        @disarm="handleDisarm"
         @clear-feedback="clearFeedback"
       />
 
@@ -38,7 +33,10 @@
         :is-armed="isArmed"
         :active-direction="driveState.activeDirection"
         :recovery-message="recoveryMessage"
-        :is-ready="recovery === 'ready' && isBound"
+        :is-ready="recovery === 'ready' && isBound && !isOperating && !isStopping && !telemetry.releaseProgress"
+        :show-start="showStart"
+        :can-start="canStart"
+        @start="handleStart"
         @pointer-down="onPointerDown"
         @pointer-up="onPointerUp"
         @pointer-cancel="onPointerCancel"
@@ -71,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import HeaderBar from './components/HeaderBar.vue';
 import ServiceControls from './components/ServiceControls.vue';
 import DrivePanel from './components/DrivePanel.vue';
@@ -93,21 +91,24 @@ const { telemetry, isOwner, isArmed, isControllerRunning, pollStatus } = useRobo
 
 const {
   isBound,
+  hasSession,
   isOperating,
+  isStopping,
   feedback,
   clearFeedback,
   takeControl,
   releaseControl,
-  arm,
-  disarm,
+  start,
+  isReleasing,
   emergencyStop,
-  stopController,
 } = useControlSession(
   operatorId,
   pollStatus,
   () => telemetry.isProtocolCompatible,
   () => telemetry.currentEpoch,
-  () => telemetry.activeOwner
+  () => telemetry.activeOwner,
+  () => telemetry.sessionId,
+  () => telemetry.lastReleaseReason
 );
 
 async function handleEmergencyStop(): Promise<boolean> {
@@ -115,17 +116,18 @@ async function handleEmergencyStop(): Promise<boolean> {
   return emergencyStop();
 }
 
-async function handleStopController(): Promise<boolean> {
+const showStart = computed(() => isOwner.value && isBound.value &&
+  telemetry.operatorState === 'OWNED_DISARMED' && !telemetry.guardArmed &&
+  !telemetry.disarmPending && !isOperating.value && !isStopping.value && !telemetry.releaseProgress);
+const canStart = computed(() => showStart.value && isControllerRunning.value && telemetry.isProtocolCompatible);
+async function handleStart(): Promise<boolean> {
+  if (!canStart.value) return false;
   resetAllInput();
-  return stopController();
+  return start();
 }
 async function handleReleaseControl(): Promise<boolean> {
   resetAllInput();
   return releaseControl();
-}
-async function handleDisarm(): Promise<boolean> {
-  resetAllInput();
-  return disarm();
 }
 
 const {
@@ -140,7 +142,7 @@ const {
   resetAllInput,
 } = useDriveInput(
   () => isArmed.value,
-  () => isOwner.value,
+  () => isOwner.value && isBound.value && !isOperating.value && !isStopping.value && !telemetry.releaseProgress,
   handleEmergencyStop
 );
 
@@ -152,10 +154,10 @@ const isDiagOpen = ref(false);
 
 async function onApplyPwaUpdate() {
   await applyUpdate(async () => {
-    if (isOwner.value) {
-      await releaseControl();
+    if (hasSession.value) {
+      return handleReleaseControl();
     } else {
-      await emergencyStop();
+      return handleEmergencyStop();
     }
   });
 }

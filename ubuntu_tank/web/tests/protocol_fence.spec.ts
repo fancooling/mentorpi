@@ -6,7 +6,7 @@ test('protocol-2 acquisition is rejected by the protocol-3 runtime', async ({ pa
   expect(version.protocol_version).toBe('3.0.0');
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Take Control Authority' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Arm Chassis Motors', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0);
   const response = await request.post('/api/v1/control/acquire', {
     headers: { Origin: new URL(page.url()).origin },
     data: { request_id: 'obsolete-browser', operator_id: 'obsolete-browser', protocol_version: '2.0.0' },

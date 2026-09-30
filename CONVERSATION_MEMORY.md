@@ -5,6 +5,26 @@ Last updated: 2026-09-29
 This is the repository-local handoff between sessions. Read `GEMINI.md` for the
 current architecture and safety constraints; use `README.md` for commands.
 
+## M14.6 browser controls completed locally (2026-09-29)
+
+- One center Start / Stop button replaces Arm, Disarm and Stop controller.
+  Release remains available during setup, waits for confirmed shutdown and
+  retains retry credentials on failure. Space always stops; pending Stop blocks
+  Start. Held inputs, neutral recovery and observer Stop remain supported.
+- Visible status polling runs every second; resume polls immediately. Stale,
+  failed and superseded reads cannot restore control. Runtime revision reset
+  drops local authority before accepting a fresh snapshot; no automatic Take.
+- PWA updates now detect waiting workers. Update Now waits for successful
+  session cleanup before activation/reload; failed shutdown leaves the page
+  available for retry. Acceptance observations require Release to confirm the
+  controller inactive.
+- `./ubuntu_tank/deploy.sh test`: 580 Python tests passed, two skipped, and
+  42 Playwright scenarios passed. Build/type checking, Python lint/format,
+  whitespace and independent review passed (`review.md`: `PASS`). Browser
+  evidence uses real HTTP/WS/IPC and worker updates with simulated telemetry.
+- Recorded as one M14.6 implementation commit. No Pi deployment or motor
+  operation; M15 remains.
+
 ## M14.5 runtime implementation and local remediation (2026-09-29)
 
 - M14.5 implementation uses protocol 3 with `control/start` and combined

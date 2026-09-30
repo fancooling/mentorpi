@@ -4,6 +4,7 @@ import { apiClient, ApiError } from '../services/apiClient';
 import type { StatusResponse, VersionResponse } from '../types/api';
 import type { UiTelemetryState } from '../types/ui';
 
+/** Poll visible telemetry; failed, superseded or stale reads cannot authorize driving. */
 export function useRobotState(myOperatorId: string) {
   const telemetry = reactive<UiTelemetryState>({
     connectionStatus: 'disconnected',
@@ -12,6 +13,10 @@ export function useRobotState(myOperatorId: string) {
     activeOwner: null,
     isOwner: false,
     currentEpoch: null,
+    sessionId: null,
+    statusRevision: -1,
+    releaseProgress: null,
+    lastReleaseReason: null,
     guardArmed: false,
     disarmPending: false,
     batteryVoltage: null,
@@ -29,13 +34,18 @@ export function useRobotState(myOperatorId: string) {
   const isPolling = ref(false);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  let requestSequence = 0;
+  let appliedSequence = 0;
+  let visibilityGeneration = 0;
+  const FRESHNESS_MS = 2500;
+
   const isOwner = computed(() => {
-    return telemetry.activeOwner !== null && telemetry.activeOwner === myOperatorId;
+    return telemetry.connectionStatus === 'connected' && telemetry.activeOwner === myOperatorId && telemetry.sessionId === myOperatorId;
   });
 
   const isArmed = computed(() => {
     return (
-      telemetry.guardArmed &&
+      telemetry.connectionStatus === 'connected' && telemetry.guardArmed &&
       (telemetry.operatorState === 'ARMED_IDLE' || telemetry.operatorState === 'DRIVING' || telemetry.operatorState === 'INPUT_PAUSED')
     );
   });
@@ -60,6 +70,10 @@ export function useRobotState(myOperatorId: string) {
   }
 
   async function pollStatus(): Promise<void> {
+    if (document.hidden) return;
+    const sequence = ++requestSequence;
+    const generation = visibilityGeneration;
+    const started = performance.now();
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       handleOffline();
       return;
@@ -67,6 +81,21 @@ export function useRobotState(myOperatorId: string) {
 
     try {
       const s: StatusResponse = await apiClient.getStatus();
+      if (generation !== visibilityGeneration || sequence < appliedSequence ||
+          performance.now() - started > FRESHNESS_MS) return;
+      if (s.status_revision < telemetry.statusRevision) {
+        // A runtime restart resets revisions. Drop authority before accepting a
+        // subsequent read; an older in-flight response cannot restore the session.
+        appliedSequence = requestSequence;
+        telemetry.statusRevision = -1;
+        handleDisconnected();
+        return;
+      }
+      appliedSequence = sequence;
+      telemetry.statusRevision = s.status_revision;
+      telemetry.sessionId = s.session_id ?? null;
+      telemetry.releaseProgress = s.release_progress ?? null;
+      telemetry.lastReleaseReason = s.last_release_reason ?? null;
       telemetry.connectionStatus = 'connected';
       telemetry.serviceState = s.service_state;
       telemetry.operatorState = s.operator_state;
@@ -85,6 +114,8 @@ export function useRobotState(myOperatorId: string) {
       telemetry.protocolVersion = s.protocol_version;
       telemetry.lastUpdateTimestamp = Date.now();
     } catch (err) {
+      if (generation !== visibilityGeneration || sequence < appliedSequence) return;
+      appliedSequence = sequence;
       if (err instanceof ApiError && err.code === 'OFFLINE') {
         handleOffline();
       } else {
@@ -99,19 +130,26 @@ export function useRobotState(myOperatorId: string) {
     telemetry.batteryVoltage = null;
     telemetry.guardArmed = false;
     telemetry.isOwner = false;
+    telemetry.activeOwner = null;
+    telemetry.sessionId = null;
+    telemetry.currentEpoch = null;
   }
 
   function handleDisconnected() {
+    handleOffline();
     telemetry.connectionStatus = 'disconnected';
-    telemetry.batteryVoltage = null;
-    telemetry.guardArmed = false;
   }
 
   function startPolling(intervalMs: number = 1000) {
     if (isPolling.value) return;
     isPolling.value = true;
     pollStatus();
-    pollTimer = setInterval(pollStatus, intervalMs);
+    pollTimer = setInterval(() => {
+      if (document.hidden) return;
+      if (telemetry.lastUpdateTimestamp !== null && Date.now() - telemetry.lastUpdateTimestamp > FRESHNESS_MS)
+        handleDisconnected();
+      void pollStatus();
+    }, intervalMs);
   }
 
   function stopPolling() {
@@ -131,10 +169,20 @@ export function useRobotState(myOperatorId: string) {
     handleOffline();
   }
 
+  function onVisibilityChange() {
+    visibilityGeneration++;
+    handleDisconnected();
+    if (!document.hidden) {
+      void checkVersion();
+      void pollStatus();
+    }
+  }
+
   onMounted(() => {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', onOnline);
       window.addEventListener('offline', onOffline);
+      document.addEventListener('visibilitychange', onVisibilityChange);
     }
     checkVersion();
     startPolling();
@@ -145,6 +193,7 @@ export function useRobotState(myOperatorId: string) {
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
 

@@ -18,7 +18,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await takeControlBtn.click();
     await expect(page.locator('.owner-self')).toBeVisible();
 
-    const armBtn = page.locator('button.btn-arm');
+    const armBtn = page.locator('button.btn-start');
     await expect(armBtn).toBeEnabled();
     await armBtn.click();
     await expect(page.locator('.guard-armed')).toBeVisible();
@@ -98,7 +98,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await page.locator('button', { hasText: 'Take control' }).click();
     await expect(page.locator('.owner-self')).toBeVisible();
 
-    const armBtn = page.locator('button.btn-arm');
+    const armBtn = page.locator('button.btn-start');
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
     await expect(armBtn).toBeEnabled();
 
@@ -107,7 +107,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
 
     // Chassis should now be Armed
     await expect(page.locator('.guard-armed')).toBeVisible();
-    await expect(page.locator('button', { hasText: 'Disarm' })).toBeEnabled();
+    await expect(page.locator('button', { hasText: 'Stop' })).toBeEnabled();
 
     // Drive buttons are now enabled
     const forwardBtn = page.locator('button[aria-label^="Drive Forward"]');
@@ -199,7 +199,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await expect(statusVal).toContainText('forward');
 
     // Focus another element outside the drive panel
-    await page.locator('button.btn-disarm').focus();
+    await page.locator('button.btn-stop').focus();
     await expect(statusVal).toHaveText('zero');
     await page.keyboard.up('KeyW');
   });
@@ -249,7 +249,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await page.keyboard.down('KeyW');
 
     // Click Arm while KeyW is held
-    await page.locator('button.btn-arm').click();
+    await page.locator('button.btn-start').click();
     await expect(page.locator('.guard-armed')).toBeVisible();
 
     // Simulate OS auto-repeat events while KeyW is held: status MUST remain zero!
@@ -268,12 +268,12 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     await expect(page.locator('.command-status-row .status-v').first()).toContainText('forward');
 
     // Disarm while KeyW is held -> motion halts
-    await page.locator('button.btn-disarm').click();
+    await page.locator('button.btn-stop').click();
     await expect(page.locator('.guard-disarmed')).toBeVisible();
     await expect(page.locator('.command-status-row .status-v').first()).toHaveText('zero');
 
     // Re-arm while KeyW remains physically held
-    await page.locator('button.btn-arm').click();
+    await page.locator('button.btn-start').click();
     await expect(page.locator('.guard-armed')).toBeVisible();
 
     // Key held across disarm/re-arm must STILL NOT initiate motion!
@@ -373,7 +373,7 @@ test.describe('MentorPi Web Control & PWA Driving Interface (§2)', () => {
     // Take control and Arm must remain disabled for incompatible clients
     const takeControlBtn = page.locator('button', { hasText: 'Take control' });
     await expect(takeControlBtn).toBeDisabled();
-    await expect(page.locator('button.btn-arm')).toBeDisabled();
+    await expect(page.locator('button.btn-start')).toHaveCount(0);
   });
 
 });

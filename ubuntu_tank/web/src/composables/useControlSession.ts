@@ -1,16 +1,21 @@
-// Own one cancellable startup/acquisition/binding transaction; Arm is always explicit.
-import { ref, watch } from 'vue';
+// Own one cancellable startup/acquisition/binding transaction; Start is always explicit.
+import { computed, ref, watch } from 'vue';
 import { apiClient } from '../services/apiClient';
 import { wsControlClient } from '../services/wsClient';
 import type { ControlReleaseResponse } from '../types/api';
 import type { OperationFeedback } from '../types/ui';
 const uuid = () => crypto.randomUUID?.() ?? `req-${Date.now()}-${Math.random()}`;
-/** Coordinate one tab's setup/Arm commands; stale asynchronous results never restore control. */
-export function useControlSession(operatorId: string, pollStatus: () => Promise<void>, isProtocolCompatible = () => false, getCurrentEpoch = () => null as number | null, getActiveOwner = () => null as string | null) {
+/** Coordinate one tab's setup/Start commands; stale asynchronous results never restore control. */
+export function useControlSession(operatorId: string, pollStatus: () => Promise<void>, isProtocolCompatible = () => false, getCurrentEpoch = () => null as number | null, getActiveOwner = () => null as string | null, getSessionId = () => null as string | null, getReleaseReason = () => null as string | null) {
     const currentEpoch = ref<number | null>(null);
     const isOperating = ref(false);
     const isBound = ref(false);
     const feedback = ref<OperationFeedback | null>(null);
+    const isReleasing = ref(false);
+    const stopsInFlight = ref(0);
+    const isStopping = computed(() => stopsInFlight.value > 0);
+    const hasSession = ref(false);
+    let pendingAcquire: ReturnType<typeof apiClient.acquireControl> | null = null;
     let generation = 0;
     let setup: {
         operation_id: string;
@@ -26,12 +31,14 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             wsControlClient.updateEpoch(epoch);
         }
     });
-    watch(getActiveOwner, owner => {
-        if (isBound.value && owner !== operatorId) {
+    watch([getActiveOwner, getSessionId], ([owner, session]) => {
+        if (isBound.value && (owner !== operatorId || session !== operatorId)) {
             void invalidateSetup();
             wsControlClient.disconnect();
             isBound.value = false;
+            hasSession.value = false;
             currentEpoch.value = null;
+            setFeedback('info', getReleaseReason() === 'CONTROL_IDLE_TIMEOUT' ? 'Control released due to inactivity' : getReleaseReason() ? `Control released: ${getReleaseReason()}` : 'Control session lost; take control again');
         }
     });
     async function waitForRelease(result: Omit<ControlReleaseResponse, 'error'> & { error?: string | null }) {
@@ -51,18 +58,35 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             await waitForRelease(await apiClient.releaseControl({ protocol_version: '3.0.0', request_id: uuid(), ...operation }));
             return true;
         } catch {
-            // Cleanup must not overwrite the original setup failure or timeout.
-            return false;
+            // An inactive controller can still have startup in flight. Only a
+            // completed acquisition or terminal startup error permits this fallback;
+            // cancellation (STALE_TRANSACTION) does not prove its worker finished.
+            try {
+                const operationStatus = await apiClient.getOperation(operation.operation_id, operation.operation_token);
+                if (operationStatus.status !== 'completed' &&
+                    !(operationStatus.status === 'failed' && operationStatus.error === 'OPERATION_FAILED')) return false;
+                const status = await apiClient.getStatus();
+                return status.active_owner === null && status.service_state === 'inactive' && !status.release_progress;
+            } catch { return false; }
         }
     }
-    function invalidateSetup() {
+    async function invalidateSetup() {
         generation++;
-        const previous = setup;
+        let previous = setup;
+        const acquiring = pendingAcquire;
         setup = null;
         if (isOperating.value && !isBound.value)
             wsControlClient.disconnect();
-        isOperating.value = false;
+        if (!isReleasing.value) isOperating.value = false;
         const cancellationGeneration = generation;
+        if (!previous && acquiring) {
+            try {
+                const result = await acquiring;
+                if (result.operation_id && result.operation_token)
+                    previous = { operation_id: result.operation_id, operation_token: result.operation_token };
+                else if (result.success) return false;
+            } catch { return false; }
+        }
         return cancelOperation(previous).then(ok => {
             if (!ok && generation === cancellationGeneration && !isBound.value)
                 setup = previous;
@@ -70,14 +94,16 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         });
     }
     async function takeControl() {
-        if (isOperating.value || isBound.value || !isProtocolCompatible())
+        if (isStopping.value || isReleasing.value || isOperating.value || isBound.value || !isProtocolCompatible())
             return false;
         const transaction = ++generation;
         isOperating.value = true;
+        hasSession.value = true;
         setFeedback('info', 'Starting controller and taking control…');
         let operation: typeof setup = null;
         try {
-            const result = await apiClient.acquireControl({ request_id: uuid(), operator_id: operatorId, protocol_version: '3.0.0' });
+            pendingAcquire = apiClient.acquireControl({ request_id: uuid(), operator_id: operatorId, protocol_version: '3.0.0' });
+            const result = await pendingAcquire;
             if (!result.success || !result.operation_id || !result.operation_token)
                 throw new Error(result.message || result.error || 'Control acquisition failed');
             operation = { operation_id: result.operation_id, operation_token: result.operation_token };
@@ -106,7 +132,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
                         break;
                     isBound.value = true;
                     setup = null;
-                    setFeedback('success', 'Control ready. Arm to enable movement.');
+                    setFeedback('success', 'Control ready. Start to enable movement.');
                     await pollStatus();
                     return true;
                 }
@@ -122,10 +148,14 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             return false;
         }
         finally {
-            if (!isBound.value)
-                await cancelOperation(operation);
+            let canceled = true;
+            if (!isBound.value) {
+                canceled = await cancelOperation(operation);
+                if (canceled && !isReleasing.value) hasSession.value = false;
+            }
+            pendingAcquire = null;
             if (transaction === generation) {
-                setup = null;
+                setup = canceled ? null : operation;
                 isOperating.value = false;
                 if (!isBound.value) {
                     wsControlClient.disconnect();
@@ -135,6 +165,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         }
     }
     async function emergencyStop() {
+        stopsInFlight.value++;
         const cancellation = invalidateSetup();
         const request_id = uuid();
         wsControlClient.sendStop(request_id, currentEpoch.value);
@@ -147,14 +178,20 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
         catch {
             return false;
         }
+        finally {
+            stopsInFlight.value--;
+        }
     }
     async function releaseControl() {
+        if (isReleasing.value) return false;
         if (currentEpoch.value === null && setup === null && !isOperating.value) {
             setFeedback('error', 'This tab does not hold control');
             return false;
         }
+        isReleasing.value = true;
         const cancellation = invalidateSetup();
         isOperating.value = true;
+        setFeedback('info', 'Releasing control — waiting for controller shutdown…');
         try {
             if (!await cancellation) {
                 setFeedback('error', 'Controller shutdown unconfirmed; retry Release control');
@@ -165,6 +202,7 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             }
             wsControlClient.disconnect();
             isBound.value = false;
+            hasSession.value = false;
             currentEpoch.value = null;
             setFeedback('info', 'Control released; controller stopped');
             return true;
@@ -175,12 +213,13 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             return false;
         }
         finally {
+            isReleasing.value = false;
             isOperating.value = false;
             await pollStatus();
         }
     }
-    async function arm() {
-        if (!isBound.value || isOperating.value || !isProtocolCompatible() || currentEpoch.value === null)
+    async function start() {
+        if (isStopping.value || !isBound.value || isOperating.value || !isProtocolCompatible() || currentEpoch.value === null)
             return false;
         const transaction = generation;
         isOperating.value = true;
@@ -188,13 +227,13 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
             const result = await apiClient.startControl({ protocol_version: '3.0.0', request_id: uuid(), epoch: getCurrentEpoch() ?? currentEpoch.value });
             if (transaction !== generation)
                 return false;
-            setFeedback(result.success ? 'success' : 'error', result.success ? 'Chassis armed. Ready to drive.' : result.message || 'Arming failed');
+            setFeedback(result.success ? 'success' : 'error', result.success ? 'Chassis armed. Ready to drive.' : result.message || 'Starting failed');
             await pollStatus();
             return result.success;
         }
         catch (error: any) {
             if (transaction === generation)
-                setFeedback('error', error.message || 'Arming failed');
+                setFeedback('error', error.message || 'Starting failed');
             return false;
         }
         finally {
@@ -202,15 +241,12 @@ export function useControlSession(operatorId: string, pollStatus: () => Promise<
                 isOperating.value = false;
         }
     }
-    // Transitional UI alias until M14.6 removes the redundant button.
-    async function stopController() {
-        return releaseControl();
-    }
     wsControlClient.setHandlers({ onDisconnect: () => {
             isBound.value = false;
+            hasSession.value = false;
             currentEpoch.value = null;
             void emergencyStop();
         } });
-    return { currentEpoch, isOperating, isBound, feedback, setFeedback, clearFeedback,
-        takeControl, releaseControl, arm, disarm: emergencyStop, emergencyStop, stopController };
+    return { currentEpoch, isOperating, isReleasing, isStopping, isBound, hasSession, feedback, setFeedback, clearFeedback,
+        takeControl, releaseControl, start, emergencyStop };
 }

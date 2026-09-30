@@ -23,6 +23,10 @@ export interface UiTelemetryState {
   activeOwner: string | null;
   isOwner: boolean;
   currentEpoch: number | null;
+  sessionId: string | null;
+  statusRevision: number;
+  releaseProgress: string | null;
+  lastReleaseReason: string | null;
   guardArmed: boolean;
   disarmPending: boolean;
   batteryVoltage: number | null;

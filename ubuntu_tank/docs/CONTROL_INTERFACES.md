@@ -1,9 +1,8 @@
 # Controller and web interface reference
 
 Implemented interfaces for the paired Ubuntu Tank runtime/web containers as of
-M14.5. Protocol is `3.0.0`, schema version is `3`, and the HTTP API prefix is
-`/api/v1`. The browser presentation update remains M14.6; Pi deployment and
-physical acceptance of this contract remain M15.
+M14.6. Protocol is `3.0.0`, schema version is `3`, and the HTTP API prefix is
+`/api/v1`. Pi deployment and physical acceptance of this contract remain M15.
 
 This reference covers operator IPC, controller lifecycle IPC, HTTP and WebSocket
 interfaces. Internal ROS topics/services and Supervisor's private control socket

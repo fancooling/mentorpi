@@ -6,9 +6,8 @@ paired runtime and web containers. Use the
 [container guide](../docker/ubuntu_tank/README.md) for building, transferring,
 deploying and operating those images.
 
-Status as of 2026-09-29: M14.5 runtime/API implementation and local validation
-are complete. Its protocol-3 browser adapters are present; the simplified M14.6
-browser controls remain pending. M14.5 has not been deployed to the Pi. M14.4
+Status as of 2026-09-29: M14.5 runtime/API and M14.6 simplified browser controls
+are implemented and locally validated. These changes have not been deployed to the Pi. M14.4
 stopped-controller integration passed on the Pi; M15 physical web acceptance
 also supplies the outstanding container C5 evidence.
 
@@ -80,9 +79,19 @@ ownership; it is not confirmation of a completed explicit Release operation.
 Public `controller/start`, `controller/stop` and `control/arm` routes are removed;
 internal safety and lifecycle operations remain.
 
-The browser currently uses protocol-3 adapters with the transitional Arm and
-Stop controller presentation. M14.6 will replace that presentation with the
-simplified Start/Stop controls.
+Use Take control, then Start, then hold a direction to move. Releasing a direction
+stops motion while remaining armed. The center button shows Stop while armed or
+busy; Stop retains ownership. Space always stops, even on a focused Start button.
+Release control cancels setup or shuts down the controller before confirming
+release. A shutdown error leaves Release available for retry.
+
+The browser polls status every second while visible and immediately on resume.
+Failed or stale status disables driving and clears the local session. After
+session loss or inactivity expiry, use Take control again; reconnect never
+reacquires or starts automatically. Observers and unknown states offer Stop only.
+A waiting PWA update appears in the dashboard. Update Now releases this session
+and waits for confirmed shutdown before activating the worker and reloading;
+failed shutdown leaves the current page available for retry.
 
 Input expiry pauses motion. Browser recovery requires release of held controls,
 fresh neutral acknowledgment and a new press; it never replays buffered motion.

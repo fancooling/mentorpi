@@ -15,7 +15,7 @@
       <div class="banner-content">
         <span class="banner-icon" aria-hidden="true">⚠️</span>
         <span class="banner-text">
-          <strong>Incompatible Protocol:</strong> Connected server protocol version is incompatible with this cached client. Arming and driving are disabled. Please reload to update.
+          <strong>Incompatible Protocol:</strong> Connected server protocol version is incompatible with this cached client. Start and driving are disabled. Please reload to update.
         </span>
       </div>
       <button class="btn-banner" @click="reloadPage">Reload</button>
@@ -26,7 +26,7 @@
       <div class="banner-content">
         <span class="banner-icon" aria-hidden="true">🚀</span>
         <span class="banner-text">
-          <strong>Update Available:</strong> A new web control release is ready. Updating will disarm and reload the application.
+          <strong>Update Available:</strong> A new web control release is ready. Updating releases control, stops the controller and reloads the application.
         </span>
       </div>
       <button class="btn-banner btn-update" @click="emit('apply-update')">
