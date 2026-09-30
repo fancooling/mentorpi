@@ -139,6 +139,10 @@ protocol/API behavior and source/dependency boundaries. Tests using unavailable
 ROS facilities may skip. Local results do not certify Pi services, serial/DDS
 behavior or physical motor stopping.
 
+## Build and deploy to Pi 5
+
+### 1. Build and smoke-test on the development computer
+
 Use the container workflow for image and target verification. On the current
 x86_64 development computer, select the existing `mentorpi-c3` builder explicitly;
 the default Docker builder fails with `exec /bin/sh: exec format error` when
@@ -172,10 +176,88 @@ omit `--emulator`. BuildKit emulation
 does not make ordinary Docker containers ARM64-capable; the smoke-test option
 uses the emulator only inside its test containers without changing host emulation.
 
-Image build/smoke, transfer/staging,
-Pi deployment and physical acceptance are separate steps. Follow the
-[container guide](../docker/ubuntu_tank/README.md) for host preparation,
-configuration/TLS, staging, deployment and stopped `target-test` execution.
+### 2. Export and transfer the release
+
+Continue in the same development-computer shell after the smoke test passes.
+Set `pi_host` to your Pi's SSH alias or `user@hostname`. Export both image tags
+from the generated manifest and copy the host tools from the same checkout:
+
+```bash
+pi_host="YOUR_PI_SSH_ALIAS"
+pi_release_dir="mentorpi-releases/$(basename "$build_output")"
+
+.venv/bin/python - "$build_output" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+release = json.loads((output / "release.json").read_text())
+tags = [release["images"][role]["local_tag"] for role in ("runtime", "web")]
+subprocess.run(
+    ["docker", "image", "save", "-o", str(output / "images.tar"), *tags],
+    check=True,
+)
+PY
+
+mkdir -p "$build_output/host-tools"
+cp docker/ubuntu_tank/{deploy.py,image_identity.py,tls_setup.py,compose.yaml,ubuntu-tank-container.service} \
+  "$build_output/host-tools/"
+ssh "$pi_host" "mkdir -p '$pi_release_dir'"
+scp -r "$build_output/images.tar" "$build_output/release.json" \
+  "$build_output/host-tools" "$pi_host:$pi_release_dir/"
+printf 'On the Pi, run: cd ~/%s\n' "$pi_release_dir"
+ssh "$pi_host"
+```
+
+### 3. Deploy on the Pi 5
+
+This update procedure assumes the Pi already has Ubuntu 26.04 ARM64, Docker,
+Compose, logrotate, `/dev/rrc`, controller/web configuration, TLS certificates
+and a signed SROS2 keystore. For a new Pi, complete the
+[host prerequisites and TLS setup](../docker/ubuntu_tank/README.md#host-preparation-and-deployment)
+first. Keep the installed calibration, browser origins, certificates and keys;
+do not overwrite them with development defaults.
+
+In the Pi SSH session, run the `cd` command printed above, then the commands
+below. Stop browser control before updating. The stop and preparation steps
+interrupt the existing deployment; preparation also disables native services.
+Use the Pi's system Python, without a virtual environment:
+
+```bash
+sudo docker image load -i images.tar
+
+# Stop the existing pair before refreshing the installed host tools.
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stop
+sudo /usr/bin/python3 host-tools/deploy.py prepare-host
+
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py stage "$PWD/release.json"
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py deploy "$PWD/release.json"
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py target-test
+sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py status
+```
+
+Run each command only after the preceding command succeeds. Initial image
+verification can take up to 15 minutes per image on slow storage and needs
+temporary space for an uncompressed image export. If deployment fails, inspect
+`sudo /usr/bin/python3 /opt/ubuntu_tank-container/deploy.py logs`, resolve the
+error, then repeat deployment and verification.
+
+### 4. Verify before browser driving
+
+Require `PASS_STOPPED_INTEGRATION` from `target-test` and confirm the controller
+is inactive, disarmed and ownerless. Evidence is saved to
+`/var/lib/ubuntu_tank-container/target-test.json`. This verifies stopped services;
+it does not certify motor behavior.
+
+Open the Pi's configured HTTPS address on port 8443 and refresh/update the PWA.
+Confirm the new Start / Stop controls are visible. Raised-track testing then
+follows Take control → Start → direction/release → Stop → Release control;
+Release must confirm controller shutdown. Follow the
+[Milestone 15 checklist](../docs/MENTORPI_WEB_CONTROL_DESIGN.md#milestone-15--deployment-and-raised-track-web-acceptance)
+for physical and network acceptance.
+
 `deploy.sh` no longer provides native build, install, start, arm, teleop or
 acceptance commands.
 
