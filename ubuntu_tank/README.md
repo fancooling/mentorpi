@@ -139,19 +139,40 @@ protocol/API behavior and source/dependency boundaries. Tests using unavailable
 ROS facilities may skip. Local results do not certify Pi services, serial/DDS
 behavior or physical motor stopping.
 
-Use the container workflow for image and target verification:
+Use the container workflow for image and target verification. On the current
+x86_64 development computer, select the existing `mentorpi-c3` builder explicitly;
+the default Docker builder fails with `exec /bin/sh: exec format error` when
+executing ARM64 build steps. Run these commands from the repository root:
 
 ```bash
 # Build paired ARM64 images into a new output directory.
+build_output="ubuntu_tank/.work/container-build-$(date -u +%Y%m%dT%H%M%S%N)"
 .venv/bin/python docker/ubuntu_tank/build.py \
-  --output ubuntu_tank/.work/container-build
+  --builder mentorpi-c3 \
+  --output "$build_output"
+
+# Copy the builder's emulator to a reusable local tools directory.
+emulator_path="$PWD/ubuntu_tank/.work/emulators/buildkit-qemu-aarch64"
+mkdir -p "$(dirname "$emulator_path")"
+docker cp buildx_buildkit_mentorpi-c30:/usr/bin/buildkit-qemu-aarch64 "$emulator_path"
 
 # Verify the resulting images without mapping robot hardware.
 .venv/bin/python docker/ubuntu_tank/smoke.py \
-  ubuntu_tank/.work/container-build/release.json
+  "$build_output/release.json" \
+  --emulator "$emulator_path"
 ```
 
-An ARM64-capable Buildx builder is required. Image build/smoke, transfer/staging,
+The output directory must not already exist, including after a failed build;
+rerun the `build_output` assignment for each retry. Run the smoke test in the
+same shell so it uses that build's output directory.
+The builder and its container name above refer to existing workstation resources.
+On another computer, use its ARM64-capable Buildx builder and copy the emulator
+from that builder's container. Native ARM64 hosts can skip the emulator copy and
+omit `--emulator`. BuildKit emulation
+does not make ordinary Docker containers ARM64-capable; the smoke-test option
+uses the emulator only inside its test containers without changing host emulation.
+
+Image build/smoke, transfer/staging,
 Pi deployment and physical acceptance are separate steps. Follow the
 [container guide](../docker/ubuntu_tank/README.md) for host preparation,
 configuration/TLS, staging, deployment and stopped `target-test` execution.
