@@ -159,7 +159,11 @@ buttons and accessible focus styling; keyboard-only users drive with W/S/A/D.
 [MDN documents the pointer event and capture lifecycle](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events).
 
 Window blur, hidden document, navigation, screen lock, or socket loss clears
-input and requests stop/disarm. Returning to the page never resumes movement.
+input and requests stop/disarm. Blur and hidden-page transitions retain the bound
+owner while the control connection remains open. Background time counts toward
+the configured ownership inactivity timeout (default five minutes), which releases
+ownership and stops the controller. Return requires fresh status and explicit Start;
+it never resumes movement. Actual transport loss still revokes ownership.
 Lifecycle notifications are best effort; the Pi enforces expiry independently.
 Hidden-page timers may be throttled, so they cannot supply safety timing.
 [Page Visibility API behavior](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API).
@@ -1196,41 +1200,74 @@ or controller-stop UI. Product tests pass; deployment and motor tests remain M15
 
 ### Milestone 15 — Deployment and raised-track web acceptance
 
-Status: pending; revised-contract acceptance depends on M14.3–M14.6.
+Status: in progress. Completed checks below apply to the October 1 raised-track
+session (October 2 UTC), deployed source `9428c22`, protocol `3.0.0`, release
+`d683078e2e8dfde01b6cd1bf28b2556190ddf8448fa4f17c7ef680ddf6e949e4`.
 This milestone supplies the web-control evidence for container C5.
+Owner-observed passes are uninstrumented; they do not establish stopping latency.
 
-- [ ] Build and smoke-test the paired ARM64 images, deploy through the current
-  Docker workflow, and verify installed release, protocol and retained settings.
-  Run stopped-controller integration before motor tests.
-- [ ] With tracks raised and power disconnect accessible, record at least 30
-  press/release cycles per input method (buttons and keyboard) on each network
-  being accepted, covering all four directions, plus at least 10 injected
-  timeout/recovery cycles. Unexpected disarming or automatic resumption fails.
+Completed checks — retain these results rather than restarting the checklist:
+
+- [x] Build/smoke-test paired ARM64 images and deploy through the Docker workflow.
+  Correlate installed release/protocol and retained configuration; fresh
+  `install.py target-test` passed before motor tests, inactive/disarmed/ownerless.
+- [x] Owner confirmed raised tracks, clear area and presence for authorized tests.
+- [x] Owner reported the requested 30 button and 30 keyboard press/release cycles
+  passed over Wi-Fi, covering forward, reverse, left and right, with correct
+  direction, stopping on release and no unexpected disarming or automatic motion.
+- [x] Owner observed Take control and Start without movement; motion required a
+  fresh direction press. Stop and Release control completed without a UI error.
+- [x] Owner observed Space stop/disarm and the five-second hold cap stopping motion
+  without resuming while input remained held.
+- [x] Owner observed focus-loss stopping and no automatic movement on return.
+  This tested the old ownership-loss behavior; ownership retention needs the
+  focused retest below.
+- [x] Record installed release, configuration hashes and effective lease/hold/
+  ownership limits (1/5/300 seconds). Recorded network: Pi Wi-Fi connected,
+  Ethernet without carrier; observer: owner. Client/version details remain open.
+
+Remaining checks:
+
+- [ ] Deploy the local focus-retention fix and refresh the PWA. Repeat stopped
+  integration for that release; verify blur/tab hiding stops/disarms but retains
+  ownership, and return requires fresh status and Start without automatic motion.
+  Repeat affected checks for the new release; retain prior results as history.
+- [ ] Complete at least 10 injected timeout/recovery cycles per accepted network.
+  Observe zero motion during pause and after delayed/held input; fresh neutral
+  plus a new press must resume without Arm. Exercise sustained outage until idle
+  disarm, detected disconnect, Stop during recovery and controller faults.
 - [ ] Separate Pi-local, remote Wi-Fi and Ethernet results. Capture challenge
   issue/arrival/response/acceptance timing and pause counts. Record unresolved
-  stalls; do not call Wi-Fi reliable based on Pi-local or wired success.
-- [ ] Observe zero motion during pause and after delayed/held input; verify fresh
-  neutral plus a new press resumes without Arm. Exercise sustained outage until
-  idle disarm, detected disconnect, Stop during recovery and controller faults.
-- [ ] Observe all four directions via buttons and keyboard at conservative speed;
-  verify direction release, Start/Stop, Space, Release control shutdown, idle
-  timeout and hold cap. Confirm Take control restarts after Release without
-  arming, and Start requires a new direction press before any motion.
-- [ ] Verify the installed configurable ownership timeout with idle polling and
-  no user actions: automatic zero/disarm, controller inactive, ownership released
-  and the browser updated. Verify accepted actions reset it and a fresh Take
-  control/Start is required afterward. Record the tested value and restore the
-  intended configuration through the stopped deployment workflow.
-- [ ] Measure loss-of-focus, tab close, browser crash, Wi-Fi loss, delayed/buffered
-  packets, web crash/hang, operator crash/hang, and reconnect behavior.
+  stalls; the observed Wi-Fi cycles alone do not establish network reliability.
+- [ ] Verify the separate armed-idle timeout, confirmed controller shutdown after
+  Release, and Take control restarting after Release without arming.
+- [ ] Verify the installed 300-second ownership timeout with idle polling and no
+  user actions: zero/disarm, controller inactive, ownership released and browser
+  updated. Verify accepted actions reset it and fresh Take control/Start is
+  required afterward. Restore intended configuration if changed for testing.
+  The attempted run was inconclusive: ownership ended about nine seconds after
+  acquisition on tab/focus loss; after five minutes the controller remained
+  active, disarmed and ownerless. Do not count that run as a timeout pass.
+- [ ] Measure physical stopping for focus loss, tab close, browser crash, Wi-Fi
+  loss, delayed/buffered packets, web crash/hang, operator crash/hang and reconnect.
 - [ ] Repeat relevant controls and failure cases in installed Android/iOS PWAs,
-  including touch cancellation, app switching, screen lock, resume, and updates.
-- [ ] Re-run affected native guard/bridge/serial/host-stop acceptance cases; a
-  previous native acceptance report does not certify the new producer path.
-- [ ] Record exact installed release, configuration, client/browser versions,
-  network conditions, physical observer, instruments, and raw evidence.
-- [ ] Finish stopped/disarmed/ownerless and record every failed or unexecuted
-  acceptance gate explicitly.
+  including touch cancellation, app switching, screen lock, resume and updates.
+- [ ] Re-run affected guard/bridge/serial/host-stop acceptance cases for Docker;
+  previous native acceptance does not certify the new producer path.
+- [ ] Add client/browser versions, detailed network conditions, instruments,
+  raw timing evidence and stopping distance to the recorded release/configuration.
+- [ ] Finish stopped/disarmed/ownerless and record every failed or unexecuted gate.
+  The last captured state was active/disarmed/ownerless, so final shutdown is open.
+
+Evidence: `ubuntu_tank/.work/m15-rpitank-20261002/` contains `preflight.json`,
+`owner-observations.json`, browser status traces and `five-minute-result.json`.
+The matching build/deployment log is in
+`ubuntu_tank/.work/release-20261002T043958008430682-922607/`.
+These local artifacts are not tracked; this checklist preserves their conclusions.
+
+Local focus-fix validation also passed: frontend build/type checks, PWA checks,
+45 browser scenarios and independent review. This is software evidence, not
+verification of the fix on the Pi.
 
 Target: physical rest within 1.2 seconds for browser/network/web input loss with
 a healthy agent, measured from the injected fault, using the §4.4 budget. Record
@@ -1246,17 +1283,12 @@ and serial writes alone cannot mark physical acceptance passed. Network
 reliability remains open if stalls still prevent ordinary control, even when
 the unnecessary-disarm defect is fixed.
 
-*Implementation note (2026-09-20)*: Orchestrator software (`ubuntu_tank/scripts/web_acceptance.py`),
-CLI integration (`./ubuntu_tank/deploy.sh web-acceptance`), strict evidence schemas, live API/release
-correlation, report generation, and regression tests (`ubuntu_tank/tests/test_milestone15_web_acceptance.py`)
-are implemented. A certifying target run must use `--interactive-observations`: the runner holds a
-read-only shared deployment lock, validates the active managed bridge and USB device, probes the installed
-HTTPS API before and after the session, requires the complete button, keyboard, PWA, fault, client,
-instrument, raw-evidence, and timing breakdown record, and confirms a final fail-closed stop. A static
-`--physical-observations` payload can exercise schema validation but remains
-`PENDING_PHYSICAL_ACCEPTANCE`; mocks and development-computer runs also cannot certify the release. Live
-physical execution with the real Pi 5, elevated tracks, motors, clients, network faults, and instruments
-remains pending.
+*Tooling boundary*: `ubuntu_tank/scripts/web_acceptance.py` and the native
+`./ubuntu_tank/deploy.sh web-acceptance` runner predate Docker and the revised
+control/timing contract. They do not certify this deployment. A container
+`web-acceptance` command is not implemented; use the current Docker workflow and
+this checklist, keeping physical observations and timing evidence separate from
+local software tests.
 
 ### Milestone 16 — Operator handoff and release
 

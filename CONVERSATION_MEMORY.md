@@ -1,6 +1,6 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-09-29
+Last updated: 2026-10-01
 
 Keep this file as a concise current handoff. Read `AGENTS.md` for working rules
 and `GEMINI.md` for architecture and safety. Detailed history belongs in Git and
@@ -27,12 +27,20 @@ pushbefore relying on recorded observations.
 
 ## Current control contract
 
-- Local Release fix pending deployment: status polling could observe ownership
+- Local focus-retention fix, not deployed: hidden/resumed pages invalidate cached
+  telemetry without clearing the owner/session binding. Blur and hiding still
+  stop/disarm; return requires fresh status and explicit Start. Background time
+  counts toward the configured ownership timeout; real transport loss still
+  revokes ownership. Hidden-page regression reproduced the prior release; all
+  45 browser scenarios, frontend build/type checks, PWA checks and independent
+  review passed. Rebuild/deploy and refresh the PWA before repeating Pi acceptance.
+- Release fix `9428c22` is deployed and release-correlated on the Pi; browser
+  physical acceptance remains pending. Status polling could observe ownership
   loss before the shutdown result, disconnect the WebSocket and discard its
   operation, producing “Operation not found.” Defer ownership-loss cleanup while
   Release awaits its result, then reconcile. A delayed-shutdown browser regression
   reproduced the error before the fix; all 43 browser scenarios, frontend build,
-  lint and independent review passed afterward. Requires fresh images/PWA update.
+  lint and independent review passed afterward. Confirm the client loaded the updated PWA.
 - Protocol 3: Take control starts the controller if needed and acquires ownership
   without arming. Start arms but requires a fresh direction press before motion.
   Stop/Space zeroes and disarms while retaining ownership. Release stops the
@@ -87,6 +95,26 @@ pushbefore relying on recorded observations.
 
 ## Last recorded Pi evidence
 
+- October 1 (October 2 UTC) live verification: release
+  `d683078e2e8dfde01b6cd1bf28b2556190ddf8448fa4f17c7ef680ddf6e949e4`,
+  source `9428c22`, protocol `3.0.0`. Matching build/deployment log in
+  `ubuntu_tank/.work/release-20261002T043958008430682-922607/` confirms ARM64
+  smoke and deployment passed. A fresh installed `install.py target-test` passed;
+  API reported inactive, disarmed and ownerless. Effective lease/hold/ownership
+  limits: 1/5/300 seconds. Wi-Fi connected; Ethernet had no carrier.
+  Preflight evidence: `ubuntu_tank/.work/m15-rpitank-20261002/preflight.json`.
+  Owner confirmed raised tracks and authorized physical tests. Owner reported
+  Take/Start without movement, brief forward/release, Stop and Release all worked.
+  Owner also reported the requested 30 button and 30 keyboard cycles across
+  all directions passed over Wi-Fi. These observations are uninstrumented; client
+  versions, recovery, faults, mobile PWA and physical timing remain pending.
+  Owner additionally reported Space, hold cap, focus loss and ownership timeout
+  worked. Live API afterward remained active/NO_OWNER/disarmed with last release
+  EXPLICIT_RELEASE; five-minute controller shutdown is not corroborated and an
+  isolated repeat acquired at 05:05:28 UTC but lost its connection/ownership
+  about nine seconds later. A check after five minutes still showed active,
+  ownerless and disarmed; inactivity expiry remains unverified. Observations are saved beside preflight as
+  `owner-observations.json`.
 - Latest release: `549acd669a7af59bb689a4d6e5fae85d5a68b43e3830e16450296b8251ad74f2`;
   local manifest records source `701fa10` and protocol `3.0.0`. Build directory:
   `ubuntu_tank/.work/release-20260930T031803090371540-3100908`.
@@ -122,9 +150,12 @@ pushbefore relying on recorded observations.
 - Preserve Pi calibration, browser origins, TLS and signed SROS2 keys across
   updates. Missing/invalid TLS fails closed; `setup-tls` is explicit and requires
   stopped applications. Browser certificate trust is a separate client operation.
-- Next: confirm updated browser/PWA controls and retained settings, then complete
-  M15 raised-track direction, recovery, shutdown,
-  PWA and instrumented stopping tests. Finish stopped/disarmed/ownerless.
+- M15 checklist now records completed Wi-Fi direction cycles and owner-observed
+  controls separately from open gates; use it to avoid repeating completed work.
+  Next: deploy/refresh the focus-retention fix, verify retained ownership and
+  five-minute shutdown, then finish recovery, fault, PWA and measured stopping
+  tests. Repeat affected checks for the new release; retain earlier evidence.
+  Finish stopped/disarmed/ownerless.
 - Historical native controller M6/M9 acceptance was `ACCEPTED`: four directions,
   nine failure conditions and an observed 280 ms STM32 watchdog. This does not
   certify Docker or the revised web producer. On-ground motion remains unauthorized.

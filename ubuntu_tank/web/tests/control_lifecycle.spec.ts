@@ -128,9 +128,10 @@ test('out-of-order status cannot restore expired ownership', async ({ page, requ
   await expect(page.locator('.owner-none')).toBeVisible();
 });
 
-test('hidden page stops polling; resume polls immediately without reacquisition', async ({ page }) => {
+test('hidden page retains ownership without polling; resume requires fresh status and Start', async ({ page }) => {
   await take(page);
   await start(page).click();
+  const owner = (await status(page)).active_owner;
   let polls = 0;
   page.on('request', req => { if (req.url().endsWith('/status')) polls++; });
   await page.evaluate(() => {
@@ -141,15 +142,50 @@ test('hidden page stops polling; resume polls immediately without reacquisition'
   const hiddenPolls = polls;
   await page.waitForTimeout(1200);
   expect(polls).toBe(hiddenPolls);
+  expect((await status(page)).active_owner).toBe(owner);
+  expect((await status(page)).guard_armed).toBe(false);
   await page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: false });
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect(page.locator('.conn-connected')).toBeVisible();
   expect(polls).toBeGreaterThan(hiddenPolls);
-  await expect(start(page)).toHaveCount(0);
+  await expect(start(page)).toBeEnabled();
+  expect((await status(page)).active_owner).toBe(owner);
   expect((await status(page)).guard_armed).toBe(false);
 });
+
+for (const hidden of [false, true]) {
+  test(`focus loss retains ownership until inactivity expiry (hidden=${hidden})`, async ({ page, request }) => {
+    await request.post('/api/v1/test/lifecycle', { data: { idle_timeout: 4 } });
+    await take(page);
+    await start(page).click();
+    const owner = (await status(page)).active_owner;
+    const forward = page.getByRole('button', { name: 'Drive Forward (Hold W)' });
+    await expect(forward).toBeEnabled();
+    await forward.dispatchEvent('pointerdown', { pointerId: 1 });
+    await expect.poll(async () => (await status(page)).operator_state).toBe('DRIVING');
+    await page.evaluate(hidden => {
+      if (hidden) {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      } else window.dispatchEvent(new Event('blur'));
+    }, hidden);
+    await expect.poll(async () => (await status(page)).guard_armed).toBe(false);
+    expect((await status(page)).active_owner).toBe(owner);
+    await expect.poll(async () => (await status(page)).service_state, { timeout: 8000 }).toBe('inactive');
+    const expired = await status(page);
+    expect(expired.active_owner).toBeNull();
+    expect(expired.last_release_reason).toBe('CONTROL_IDLE_TIMEOUT');
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect(page.locator('.owner-none')).toBeVisible();
+    await expect(start(page)).toHaveCount(0);
+    expect((await status(page)).guard_armed).toBe(false);
+  });
+}
 
 test('Release waits for a delayed acquisition response and shutdown', async ({ page, request }) => {
   await request.post('/api/v1/test/lifecycle', { data: { active: false, delay: 1 } });

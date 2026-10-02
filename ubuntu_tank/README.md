@@ -85,6 +85,12 @@ busy; Stop retains ownership. Space always stops, even on a focused Start button
 Release control cancels setup or shuts down the controller before confirming
 release. A shutdown error leaves Release available for retry.
 
+Switching tabs or losing window focus stops motion and disarms while retaining
+ownership. Returning requires fresh status and an explicit Start before driving.
+The ownership inactivity timer continues in the background (default five minutes);
+expiry releases ownership and stops the controller. A real connection loss still
+revokes control.
+
 The browser polls status every second while visible and immediately on resume.
 Failed or stale status disables driving and clears the local session. After
 session loss or inactivity expiry, use Take control again; reconnect never

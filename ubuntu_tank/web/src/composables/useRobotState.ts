@@ -4,7 +4,7 @@ import { apiClient, ApiError } from '../services/apiClient';
 import type { StatusResponse, VersionResponse } from '../types/api';
 import type { UiTelemetryState } from '../types/ui';
 
-/** Poll visible telemetry; failed, superseded or stale reads cannot authorize driving. */
+/** Poll visible telemetry; hidden pages retain ownership but require fresh status before driving. */
 export function useRobotState(myOperatorId: string) {
   const telemetry = reactive<UiTelemetryState>({
     connectionStatus: 'disconnected',
@@ -171,7 +171,13 @@ export function useRobotState(myOperatorId: string) {
 
   function onVisibilityChange() {
     visibilityGeneration++;
-    handleDisconnected();
+    // Visibility is not transport loss. Preserve the owner/session binding while
+    // disabling controls and invalidating cached telemetry until a fresh read.
+    // Clearing the owner here makes useControlSession close the control socket.
+    telemetry.connectionStatus = 'disconnected';
+    telemetry.guardArmed = false;
+    telemetry.batteryVoltage = null;
+    telemetry.lastUpdateTimestamp = null;
     if (!document.hidden) {
       void checkVersion();
       void pollStatus();
