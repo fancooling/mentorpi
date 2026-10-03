@@ -1,7 +1,9 @@
 """Same-UID lifecycle socket service for fixed Supervisor controller operations.
 
-Start admission is revoked before Stop does any blocking work. The runner also
-checks admission before launching ROS, closing the delayed-start race. No host
+Start admission is revoked before Stop does any blocking work. A new Start waits
+for previous controller-group cleanup and fresh safety progress, and remains
+cancellable by Stop while waiting. The runner also checks admission before
+launching ROS, closing the delayed-start race. No host
 systemd, Docker, deployment locks or arbitrary process names are exposed.
 """
 
@@ -154,6 +156,41 @@ class LifecycleHelperService:
                                 "message": "Runtime preflight failed: " + message,
                             }
                     _, initial_state, _ = self._operation("is-active")
+                    if progress.enabled() and initial_state == "inactive":
+                        # Stop can finish before the monitor reaps the old ROS
+                        # group. Do not grant a new permit that its cleanup will
+                        # revoke, or reject a healthy monitor during that cleanup.
+                        deadline = time.monotonic() + progress.STARTUP_DEADLINE
+                        while True:
+                            if (
+                                not admitted()
+                                or generation != self._generation
+                                or self._stopping
+                            ):
+                                return {
+                                    "success": False,
+                                    "error": "ABORTED_BY_STOP",
+                                    "message": "Start superseded by Stop",
+                                }
+                            if (
+                                not progress.read_record("controller")
+                                and progress.read_record("monitor").get(
+                                    "controller_pid"
+                                )
+                                == 0
+                                and all(
+                                    progress.fresh(name)
+                                    for name in ("monitor", "operator", "operator_ipc")
+                                )
+                            ):
+                                break
+                            if time.monotonic() >= deadline:
+                                return {
+                                    "success": False,
+                                    "error": "PREFLIGHT_FAILED",
+                                    "message": "Runtime safety cleanup or progress unavailable",
+                                }
+                            time.sleep(0.02)
                     with self._state_lock:
                         if (
                             not admitted()

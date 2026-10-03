@@ -110,7 +110,9 @@ def main() -> int:
                 progress.stop_groups(progress.controller_groups())
                 progress.write_record("controller", {})
                 controller_pid = 0
-            progress.beat("monitor")
+            # Start waits for this acknowledgement before replacing a stopped
+            # controller; an empty runner record alone can precede our cleanup.
+            progress.beat("monitor", controller_pid=controller_pid)
             time.sleep(max(0, progress.POLL_INTERVAL - (time.monotonic() - iteration)))
     except (OSError, RuntimeError, KeyError, ValueError, xmlrpc.client.Error) as exc:
         reason = str(exc)

@@ -1,11 +1,72 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 Keep this file as a concise current handoff. Read `AGENTS.md` for working rules
 and `GEMINI.md` for architecture and safety. Detailed history belongs in Git and
 the linked designs. Recheck running services, images, devices and Git state
-pushbefore relying on recorded observations.
+before relying on recorded observations.
+
+## October 2 M15 continuation
+
+- Initial release `268674c59248a738ccf46242c5e15aac9b80b00113f8dc4bc3dcbf9b5ee0c69f`,
+  source `73748c6`, includes the focus-retention fix. Fresh stopped integration
+  passed. Full results: `docs/M15_ACCEPTANCE_2026-10-02.md`; raw local evidence:
+  `ubuntu_tank/.work/m15-20261003/`.
+- Owner reconfirmed raised tracks and authorized motor/fault tests; selected
+  Wi-Fi and waived fault-to-track-stop measurements. Waived is not passed.
+- Client acceptance is Windows Chrome only. Owner excluded Android/iOS browser
+  and PWA testing and plans separate mobile client apps in future work.
+  Owner reported all requested Windows Chrome checks passed on `153.0.8010.53`
+  (Official Build, 64-bit); Windows OS version was not supplied.
+- Owner removed serial disconnect/reconnect, Wi-Fi radio-loss, power-off/cold-boot
+  and resource-exhaustion tests from the remaining M15 plan. These are excluded, not passed. Keep the
+  observed boot-time clock failure in the report; no fix is implied.
+- Real Pi/browser tests passed synthetic focus retention, 30-second armed-idle
+  disarm, Release shutdown, Take restarting disarmed, and 300-second ownership
+  expiry with polling not renewing it. Space reset the ownership countdown.
+- Ten injected input-gap/recovery cycles passed with one Start, ten stale-motion
+  replays rejected, and explicit Stop during recovery. Owner confirmed stopping
+  between pulses and no unexpected movement. Physical timing was not measured.
+- Boot initially failed TLS validation because the Pi clock was July, before
+  certificate validity. After time synchronization, explicit service startup
+  restored operation. The failure remains documented; owner excluded further
+  power-off/cold-boot testing from this M15 scope.
+- Immediate Take after Release once failed with runtime safety progress
+  unavailable. The deployed fix and repeated test below supersede that open issue;
+  preserve the original failure in acceptance.
+- Nine Docker/process faults and browser offline/tab-close/crash were injected;
+  stopped restoration passed. Tab close left the controller active but disarmed
+  and ownerless before host restoration; it did not independently shut it down.
+  Owner confirmed correct stopping in all these fault cases. Windows Chrome
+  controls/tab-resume checks passed separately. Guard/bridge failure snapshots
+  had unconfirmed disarm; do not infer physical stopping from stale telemetry.
+  Do not infer completion from the older native certificate.
+- Automated session finished with fresh stopped integration passing, both
+  containers healthy, controller inactive, ownerless and no pending disarm.
+  Fresh HTTPS state after Windows Chrome manual tests also confirmed inactive,
+  disarmed, ownerless, no pending disarm or last fault, and `EXPLICIT_RELEASE`.
+  A subsequent interrupted same-release redeployment test passed: killing the
+  installer after admission closure produced `DEPLOYMENT_BUSY`; normal recovery
+  passed stopped integration. See `interrupted-deploy.log`.
+- Current release `4b320e602524306678496ec7a008e0e454f6d81a66301984f6d7518df92928db`
+  includes the uncommitted immediate-restart fix on source `73748c6`. Start waits
+  for monitor cleanup acknowledgement and fresh safety progress. Fourteen
+  supervision tests, full development suite, ARM64 smoke/deployment and independent
+  review passed. Twenty consecutive live Take/Release cycles passed without Arm.
+  An earlier 14-cycle attempt ended in browser “Failed to fetch”; Chromium also
+  recorded `ERR_NETWORK_CHANGED` during the successful repeat. Network reliability
+  is not established by the lifecycle pass. See `reacquire.jsonl`.
+- Actual same-origin application update passed across older/new deployed releases:
+  Update Now released control and activated the new worker stopped/disarmed/
+  ownerless. Automated Chromium used a pinned-certificate exception; this does not
+  prove Windows trust. Final stopped integration and certificate-verified HTTPS
+  passed with healthy containers, inactive/disarmed/ownerless and no pending
+  disarm or last fault. Windows still reported “Not secure”; certificate import
+  instructions supplied; owner reconfirmed the warning persists. Trust remains
+  unresolved: service-worker registration/update features can be blocked even
+  when ordinary controls work. Owner requested committing these M15 changes;
+  no push is authorized.
 
 ## Current state
 
@@ -17,30 +78,32 @@ pushbefore relying on recorded observations.
   competing-owner and interrupted-update tests were waived, not passed.
 - M14.3–M14.6 are implemented. M14.6 is commit `6645425`; it and documentation
   through `d1410d3` are in the locally recorded pushed baseline.
-- Latest owner-provided output confirms M14.6 Pi deployment and stopped
-  integration on September 29 (September 30 UTC). M15 physical acceptance
-  remains unverified.
-  M15 supplies container C5 evidence; C6/M16 release handoff remains pending.
+- October 2 M15 results are recorded above: Windows Chrome controls, ten recovery
+  cycles, lifecycle checks and automated fault injection/restoration completed.
+  The M15 checklist separates these checked items from unexecuted tests,
+  unconfirmed physical observations, failures and owner exclusions/waivers.
+  M15 remains open and supplies C5 evidence; C6/M16 handoff remains pending.
 - Local M14.6 validation: 580 Python tests passed, two skipped, and 42 browser
   scenarios passed; build/type checks and independent review passed. Browser
   evidence uses real HTTP/WS/IPC with simulated controller telemetry.
 
 ## Current control contract
 
-- Local focus-retention fix, not deployed: hidden/resumed pages invalidate cached
+- Focus-retention fix, now deployed and partly verified in the October 2 continuation: hidden/resumed pages invalidate cached
   telemetry without clearing the owner/session binding. Blur and hiding still
   stop/disarm; return requires fresh status and explicit Start. Background time
   counts toward the configured ownership timeout; real transport loss still
   revokes ownership. Hidden-page regression reproduced the prior release; all
   45 browser scenarios, frontend build/type checks, PWA checks and independent
-  review passed. Rebuild/deploy and refresh the PWA before repeating Pi acceptance.
-- Release fix `9428c22` is deployed and release-correlated on the Pi; browser
-  physical acceptance remains pending. Status polling could observe ownership
+  review passed. Owner-confirmed Windows Chrome refresh/focus acceptance passed.
+- Release fix `9428c22` is included in the current deployed release; the owner
+  confirmed Windows Chrome Release passed. Status polling could observe ownership
   loss before the shutdown result, disconnect the WebSocket and discard its
   operation, producing “Operation not found.” Defer ownership-loss cleanup while
   Release awaits its result, then reconcile. A delayed-shutdown browser regression
   reproduced the error before the fix; all 43 browser scenarios, frontend build,
-  lint and independent review passed afterward. Confirm the client loaded the updated PWA.
+  lint and independent review passed afterward. The later Windows Chrome
+  refresh/Release test and stopped final state passed.
 - Protocol 3: Take control starts the controller if needed and acquires ownership
   without arming. Start arms but requires a fresh direction press before motion.
   Stop/Space zeroes and disarms while retaining ownership. Release stops the
@@ -115,7 +178,7 @@ pushbefore relying on recorded observations.
   about nine seconds later. A check after five minutes still showed active,
   ownerless and disarmed; inactivity expiry remains unverified. Observations are saved beside preflight as
   `owner-observations.json`.
-- Latest release: `549acd669a7af59bb689a4d6e5fae85d5a68b43e3830e16450296b8251ad74f2`;
+- Historical September 30 release: `549acd669a7af59bb689a4d6e5fae85d5a68b43e3830e16450296b8251ad74f2`;
   local manifest records source `701fa10` and protocol `3.0.0`. Build directory:
   `ubuntu_tank/.work/release-20260930T031803090371540-3100908`.
   Owner-provided run `release-20260930T050813715815737-3198114` passed ARM64 smoke,
@@ -152,10 +215,11 @@ pushbefore relying on recorded observations.
   stopped applications. Browser certificate trust is a separate client operation.
 - M15 checklist now records completed Wi-Fi direction cycles and owner-observed
   controls separately from open gates; use it to avoid repeating completed work.
-  Next: deploy/refresh the focus-retention fix, verify retained ownership and
-  five-minute shutdown, then finish recovery, fault, PWA and measured stopping
-  tests. Repeat affected checks for the new release; retain earlier evidence.
-  Finish stopped/disarmed/ownerless.
+  October 2 continuation above supersedes the old next steps: focus-fix deployment,
+  five-minute shutdown and ten recovery cycles now have live evidence. Windows
+  certificate trust remains pending; actual update and scoped faults passed.
+  Physical timing was waived.
+  Preserve earlier evidence and finish stopped/disarmed/ownerless.
 - Historical native controller M6/M9 acceptance was `ACCEPTED`: four directions,
   nine failure conditions and an observed 280 ms STM32 watchdog. This does not
   certify Docker or the revised web producer. On-ground motion remains unauthorized.

@@ -1200,8 +1200,9 @@ or controller-stop UI. Product tests pass; deployment and motor tests remain M15
 
 ### Milestone 15 — Deployment and raised-track web acceptance
 
-Status: in progress. Completed checks below apply to the October 1 raised-track
-session (October 2 UTC), deployed source `9428c22`, protocol `3.0.0`, release
+Status: in progress. The historical checks immediately below apply to the
+October 1 raised-track session (October 2 UTC), deployed source `9428c22`,
+protocol `3.0.0`, release
 `d683078e2e8dfde01b6cd1bf28b2556190ddf8448fa4f17c7ef680ddf6e949e4`.
 This milestone supplies the web-control evidence for container C5.
 Owner-observed passes are uninstrumented; they do not establish stopping latency.
@@ -1220,44 +1221,92 @@ Completed checks — retain these results rather than restarting the checklist:
 - [x] Owner observed Space stop/disarm and the five-second hold cap stopping motion
   without resuming while input remained held.
 - [x] Owner observed focus-loss stopping and no automatic movement on return.
-  This tested the old ownership-loss behavior; ownership retention needs the
-  focused retest below.
+  This tested the old ownership-loss behavior; the completed October 2 focused
+  retest is recorded below.
 - [x] Record installed release, configuration hashes and effective lease/hold/
   ownership limits (1/5/300 seconds). Recorded network: Pi Wi-Fi connected,
-  Ethernet without carrier; observer: owner. Client/version details remain open.
+  Ethernet without carrier; observer: owner. The later Windows Chrome version
+  and results are recorded below.
 
-Remaining checks:
+October 2 follow-up: source `73748c6` is deployed and fresh stopped integration
+passed. Ten injected Wi-Fi recovery cycles and stale-motion rejection passed;
+the owner confirmed stopping between pulses. The owner waived fault-to-track-stop
+testing and selected Wi-Fi; waived measurements are not passes. Client acceptance
+is now Windows Chrome only. Android/iOS browser and PWA tests are excluded by
+owner instruction; mobile client apps are future work. See
+[M15 live report](M15_ACCEPTANCE_2026-10-02.md) for release identity, failures,
+client boundaries and remaining gates.
 
-- [ ] Deploy the local focus-retention fix and refresh the PWA. Repeat stopped
-  integration for that release; verify blur/tab hiding stops/disarms but retains
-  ownership, and return requires fresh status and Start without automatic motion.
-  Repeat affected checks for the new release; retain prior results as history.
-- [ ] Complete at least 10 injected timeout/recovery cycles per accepted network.
-  Observe zero motion during pause and after delayed/held input; fresh neutral
-  plus a new press must resume without Arm. Exercise sustained outage until idle
-  disarm, detected disconnect, Stop during recovery and controller faults.
-- [ ] Separate Pi-local, remote Wi-Fi and Ethernet results. Capture challenge
-  issue/arrival/response/acceptance timing and pause counts. Record unresolved
-  stalls; the observed Wi-Fi cycles alone do not establish network reliability.
-- [ ] Verify the separate armed-idle timeout, confirmed controller shutdown after
-  Release, and Take control restarting after Release without arming.
-- [ ] Verify the installed 300-second ownership timeout with idle polling and no
-  user actions: zero/disarm, controller inactive, ownership released and browser
-  updated. Verify accepted actions reset it and fresh Take control/Start is
-  required afterward. Restore intended configuration if changed for testing.
-  The attempted run was inconclusive: ownership ended about nine seconds after
-  acquisition on tab/focus loss; after five minutes the controller remained
-  active, disarmed and ownerless. Do not count that run as a timeout pass.
-- [ ] Measure physical stopping for focus loss, tab close, browser crash, Wi-Fi
-  loss, delayed/buffered packets, web crash/hang, operator crash/hang and reconnect.
-- [ ] Repeat relevant controls and failure cases in installed Android/iOS PWAs,
-  including touch cancellation, app switching, screen lock, resume and updates.
-- [ ] Re-run affected guard/bridge/serial/host-stop acceptance cases for Docker;
-  previous native acceptance does not certify the new producer path.
-- [ ] Add client/browser versions, detailed network conditions, instruments,
-  raw timing evidence and stopping distance to the recorded release/configuration.
-- [ ] Finish stopped/disarmed/ownerless and record every failed or unexecuted gate.
-  The last captured state was active/disarmed/ownerless, so final shutdown is open.
+October 2 follow-up — completed checks:
+
+- [x] Verify the deployed focus fix and controls in Windows Chrome. Owner reported
+  all requested button/keyboard, direction-release, Space, tab/resume and Release
+  checks passed on Chrome `153.0.8010.53` (Official Build, 64-bit). Return required
+  explicit Start and fresh input. Windows OS version was not supplied.
+- [x] Complete ten injected Wi-Fi timeout/recovery cycles with one Start request.
+  Each retained Arm, rejected a stale motion replay and required input release,
+  acknowledged neutral and a fresh press. Owner confirmed stopping between pulses
+  and no unexpected movement during pauses or after the final stop.
+- [x] Verify Stop during recovery and disarm during sustained input loss. Delivery
+  returning did not automatically re-arm. The sustained-loss disarm occurred
+  after about five seconds; its cause is not attributed to the armed-idle timer.
+- [x] Record Wi-Fi conditions, ten recovery passes, challenge timestamps and client
+  arrival/send/ack traces. The 141 intent acknowledgments had client-proxy median
+  9 ms and maximum 349 ms. These are transport observations, not physical-stop
+  measurements or a calibrated comparison with Pi-local/Ethernet results.
+- [x] Verify 30-second armed-idle disarm with ownership retained, Release shutdown,
+  and a later Take restarting disarmed. The immediate-reacquisition fix and
+  completed retest are recorded below.
+- [x] Verify 300-second ownership expiry with idle polling: controller inactive,
+  disarmed, ownerless, browser updated and `CONTROL_IDLE_TIMEOUT` recorded.
+  Space reset the countdown; polling did not. Fresh Take restarted disarmed;
+  installed configuration was unchanged.
+- [x] Inject web pause/kill, operator hang/kill, guard kill, bridge kill, Supervisor
+  hang, runtime pause and host service stop. All nine completed stopped restoration
+  and fresh integration checks. This marks injection/recovery complete, not
+  unconfirmed physical observations; guard/bridge disarm telemetry was uncertain.
+- [x] Inject browser offline, tab close and browser crash. Independent observation
+  confirmed disarmed/ownerless after all three; tab close left the controller
+  active, while offline/crash showed it inactive. Host restoration then stopped
+  each pair and fresh integration passed. Failed driver attempts remain in evidence.
+- [x] Record installed release/configuration, Pi network conditions and Windows
+  Chrome results in the [session report](M15_ACCEPTANCE_2026-10-02.md).
+- [x] Finish automated and Windows Chrome testing stopped, disarmed and ownerless.
+  Fresh post-client HTTPS state confirmed inactive controller, zero requested
+  speeds, no pending disarm or last fault, and `EXPLICIT_RELEASE`.
+
+Remaining checks and unresolved results:
+
+- [x] Owner confirmed observing correct physical stopping in all later
+  container/process and browser-fault cases. No stopping time was measured.
+- [x] Resolve and retest immediate Release → Take control rejection. Start now
+  waits for monitor cleanup acknowledgement and fresh safety progress. Full
+  development tests, ARM64 smoke/deployment, independent review and 20 consecutive
+  live Take/Release cycles passed. An earlier 14-cycle attempt ended in browser
+  “Failed to fetch”; retained network failures are separate from the readiness fix.
+- [x] Interrupt real stopped redeployment immediately after admission closes.
+  Installer SIGKILL left acquisition rejected with `DEPLOYMENT_BUSY`; normal
+  redeployment restored stopped integration. This tests that checkpoint with
+  the same release, not every possible update-interruption point.
+- [x] Verify an actual browser application update across deployed releases.
+  Automated Chromium loaded the older worker, offered Update Now, released
+  ownership and reloaded the new worker stopped/disarmed/ownerless. This does
+  not establish Windows certificate trust.
+- [ ] Verify Windows certificate trust without a warning or bypass. The owner
+  reported “Not secure”; certificate import instructions were supplied.
+
+Scope exclusions and waivers:
+
+- Serial disconnect/reconnect testing: removed by owner instruction, not passed.
+- Wi-Fi radio/access-point loss, host power-off/cold boot and resource-exhaustion
+  testing: removed from the M15 plan by owner instruction, not passed. The observed
+  startup-before-clock-synchronization failure remains documented in the session
+  report; removing its power-cycle test does not establish a fix.
+- Fault-to-track-stop timing/distance measurements: waived by owner, not passed.
+  The original instrumented certification target remains unfulfilled.
+- Android/iOS browser and PWA testing: excluded by owner. Mobile client apps are
+  future work and require separate acceptance.
+- Ethernet: outside the selected Wi-Fi session; no Ethernet acceptance is claimed.
 
 Evidence: `ubuntu_tank/.work/m15-rpitank-20261002/` contains `preflight.json`,
 `owner-observations.json`, browser status traces and `five-minute-result.json`.
@@ -1277,11 +1326,13 @@ Agent and downstream failures must also satisfy
 the applicable native measured bounds. These are acceptance targets, not current
 claims. If measurements fail, keep the gate open; do not silently raise limits.
 
-Exit: accepted network/client combinations pass recovery usability, actual track
-observations, and instrumented stop timings. Mocks, request acknowledgments,
-and serial writes alone cannot mark physical acceptance passed. Network
-reliability remains open if stalls still prevent ordinary control, even when
-the unnecessary-disarm defect is fixed.
+Original full-certification exit: accepted network/client combinations pass
+recovery usability, actual track observations and instrumented stop timings.
+The October 2 owner scope waives physical timing; any eventual owner-scoped
+completion must retain that waiver and must not claim full instrumented
+certification. Mocks, request acknowledgments and serial writes alone cannot
+mark physical acceptance passed. Network reliability remains open if stalls
+still prevent ordinary control, even when unnecessary disarming is fixed.
 
 *Tooling boundary*: `ubuntu_tank/scripts/web_acceptance.py` and the native
 `./ubuntu_tank/deploy.sh web-acceptance` runner predate Docker and the revised

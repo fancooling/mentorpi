@@ -168,6 +168,18 @@ class RuntimeProcesses(unittest.TestCase):
         wait_for(lambda record=record: dead(record["graph_pid"]))
         self.assertFalse(progress.read_record("permit"))
 
+    def test_immediate_restart_after_confirmed_stop(self):
+        """A completed Stop permits immediate Start after old-group cleanup."""
+        for cycle in range(5):
+            with self.subTest(cycle=cycle):
+                old = self.start_controller()
+                self.assertTrue(self.client.stop_controller()[0])
+                new = self.start_controller()
+                self.assertTrue(new["ready"])
+                self.assertNotEqual(new["pid"], old["pid"])
+                self.assertTrue(dead(old["graph_pid"]))
+                self.assertTrue(self.client.stop_controller()[0])
+
     def test_stop_cancels_start_waiting_for_heartbeats(self):
         gate = self.directory / "graph-gate"
         gate.unlink()
@@ -223,7 +235,8 @@ class RuntimeProcesses(unittest.TestCase):
         record = self.start_controller()
         os.kill(progress.read_record("monitor")["pid"], signal.SIGSTOP)
         wait_for(lambda record=record: dead(record["graph_pid"]))
-        self.assertFalse(progress.read_record("permit"))
+        # Graph exit precedes completion of the runner's bounded cleanup.
+        wait_for(lambda: not progress.read_record("permit"))
 
     def assert_hang_stops_runtime(self, role):
         # Independent runtimes ensure no previous fault masks the next one.

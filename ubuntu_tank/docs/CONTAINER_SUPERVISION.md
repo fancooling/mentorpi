@@ -32,6 +32,12 @@ pending Arm state; late requests cannot restore them. Recovery requires fresh
 ownership and Arm. Guard/bridge failure leaves the controller stopped until an
 explicit Start.
 
+An immediate Start after Stop waits up to 10 seconds for the old controller
+record to clear, the monitor to acknowledge `controller_pid: 0`, and fresh
+monitor/operator progress. The monitor acknowledges only after its old-group
+cleanup finishes. This prevents that cleanup from revoking a new Start permit.
+Stop or deployment revocation cancels the wait; it never arms or queues motion.
+
 ## Deadlines
 
 | Check | Deadline or interval | Failure action |
