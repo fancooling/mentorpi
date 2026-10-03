@@ -124,6 +124,9 @@ Run commands below from the repository root. Use the single repository `.venv`
 for local Python work; do not install dependencies into global Python or create
 component virtual environments. Pi host deployment uses system Python as
 specified in the container guide; container dependencies are image-managed.
+On a new development computer, follow the
+[host setup](../docker/ubuntu_tank/README.md#new-development-host), then install
+`requirements-dev.txt` into that same `.venv` before running the local suite.
 
 ```bash
 # Hardware-free development checks, including frontend build and browser tests.
@@ -150,8 +153,9 @@ behavior or physical motor stopping.
 ### One command from the development computer
 
 For an already provisioned Pi, run from the repository root with its SSH alias
-from `~/.ssh/config`. The wrapper uses `python` from `PATH`: activate your virtual
-environment first, or use an already configured global Python development environment.
+from `~/.ssh/config`. Complete the
+[host setup](../docker/ubuntu_tank/README.md#new-development-host) first. The wrapper
+uses `python` from `PATH`: activate the repository `.venv` before running it.
 
 ```bash
 ./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS

@@ -24,6 +24,11 @@ and [M16 handoff](docs/M16_RELEASE_HANDOFF.md) for current evidence and recovery
 mode uses separate boot media and must never coexist with the factory stack,
 sidecar or replacement mode on a running robot.
 
+To build the Ubuntu controller on a new computer, follow the
+[development-host setup](docker/ubuntu_tank/README.md#new-development-host).
+`requirements-build.txt` supplies host Python build dependencies;
+`requirements-dev.txt` adds local tests and tooling in the same repository `.venv`.
+
 ## Architecture
 
 | Interface | Existing factory owner | Customization use |

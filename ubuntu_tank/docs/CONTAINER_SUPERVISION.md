@@ -80,7 +80,7 @@ uses `/run/ubuntu_tank/{operator,lifecycle}.sock`.
 From the repository root:
 
 ```bash
-.venv/bin/pip install -r ubuntu_tank/tests/runtime-requirements.txt
+.venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python ubuntu_tank/tests/test_container_supervision.py -v
 ./ubuntu_tank/deploy.sh test
 ```

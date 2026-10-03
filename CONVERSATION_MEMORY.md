@@ -76,6 +76,15 @@ before relying on recorded observations.
 
 ## Current state
 
+- New-host Python setup is declared in root `requirements-build.txt` (PyYAML)
+  and `requirements-dev.txt` (local tests/tools plus pinned transitive libraries).
+  Recreate one root `.venv` per host and install with its `python -m pip`; never
+  copy the environment. Docker/Buildx, optional host browser tooling and Pi
+  system-Python operations remain separate. See the container README host setup.
+  Both files resolved with pip's clean-install dry run; minimal build staging
+  passed with only PyYAML available. ARM64/Python 3.12 wheel resolution passed
+  except ShellCheck, whose upstream source wrapper downloads a verified ARM64
+  binary. That source install and ARM64 test execution were not run.
 - M16/C6 handoff is complete on October 3; the owner authorized its commit.
   No push is authorized.
   `docs/M16_RELEASE_HANDOFF.md`, `docs/M16_EVIDENCE_INDEX.json` and

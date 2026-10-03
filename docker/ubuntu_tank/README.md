@@ -8,13 +8,78 @@ passed; the owner waived other C4 fault tests. M15 supplies owner-scoped C5 evid
 
 ## Build
 
+### New development host
+
+Recreate the repository `.venv` on each host; do not copy a virtual environment
+between computers or CPU architectures. Use Python 3.11 or newer (local development
+was validated with 3.11). From the repository root on Ubuntu:
+
+```bash
+# Bootstrap system tools, not Python packages from pip.
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv git ca-certificates openssh-client
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-build.txt
+.venv/bin/python -m pip check
+.venv/bin/python -c 'import sys, yaml; print(sys.executable, yaml.__version__)'
+```
+
+If `.venv` already exists on this host, run the pip commands without recreating it.
+`requirements-build.txt` pins PyYAML, imported as `yaml`, the only third-party
+Python dependency used by the host image-build workflow. Activating an empty
+environment does not install it. Always use the environment's interpreter and
+`python -m pip` together so installation and execution use the same environment.
+
+Docker Engine with working daemon access and the Buildx plugin are separate
+prerequisites. Check `docker info` and `docker buildx inspect --bootstrap`; the
+selected builder must execute `linux/arm64`. A native ARM64 host can build without
+emulation. On x86, select an ARM64-capable builder with `--builder NAME`; the
+workstation-specific `mentorpi-c3` builder is not created by pip or Git. The Pi
+also needs Docker Compose for deployment. ROS, Node.js/npm and application Python
+packages are installed inside the Docker build, not into the build-host `.venv`.
+
+```bash
+OUTPUT_DIR="$PWD/ubuntu_tank/.work/build-$(date -u +%Y%m%dT%H%M%S)"
+.venv/bin/python docker/ubuntu_tank/build.py --output "$OUTPUT_DIR"
+# Add --builder NAME when using a non-default builder.
+```
+
+For local Python tests and formatting/lint tools, install
+`requirements-dev.txt` into the same `.venv`; it includes the build requirements,
+Supervisor process-test requirements and pinned transitive libraries. Full browser
+tests additionally need host Node.js/npm, `npm --prefix ubuntu_tank/web ci`, and
+Google Chrome at `/usr/bin/google-chrome` as configured in `playwright.config.ts`.
+These test prerequisites are unnecessary for building the Docker images.
+The browser runner was validated on x86_64; ARM64 local browser tests require a
+compatible browser and an explicit runner configuration change.
+
+On ARM64, normal pip installation can build the ShellCheck wrapper from its source
+package and download the checksum-verified ARM64 binary from GitHub. Do not require
+wheels only for the complete development file; see the
+[pinned wrapper configuration](https://github.com/shellcheck-py/shellcheck-py/blob/v0.11.0.1/setup.cfg).
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pip check
+```
+
+Maintain the requirement files in Git when imports change. Update library and
+transitive pins together and rerun the affected development checks; do not freeze
+an unrelated global environment. Container APT/ROS dependencies remain in
+`ubuntu_tank/versions.lock` and `dependencies.json`, and frontend dependencies in
+`ubuntu_tank/web/package-lock.json`. Pi-side `install.py` uses system Python's
+standard library and does not consume either host requirements file.
+
+### Build and deploy
+
 For an already provisioned Pi, the development-host wrapper runs build, smoke,
 image export/SSH transfer and stopped deployment together:
 
-The wrapper uses `python` from `PATH`. Activate your virtual environment or use
-an already configured global Python development environment before running it.
+The wrapper uses `python` from `PATH`. Activate the repository `.venv` after
+installing the build requirements above.
 
 ```bash
+source .venv/bin/activate
 ./docker/ubuntu_tank/deploy.sh YOUR_PI_SSH_ALIAS
 # Optional: --build-dir EXISTING_BUILD, --remote-dir PI_RELEASE_PARENT,
 # --builder NAME, --emulator /absolute/path/to/buildkit-qemu-aarch64.
