@@ -2,9 +2,9 @@
 
 Status: Existing implementation and acceptance status are recorded per milestone.
 M14.3 and M14.4 are deployed; stopped Pi integration passed on 2026-09-29.
-M14.5 runtime/API implementation and local validation are complete; it is not
-deployed. M14.6 browser controls are implemented locally; M15 physical acceptance
-and M16 release handoff remain pending.
+M14.5 runtime/API and M14.6 browser controls are deployed. M15 is complete within
+the owner-approved Windows Chrome/Wi-Fi scope, with exclusions and physical
+timing waivers retained below. M16 release handoff remains pending.
 
 Date: 2026-09-29
 
@@ -1200,8 +1200,10 @@ or controller-stop UI. Product tests pass; deployment and motor tests remain M15
 
 ### Milestone 15 — Deployment and raised-track web acceptance
 
-Status: in progress. The historical checks immediately below apply to the
-October 1 raised-track session (October 2 UTC), deployed source `9428c22`,
+Status: complete within the owner-approved scope. Windows certificate trust is
+owner-confirmed; exclusions and timing waivers below remain in effect. This is
+not full instrumented physical certification. The historical checks below apply
+to the October 1 raised-track session (October 2 UTC), deployed source `9428c22`,
 protocol `3.0.0`, release
 `d683078e2e8dfde01b6cd1bf28b2556190ddf8448fa4f17c7ef680ddf6e949e4`.
 This milestone supplies the web-control evidence for container C5.
@@ -1275,7 +1277,7 @@ October 2 follow-up — completed checks:
   Fresh post-client HTTPS state confirmed inactive controller, zero requested
   speeds, no pending disarm or last fault, and `EXPLICIT_RELEASE`.
 
-Remaining checks and unresolved results:
+Final completion checks:
 
 - [x] Owner confirmed observing correct physical stopping in all later
   container/process and browser-fault cases. No stopping time was measured.
@@ -1292,8 +1294,9 @@ Remaining checks and unresolved results:
   Automated Chromium loaded the older worker, offered Update Now, released
   ownership and reloaded the new worker stopped/disarmed/ownerless. This does
   not establish Windows certificate trust.
-- [ ] Verify Windows certificate trust without a warning or bypass. The owner
-  reported “Not secure”; certificate import instructions were supplied.
+- [x] Verify Windows certificate trust. After certificate rotation and import
+  guidance, the owner confirmed the Windows certificate works, closing the
+  last scoped acceptance check.
 
 Scope exclusions and waivers:
 
@@ -1328,10 +1331,9 @@ claims. If measurements fail, keep the gate open; do not silently raise limits.
 
 Original full-certification exit: accepted network/client combinations pass
 recovery usability, actual track observations and instrumented stop timings.
-The October 2 owner scope waives physical timing; any eventual owner-scoped
-completion must retain that waiver and must not claim full instrumented
-certification. Mocks, request acknowledgments and serial writes alone cannot
-mark physical acceptance passed. Network reliability remains open if stalls
+The completed October 2 owner scope waives physical timing and retains that
+waiver; it does not claim full instrumented certification. Mocks, request
+acknowledgments and serial writes alone cannot mark physical acceptance passed. Network reliability remains open if stalls
 still prevent ordinary control, even when unnecessary disarming is fixed.
 
 *Tooling boundary*: `ubuntu_tank/scripts/web_acceptance.py` and the native

@@ -9,6 +9,14 @@ before relying on recorded observations.
 
 ## October 2 M15 continuation
 
+- HTTPS certificate rotated on the Pi to include the owner's LAN DNS name,
+  retaining all prior SANs. Old certificate/key and web configuration are backed
+  up under `/var/lib/ubuntu_tank-container/host-backup/tls-rotation-*`.
+  Corrected installed `tls_setup.py` from mode 0600 to 0644 so the non-root
+  web image can read it. Same-release deployment and stopped target integration
+  passed; curl verified HTTPS with the new certificate and requested hostname.
+  Controller finished inactive, disarmed and ownerless. The owner subsequently
+  confirmed Windows certificate trust works, closing the final scoped M15 check.
 - Initial release `268674c59248a738ccf46242c5e15aac9b80b00113f8dc4bc3dcbf9b5ee0c69f`,
   source `73748c6`, includes the focus-retention fix. Fresh stopped integration
   passed. Full results: `docs/M15_ACCEPTANCE_2026-10-02.md`; raw local evidence:
@@ -50,7 +58,8 @@ before relying on recorded observations.
   installer after admission closure produced `DEPLOYMENT_BUSY`; normal recovery
   passed stopped integration. See `interrupted-deploy.log`.
 - Current release `4b320e602524306678496ec7a008e0e454f6d81a66301984f6d7518df92928db`
-  includes the uncommitted immediate-restart fix on source `73748c6`. Start waits
+  was built with the immediate-restart fix on source `73748c6`, subsequently
+  committed in `2c5bb5d`. Start waits
   for monitor cleanup acknowledgement and fresh safety progress. Fourteen
   supervision tests, full development suite, ARM64 smoke/deployment and independent
   review passed. Twenty consecutive live Take/Release cycles passed without Arm.
@@ -62,11 +71,8 @@ before relying on recorded observations.
   ownerless. Automated Chromium used a pinned-certificate exception; this does not
   prove Windows trust. Final stopped integration and certificate-verified HTTPS
   passed with healthy containers, inactive/disarmed/ownerless and no pending
-  disarm or last fault. Windows still reported “Not secure”; certificate import
-  instructions supplied; owner reconfirmed the warning persists. Trust remains
-  unresolved: service-worker registration/update features can be blocked even
-  when ordinary controls work. Owner requested committing these M15 changes;
-  no push is authorized.
+  disarm or last fault. Windows initially reported “Not secure”; the later
+  certificate rotation and owner confirmation above close that trust issue.
 
 ## Current state
 
@@ -81,8 +87,10 @@ before relying on recorded observations.
 - October 2 M15 results are recorded above: Windows Chrome controls, ten recovery
   cycles, lifecycle checks and automated fault injection/restoration completed.
   The M15 checklist separates these checked items from unexecuted tests,
-  unconfirmed physical observations, failures and owner exclusions/waivers.
-  M15 remains open and supplies C5 evidence; C6/M16 handoff remains pending.
+  historical failures and owner exclusions/waivers. M15 is complete within the
+  owner-approved Windows Chrome/Wi-Fi scope, including confirmed certificate
+  trust. Instrumented physical certification remains waived, not passed. M15
+  supplies C5 evidence; C6/M16 handoff remains pending.
 - Local M14.6 validation: 580 Python tests passed, two skipped, and 42 browser
   scenarios passed; build/type checks and independent review passed. Browser
   evidence uses real HTTP/WS/IPC with simulated controller telemetry.

@@ -1,9 +1,9 @@
 # M15 live acceptance — October 2, 2026
 
-Status: scoped automated tests and Windows Chrome controls complete; Windows
-certificate trust remains open. This report separates installed behavior, owner observations,
-waived measurements and open gates. It does not certify instrumented physical
-stopping or on-ground use.
+Status: complete within the owner-approved scope. The owner confirmed Windows
+certificate trust works, closing the final scoped check. This report separates
+installed behavior, owner observations, exclusions and waived measurements. It
+does not certify instrumented physical stopping or on-ground use.
 
 ## Scope and identity
 
@@ -109,21 +109,20 @@ attempt lost its completion callback; an independent host Stop removed both
 containers. Both were repeated with an independent observer and bounded crash
 wait. The earlier incomplete attempts remain in the logs, not counted as passes.
 
-## Remaining evidence
+## Scoped completion
 
-The requested Windows Chrome controls and tab/resume checks passed. Certificate
-trust remains pending; the actual automated update transition is recorded below. Android/iOS
-browser and PWA acceptance is excluded by owner instruction; future mobile apps
-require separate acceptance. Owner observations for all fault cases are now
-confirmed. Immediate reacquisition and actual application-update tests passed.
-Windows still reports “Not secure” after certificate import instructions.
-Trust remains unresolved; ordinary controls passed, but service-worker
-registration and its offline/update features can be blocked by certificate errors. Existing C4 waivers and prior native acceptance do not
-close these gates.
+Windows Chrome controls, tab/resume, immediate reacquisition and actual automated
+application-update checks passed. Following Pi certificate rotation to include
+the owner's LAN DNS name, same-release deployment, stopped target integration
+and certificate-verified HTTPS passed. The owner subsequently confirmed Windows
+certificate trust works and requested M15 closure. All retained M15 checks are
+complete; physical stopping observations for the fault cases are owner-confirmed.
 
-Actual Wi-Fi loss, power-off/cold-boot and resource-exhaustion tests are excluded
-by owner instruction. The observed boot-time clock failure remains an unresolved
-historical finding, not a passed or repaired test.
+Android/iOS browser and PWA acceptance, serial disconnect/reconnect, actual Wi-Fi
+loss, power-off/cold-boot and resource-exhaustion tests remain excluded by owner
+instruction. Physical stopping time and distance remain waived, not passed.
+The observed boot-time clock failure remains unresolved. This scoped completion
+does not establish full instrumented certification or complete M16 release handoff.
 
 ## Final automated-session state
 
@@ -189,6 +188,8 @@ reliability. Evidence: `reacquire.jsonl` (`PASS_IMMEDIATE_REACQUISITION`).
 After the repeat, fresh installed `target-test` passed and both containers were
 healthy. HTTPS verified using the exported public certificate reported the fixed
 release inactive, disarmed and ownerless, with no pending disarm or last fault.
-Evidence: `fix-final-state.txt` and `fix-final-status.json`. The owner subsequently
-reconfirmed the Windows warning persists; trust remains unresolved. No commit or
-push was made during live testing.
+Evidence: `fix-final-state.txt` and `fix-final-status.json`. Windows trust was
+still unresolved at that point; the later certificate rotation and owner
+confirmation recorded above close it. No commit or push was made during live
+testing. The runtime fix and acceptance evidence were subsequently committed
+in `2c5bb5d`.
