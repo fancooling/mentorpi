@@ -1207,38 +1207,6 @@ class TestCliIntegrationRegressions(unittest.TestCase):
 class TestServiceAndLauncherSecurity(unittest.TestCase):
     """Verify systemd service unit and launcher script security sandboxing directives."""
 
-    def test_systemd_unit_hardening_and_validation(self):
-        """systemd-analyze verify verifies mentorpi-tank-operator.service and rejects malformed directives."""
-        import shutil
-        import subprocess
-
-        systemd_analyze = shutil.which("systemd-analyze")
-        if not systemd_analyze:
-            self.skipTest("systemd-analyze unavailable")
-
-        unit_path = os.path.join(
-            REPO_ROOT, "ubuntu_tank/host/mentorpi-tank-operator.service"
-        )
-        self.assertTrue(os.path.isfile(unit_path))
-
-        # Negative test: invalid directive is rejected by systemd-analyze
-        with tempfile.TemporaryDirectory() as td:
-            bad_unit = os.path.join(td, "mentorpi-tank-operator.service")
-            with open(unit_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            corrupted = content.replace(
-                "ProtectSystem=strict", "ProtectSystem=invalid_setting"
-            )
-            with open(bad_unit, "w", encoding="utf-8") as f:
-                f.write(corrupted)
-            res = subprocess.run(
-                [systemd_analyze, "verify", bad_unit],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertIn("Failed to parse", res.stderr + res.stdout)
-
     def test_launcher_executable_and_enclave(self):
         """Launcher must be executable and enforce the operator SROS2 enclave when invoked."""
         import subprocess
@@ -1281,66 +1249,6 @@ class TestServiceAndLauncherSecurity(unittest.TestCase):
             check_cmd, capture_output=True, text=True, check=False
         )
         self.assertEqual(res_enclave.stdout.strip(), "/ubuntu_tank/operator")
-
-    def test_stack_units_form_a_valid_systemd_job(self):
-        """Systemd accepts the stack target and both isolated service jobs."""
-        import shutil
-        import subprocess
-        from pathlib import Path
-
-        systemd_analyze = shutil.which("systemd-analyze")
-        if not systemd_analyze:
-            self.skipTest("systemd-analyze unavailable")
-
-        host_dir = Path(UBUNTU_TANK_DIR, "host")
-        unit_names = (
-            "mentorpi-tank-stack.target",
-            "mentorpi-tank.service",
-            "mentorpi-tank-operator.service",
-            "mentorpi-tank-recover.service",
-        )
-        base_targets = (
-            "network.target",
-            "multi-user.target",
-            "sysinit.target",
-            "basic.target",
-        )
-        system_unit_dir = Path("/usr/lib/systemd/system")
-
-        with tempfile.TemporaryDirectory() as root_dir:
-            root = Path(root_dir)
-            staged_units = root / "etc/systemd/system"
-            staged_units.mkdir(parents=True)
-            for unit_name in unit_names:
-                shutil.copy2(host_dir / unit_name, staged_units / unit_name)
-            for target_name in base_targets:
-                source = system_unit_dir / target_name
-                if not source.is_file():
-                    self.skipTest(f"systemd base target unavailable: {target_name}")
-                shutil.copy2(source, staged_units / target_name)
-
-            executable_paths = (
-                root / "opt/ubuntu_tank/current/bin/mentorpi-tank-run",
-                root / "opt/ubuntu_tank/current/bin/mentorpi-tank-operator",
-                root / "opt/ubuntu_tank/libexec/recover-activation",
-            )
-            for executable in executable_paths:
-                executable.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2("/bin/true", executable)
-
-            result = subprocess.run(
-                [
-                    systemd_analyze,
-                    f"--root={root}",
-                    "verify",
-                    *unit_names,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class TestGuardLivenessFreshness(unittest.TestCase):

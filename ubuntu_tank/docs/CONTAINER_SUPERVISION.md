@@ -3,9 +3,9 @@
 C2 replaces the controller runner and lifecycle server with container process
 supervision. Native service startup is no longer supported by these entrypoints.
 Images and Compose are defined in the [C3 image guide](../../docker/ubuntu_tank/README.md).
-Host ownership checks and deployment remain C4 work; this checkout is not ready
-for a Pi cutover. Historical native acceptance does not
-certify the container runtime.
+C4 host deployment is implemented. M15 supplies owner-scoped Docker acceptance;
+see the [M16 handoff](../../docs/M16_RELEASE_HANDOFF.md) for evidence and exclusions.
+Historical native acceptance does not certify the container runtime.
 
 ## Processes and interfaces
 
@@ -14,7 +14,7 @@ one independent safety monitor. Controller autostart, automatic restart and
 startup retries are disabled. Controller Start launches the installed guarded
 ROS graph; Stop leaves the operator and lifecycle sockets available. Required
 process exits and stalled progress stop the controller. Infrastructure faults
-terminate Supervisor so the future container restart policy can recover to a
+terminate Supervisor so the container restart policy can recover to a
 stopped controller.
 
 The lifecycle server now lives in `ubuntu_tank_supervisor.lifecycle_service`.
@@ -68,8 +68,8 @@ and workspace environments, apply loopback DDS/SROS2 configuration, and provide:
 - `UBUNTU_TANK_PYTHON`: absolute runtime Python executable with installed packages.
 - Existing controller configuration, SROS2 keystore and ROS log mounts.
 
-Supervisor 4.3.0 is the development-tested version. C3 must pin the runtime
-package in its image dependency manifest. Only the test environment uses
+Supervisor 4.3.0 is the development-tested version; the runtime image dependency
+manifest records its packaged version. Only the test environment uses
 `UBUNTU_TANK_SIMULATION=1` and `_UBUNTU_TANK_TEST_CHILD_CMD`; production must not
 set either. Optional `UBUNTU_TANK_OPERATOR_SOCKET` and
 `UBUNTU_TANK_LIFECYCLE_SOCKET` relocate sockets for motor-free tests; production
@@ -91,5 +91,5 @@ bridge; they emit credentialed heartbeats and never access hardware. It covers
 stopped boot, Start/Stop races, malformed frames, controller exit, each monitored
 hang, group cleanup, restart admission, and operator epoch invalidation during
 driving and pending Arm. Existing web/PWA tests exercise the unchanged client
-contract. Real ARM64 DDS, containers, Pi shutdown, serial ownership and physical
-motor-stop measurements remain pending for C3–C5.
+contract. Installed-Pi and owner-observed physical evidence is recorded separately in M15;
+physical stopping measurements remain waived. Local process tests do not replace it.

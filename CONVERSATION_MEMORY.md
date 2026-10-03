@@ -1,6 +1,6 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 Keep this file as a concise current handoff. Read `AGENTS.md` for working rules
 and `GEMINI.md` for architecture and safety. Detailed history belongs in Git and
@@ -76,6 +76,25 @@ before relying on recorded observations.
 
 ## Current state
 
+- M16/C6 handoff is complete on October 3; the owner authorized its commit.
+  No push is authorized.
+  `docs/M16_RELEASE_HANDOFF.md`, `docs/M16_EVIDENCE_INDEX.json` and
+  `ubuntu_tank/docs/OPERATOR_GUIDE.md` bind accepted images/source/evidence and
+  document controls, terminal handoff and Docker recovery. Mobile remains future
+  work; all M15 exclusions, timing waivers and operational restrictions remain.
+- C6 removed native units/environment/tmpfiles, disposable-root/bootstrap/recovery
+  scripts, native CLI dispatch and their installation simulations. Shared Docker
+  helpers and runtime/safety tests remain. All 158 accepted build inputs are
+  unchanged; generated lock content and 157 files match committed `2c5bb5d`.
+- M16 validation: 561 Python tests passed, one native-ROS skip, 45 browser scenarios
+  passed, formatting/shell/whitespace checks passed and no new lint findings.
+  Independent committed-release and worktree review passed. Local logs/checksums:
+  `ubuntu_tank/.work/m16/` and the evidence index.
+- October 3 read-only Pi inspection found the accepted release/configuration
+  hashes still recorded, but the host service currently failed with exit status 1
+  and a TLS error in the current-boot journal. No restart, target-test, Arm or
+  motion was issued. The saved stopped-integration pass is historical. Follow
+  documented clock/TLS recovery and obtain a fresh stopped pass before operating.
 - Current delivery is paired ARM64 runtime/web containers on Ubuntu 26.04 Pi 5
   with ROS 2 Lyrical. Runtime owns ROS, Supervisor, operator authority and
   `/dev/rrc`; the ROS-free web service uses read-only shared IPC.
@@ -90,7 +109,7 @@ before relying on recorded observations.
   historical failures and owner exclusions/waivers. M15 is complete within the
   owner-approved Windows Chrome/Wi-Fi scope, including confirmed certificate
   trust. Instrumented physical certification remains waived, not passed. M15
-  supplies C5 evidence; C6/M16 handoff remains pending.
+  supplies C5 evidence; C6/M16 handoff is recorded below in the release documents.
 - Local M14.6 validation: 580 Python tests passed, two skipped, and 42 browser
   scenarios passed; build/type checks and independent review passed. Browser
   evidence uses real HTTP/WS/IPC with simulated controller telemetry.
@@ -225,7 +244,7 @@ before relying on recorded observations.
   controls separately from open gates; use it to avoid repeating completed work.
   October 2 continuation above supersedes the old next steps: focus-fix deployment,
   five-minute shutdown and ten recovery cycles now have live evidence. Windows
-  certificate trust remains pending; actual update and scoped faults passed.
+  certificate trust is owner-confirmed; actual update and scoped faults passed.
   Physical timing was waived.
   Preserve earlier evidence and finish stopped/disarmed/ownerless.
 - Historical native controller M6/M9 acceptance was `ACCEPTED`: four directions,
@@ -233,8 +252,8 @@ before relying on recorded observations.
   certify Docker or the revised web producer. On-ground motion remains unauthorized.
 - Installation/service tests belong on the real Pi; do not replace missing target
   evidence with development-machine installation simulations or source assertions.
-  M14.2 removed those simulations. Retained native scripts are not the current
-  deployment path; historical cleanup remains part of C6.
+  M14.2 removed those simulations. Native host assets and CLI dispatch were removed in C6; retained imported
+  regression helpers are not a supported deployment path.
 - Factory mode remains separate: preserve the vendor image and sole hardware
   owner `MentorPi`; `MentorPiFan` is observer-only. `/mnt/rpi-rootfs` is authoritative
   for factory-image research. Do not assume historical `docker/original` exists.

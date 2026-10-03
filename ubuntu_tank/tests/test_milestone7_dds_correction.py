@@ -15,7 +15,6 @@ Validates:
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -37,9 +36,6 @@ if SCRIPTS_DIR not in sys.path:
 import importlib.util
 from importlib.machinery import SourceFileLoader
 
-from deployment_manager import (
-    ReleaseManager,
-)
 from fastdds_setup import (
     apply_loopback_env,
     resolve_loopback_profile,
@@ -106,62 +102,6 @@ class TestFastDDSLoopbackConfig(unittest.TestCase):
             ok, errs = validate_loopback_profile(builtin_on)
             self.assertFalse(ok)
             self.assertTrue(any("useBuiltinTransports=false" in e for e in errs))
-
-
-class TestSystemdUnitStartLimit(unittest.TestCase):
-    """Validate systemd service unit structure and start-limit directives."""
-
-    def setUp(self):
-        self.service_path = os.path.join(
-            UBUNTU_TANK_DIR, "host", "mentorpi-tank.service"
-        )
-
-    def test_start_limit_directives_verified_by_systemd_analyze(self):
-        """StartLimitIntervalSec and StartLimitBurst are validated in [Unit] by systemd-analyze."""
-        systemd_analyze = shutil.which("systemd-analyze")
-        if not systemd_analyze:
-            self.skipTest("systemd-analyze unavailable")
-
-        # Positive behavioral verification: systemd parses the unit without errors/warnings
-        res = subprocess.run(
-            [systemd_analyze, "verify", self.service_path],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertNotIn(
-            "Unknown key 'StartLimitIntervalSec' in section [Service]", res.stderr
-        )
-        self.assertNotIn(
-            "Unknown key 'StartLimitBurst' in section [Service]", res.stderr
-        )
-
-        # Negative behavioral verification: misplaced StartLimitIntervalSec in [Service] is detected
-        with tempfile.TemporaryDirectory() as td:
-            with open(self.service_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            # Move StartLimitIntervalSec to [Service]
-            corrupted = content.replace("StartLimitIntervalSec=30s", "")
-            corrupted = corrupted.replace(
-                "[Service]", "[Service]\nStartLimitIntervalSec=30s"
-            )
-            bad_unit = os.path.join(td, "mentorpi-tank.service")
-            with open(bad_unit, "w", encoding="utf-8") as f:
-                f.write(corrupted)
-
-            res_bad = subprocess.run(
-                [systemd_analyze, "verify", bad_unit],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertTrue(
-                "Unknown key 'StartLimitIntervalSec' in section [Service]"
-                in res_bad.stderr
-                or "Unknown key name 'StartLimitIntervalSec' in section 'Service'"
-                in res_bad.stderr,
-                f"Expected StartLimitIntervalSec warning in stderr: {res_bad.stderr}",
-            )
 
 
 class TestEnvironmentContractAndResolver(unittest.TestCase):
@@ -243,107 +183,6 @@ class TestEnvironmentContractAndResolver(unittest.TestCase):
                 os.path.join(fastdds_dir, "loopback.xml"),
             )
             self.assertTrue(verify_runtime_paths(td))
-
-
-class TestHostEnvironmentMigrationAndRollback(unittest.TestCase):
-    """Validate transactional host environment migration and snapshot rollback."""
-
-    def setUp(self):
-        self.td = tempfile.TemporaryDirectory()
-        self.root = self.td.name
-        self.opt_dir = os.path.join(self.root, "opt", "ubuntu_tank")
-        self.etc_dir = os.path.join(self.root, "etc", "opt", "ubuntu_tank")
-        self.var_dir = os.path.join(self.root, "var", "opt", "ubuntu_tank")
-        self.run_dir = os.path.join(self.root, "run", "ubuntu_tank")
-        self.systemd_dir = os.path.join(self.root, "etc", "systemd", "system")
-        self.udev_dir = os.path.join(self.root, "etc", "udev", "rules.d")
-        self.lock_path = os.path.join(self.root, "run", "lock", "deploy.lock")
-
-        for d in [
-            self.opt_dir,
-            self.etc_dir,
-            self.var_dir,
-            self.run_dir,
-            self.systemd_dir,
-            self.udev_dir,
-            os.path.dirname(self.lock_path),
-        ]:
-            os.makedirs(d, exist_ok=True)
-
-        self.mgr = ReleaseManager(
-            opt_dir=self.opt_dir,
-            etc_dir=self.etc_dir,
-            var_dir=self.var_dir,
-            run_dir=self.run_dir,
-            systemd_dir=self.systemd_dir,
-            udev_dir=self.udev_dir,
-            lock_path=self.lock_path,
-        )
-
-        # Isolated host udev rule with known serial discriminator
-        with open(os.path.join(self.udev_dir, "99-mentorpi-rrc.rules"), "w") as stream:
-            stream.write(
-                'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="fixture-rrc", GROUP="mentorpi-rrc", MODE="0660", SYMLINK+="rrc"\n'
-            )
-
-    def tearDown(self):
-        self.td.cleanup()
-
-    def test_migrate_host_env_injects_managed_keys_preserving_user_settings(self):
-        """migrate_host_env preserves custom user keys and comments while adding DDS contract."""
-        target_env = os.path.join(self.etc_dir, "mentorpi-tank.env")
-        with open(target_env, "w") as f:
-            f.write("""# Pre-existing host environment
-ROS_DOMAIN_ID=0
-ROS_LOCALHOST_ONLY=1
-CUSTOM_USER_KEY=preserved_value
-ROS_LOG_DIR=/custom/ros/log
-""")
-
-        # Candidate release directory
-        candidate_dir = os.path.join(self.opt_dir, "releases", "1.0.0-test")
-        os.makedirs(os.path.join(candidate_dir, "host"), exist_ok=True)
-        shutil.copy2(
-            os.path.join(UBUNTU_TANK_DIR, "host", "mentorpi-tank.env"),
-            os.path.join(candidate_dir, "host", "mentorpi-tank.env"),
-        )
-
-        migrated = self.mgr.migrate_host_env(target_env, candidate_dir)
-        self.assertTrue(migrated)
-
-        with open(target_env, "r") as f:
-            content = f.read()
-
-        # Check preserved user settings
-        self.assertIn("CUSTOM_USER_KEY=preserved_value", content)
-        self.assertIn("ROS_LOG_DIR=/custom/ros/log", content)
-
-        # Check injected managed DDS settings
-        self.assertIn("RMW_IMPLEMENTATION=rmw_fastrtps_cpp", content)
-        self.assertIn("ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT", content)
-        self.assertIn(
-            f"FASTDDS_DEFAULT_PROFILES_FILE={self.opt_dir}/current/config/fastdds/loopback.xml",
-            content,
-        )
-
-    def test_migrate_host_env_noop_when_already_matching(self):
-        """migrate_host_env returns False when environment is already up to date."""
-        target_env = os.path.join(self.etc_dir, "mentorpi-tank.env")
-        shutil.copy2(
-            os.path.join(UBUNTU_TANK_DIR, "host", "mentorpi-tank.env"),
-            target_env,
-        )
-        candidate_dir = os.path.join(self.opt_dir, "releases", "1.0.0-test")
-        os.makedirs(os.path.join(candidate_dir, "host"), exist_ok=True)
-        shutil.copy2(
-            os.path.join(UBUNTU_TANK_DIR, "host", "mentorpi-tank.env"),
-            os.path.join(candidate_dir, "host", "mentorpi-tank.env"),
-        )
-
-        # First pass might normalize path if needed, second pass must be no-op
-        self.mgr.migrate_host_env(target_env, candidate_dir)
-        second = self.mgr.migrate_host_env(target_env, candidate_dir)
-        self.assertFalse(second)
 
 
 class TestDeliveryDeadlockRegressionAndLoopbackDelivery(unittest.TestCase):

@@ -28,8 +28,10 @@ C1–C4 container implementation replaces native application startup with paired
 runtime/web images. Use `docker/ubuntu_tank/install.py` and its README. C4 Pi
 deployment, redeployment, reboot and power-on checks passed. The owner waived USB
 reconnect, competing-owner and interrupted-update tests; those remain unverified.
-C5 must repeat physical acceptance for Docker. Prior native physical evidence below does not certify the
-container delivery. Factory-image ownership rules remain unchanged.
+M15 supplies owner-scoped Docker acceptance; physical timing remains waived.
+M16/C6 handoff and current recovery limitations are recorded in
+`docs/M16_RELEASE_HANDOFF.md`. Prior native physical evidence below does not
+certify the container delivery. Factory-image ownership rules remain unchanged.
 
 ## Native Ubuntu 26.04 controller mode (physical acceptance certified)
 

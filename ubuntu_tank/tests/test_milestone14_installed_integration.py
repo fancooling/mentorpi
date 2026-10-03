@@ -146,67 +146,6 @@ class TestLauncherSourceImmutability(unittest.TestCase):
                     )
 
 
-class TestProductionSystemdConfinement(unittest.TestCase):
-    """Test production systemd confinement and sandboxing directives."""
-
-    def setUp(self):
-        self.host_dir = os.path.join(UBUNTU_TANK_DIR, "host")
-
-    def test_systemd_analyze_verify_all_units(self):
-        """All unit files in host/ pass systemd-analyze verify."""
-        units = [
-            "mentorpi-tank-web.service",
-            "mentorpi-tank-lifecycle.service",
-            "mentorpi-tank-operator.service",
-            "mentorpi-tank.service",
-            "mentorpi-tank-stack.target",
-        ]
-        unit_paths = [os.path.join(self.host_dir, u) for u in units]
-
-        cmd = ["systemd-analyze", "verify"] + unit_paths
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-
-        # Filter out informational / environmental warnings on non-systemd chroots
-        errors = []
-        for line in (res.stderr or "").splitlines():
-            line_s = line.strip()
-            if not line_s:
-                continue
-            # Ignore missing user accounts when running as non-root test
-            if "Unknown user" in line_s or "Unknown group" in line_s:
-                continue
-            if "Failed to parse" in line_s or "error" in line_s.lower():
-                errors.append(line_s)
-
-        self.assertEqual(errors, [], f"systemd-analyze reported errors: {errors}")
-
-    def test_systemd_confinement_directives(self):
-        """Assert strict sandboxing properties on web and lifecycle units."""
-        # Check mentorpi-tank-web.service
-        web_unit = os.path.join(self.host_dir, "mentorpi-tank-web.service")
-        with open(web_unit, "r", encoding="utf-8") as f:
-            web_text = f.read()
-
-        self.assertIn("User=ubuntu-tank-web", web_text)
-        self.assertIn("ProtectSystem=strict", web_text)
-        self.assertIn("DevicePolicy=closed", web_text)
-        self.assertIn("NoNewPrivileges=yes", web_text)
-        self.assertIn("CapabilityBoundingSet=", web_text)
-        self.assertIn("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6", web_text)
-        self.assertIn("ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank", web_text)
-
-        # Check mentorpi-tank-lifecycle.service
-        lc_unit = os.path.join(self.host_dir, "mentorpi-tank-lifecycle.service")
-        with open(lc_unit, "r", encoding="utf-8") as f:
-            lc_text = f.read()
-
-        self.assertIn("User=root", lc_text)
-        self.assertIn("ProtectSystem=strict", lc_text)
-        self.assertIn("NoNewPrivileges=yes", lc_text)
-        self.assertIn("RestrictAddressFamilies=AF_UNIX", lc_text)
-        self.assertIn("ReadOnlyPaths=/opt/ubuntu_tank /etc/opt/ubuntu_tank", lc_text)
-
-
 class TestLifecycleAndWebAvailability(unittest.TestCase):
     """Test web availability and lifecycle coordination when controller is stopped."""
 

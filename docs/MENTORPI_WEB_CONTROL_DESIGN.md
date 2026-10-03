@@ -4,9 +4,10 @@ Status: Existing implementation and acceptance status are recorded per milestone
 M14.3 and M14.4 are deployed; stopped Pi integration passed on 2026-09-29.
 M14.5 runtime/API and M14.6 browser controls are deployed. M15 is complete within
 the owner-approved Windows Chrome/Wi-Fi scope, with exclusions and physical
-timing waivers retained below. M16 release handoff remains pending.
+timing waivers retained below. M16/C6 release handoff is complete;
+see [release evidence and restrictions](M16_RELEASE_HANDOFF.md).
 
-Date: 2026-09-29
+Date: 2026-10-03
 
 Target: Ubuntu 26.04 ARM64 / ROS 2 Lyrical on the MentorPi Tank Pi 5.
 Current delivery uses paired runtime/web containers; the
@@ -613,8 +614,10 @@ independently, with M14 integrating both. Existing completed checkboxes describe
 the contract implemented at that time, including the superseded Arm and controller
 Stop interfaces in M14.3/M14.4. The remaining work proceeds in order:
 M14.5 simplified runtime/API → M14.6 browser controls → M15 deployment and
-physical acceptance → M16 release handoff. M15 supplies the revised web-control evidence
-for container C5; M16 and container C6 release sign-off require that acceptance.
+physical acceptance → M16 release handoff. M15 is complete within the owner-approved
+Windows Chrome/Wi-Fi scope and supplies revised web-control evidence for container
+C5. M16 and container C6 use that scoped acceptance, retaining its exclusions and
+waivers rather than claiming full instrumented certification.
 Earlier reports do not certify the revised release.
 
 ### Milestone 10 — Protocol, state machine, and dependency closure
@@ -1343,34 +1346,59 @@ control/timing contract. They do not certify this deployment. A container
 this checklist, keeping physical observations and timing evidence separate from
 local software tests.
 
-### Milestone 16 — Operator handoff and release
+### Milestone 16 — Docker operator handoff and owner-scoped release
 
-Status: pending; release sign-off depends on M15 acceptance of the revised release.
+Status: complete on October 3, 2026; validation and independent review passed.
+See the [release handoff](M16_RELEASE_HANDOFF.md) and
+[operator guide](../ubuntu_tank/docs/OPERATOR_GUIDE.md). M15 acceptance is complete within the owner-approved Windows
+Chrome/Wi-Fi scope. Coordinate this handoff with container C6; mobile clients are
+future work and phone/PWA installation is not a release gate.
 
-- [ ] Update the lease-expiry bug report with M14.3–M15 results and any remaining
+- [x] Update the lease-expiry bug report with M14.3–M15 results and any remaining
   network limitations. Document pause/release/new-press recovery separately from
   faults that require explicit Start.
-- [ ] Document certificate setup and direct page access, Take/Start/drive/Stop/Release flow,
-  input limitations, loss-of-connection recovery, CLI handoff, and rollback.
-- [ ] Document phone installation, tested browser/OS versions, offline behavior,
-  update/recovery workflow, API schemas, and frontend build commands.
-- [ ] Publish a web-specific acceptance report with separate software, installed
-  Pi, and physical results, and links to reproducible evidence.
-- [ ] Obtain an independent committed-code review and resolve critical findings;
+- [x] Consolidate operator instructions for certificate setup/trust, direct HTTPS
+  access, Take/Start/drive/Stop/Release, input limits, focus changes, connection
+  loss, ownership expiry and terminal handoff.
+- [x] Document the current Docker build/deploy and manual recovery workflow:
+  workstation `docker/ubuntu_tank/deploy.sh`, Pi-side `install.py`, stopped
+  integration checks and manual Git fallback. Include recovery from the observed
+  boot-clock/TLS startup failure; automatic cold-boot recovery remains unresolved.
+- [x] Record Windows Chrome 153.0.8010.53 acceptance and the unreported Windows
+  OS version. Link offline/update recovery, API schemas and frontend build
+  commands; distinguish automated Chromium update evidence from manual Windows
+  checks. Do not imply mobile acceptance.
+- [x] Record separate software, installed-Pi and owner-observed physical results
+  in the [M15 acceptance report](M15_ACCEPTANCE_2026-10-02.md).
+- [x] Finalize that report's release/evidence index for handoff, binding the
+  accepted source, paired image identities and configuration to retained evidence.
+  Identify local-only artifacts and reproducible checks. Preserve excluded tests,
+  waived physical timing/distance measurements and unresolved network limitations.
+- [x] Complete container C6 documentation and obsolete native deployment-path
+  cleanup while preserving runtime product tests and historical evidence.
+- [x] Obtain an independent committed-code review and resolve critical findings;
   record the accepted release and remaining operational restrictions.
 
-Exit: the owner can perform everyday controls entirely from the page, with
-bounded motion, verified stopping, and a documented local recovery path.
+Exit: the owner can use the accepted Windows Chrome/Wi-Fi controls and documented
+Docker/terminal recovery paths. The release records owner-observed stopping,
+software safety evidence and all operational restrictions. Physical stopping
+time/distance remain waived, not passed; excluded tests are not release gates.
+This handoff does not authorize on-ground motion or claim full certification.
 
 ## 8. Definition of done
 
-An installed Pi serves the Vue/TypeScript PWA through FastAPI/Uvicorn without an
-Internet dependency or a Node.js runtime. Mobile installation, offline status,
-disarmed updates, and cached-client compatibility/recovery pass their gates;
+The paired ARM64 containers on the Pi serve the Vue/TypeScript PWA through
+FastAPI/Uvicorn without an Internet dependency or a Node.js runtime. Release
+acceptance uses the M15 Windows Chrome/Wi-Fi scope and its recorded offline,
+disarmed-update and client-recovery evidence. Mobile installation and Android/iOS
+acceptance are deferred to future client work.
 Take/Release control, Start/Stop, direction buttons, W/S/A/D and Space work as
 specified. Release stops the controller; Start only arms for fresh direction input.
 Only one operator controls motion, loss of input or connectivity cannot latch
 movement, reconnection never resumes it, and production DDS/security confinement
-remains effective. M10–M16 evidence, including M11.1 and M14.1–M14.6, is complete
-and distinguishable from native M1–M9 evidence. Raised-track completion still does
-not authorize on-ground use.
+remains effective. M10–M16 evidence, including M11.1 and M14.1–M14.6, is indexed
+and distinguishable from native M1–M9 evidence. M16 and container C6 handoff are
+complete, with M15 exclusions, timing waivers, the unresolved boot-clock/TLS
+failure and network limitations explicit. Owner-observed stopping does not
+establish instrumented stopping bounds. Raised-track completion still does not
+authorize on-ground use.

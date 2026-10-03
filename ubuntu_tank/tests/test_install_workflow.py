@@ -54,30 +54,6 @@ class TestVerifyLock(unittest.TestCase):
         self.assertIn("PASS: versions.lock verified successfully.", res.stdout)
         self.assertIn("Transitive closure status: complete", res.stdout)
 
-    def test_live_install_requires_complete_transitive_lock(self):
-        """Live package mutation must reject a direct-only lock."""
-        with open(LOCK_FILE, "r", encoding="utf-8") as source:
-            lock_text = source.read().replace(
-                "closure_status: complete", "closure_status: direct-only", 1
-            )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".lock", delete=False) as tmp:
-            tmp.write(lock_text)
-            tmp_path = tmp.name
-
-        try:
-            script = f'LOCK_FILE="{tmp_path}"; source "{INSTALL_ROS2_BIN}"; require_complete_package_lock'
-            res = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-            self.assertNotEqual(res.returncode, 0)
-            self.assertIn("transitive closure is 'direct-only'", res.stderr)
-        finally:
-            os.remove(tmp_path)
-
-    def test_complete_transitive_lock_passes_live_gate(self):
-        """A reviewed complete lock state must pass the live mutation gate."""
-        script = f'source "{INSTALL_ROS2_BIN}"; require_complete_package_lock'
-        res = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-        self.assertEqual(res.returncode, 0, res.stderr)
-
     def test_reject_tampered_missing_format_version(self):
         """Tampered lockfile missing format_version must fail."""
         with open(LOCK_FILE, "r") as f:
@@ -101,32 +77,6 @@ class TestVerifyLock(unittest.TestCase):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-
-
-class TestSecurityAndCliGuards(unittest.TestCase):
-    """Tests that CLI options are strictly validated."""
-
-    def test_help_options_do_not_mutate(self):
-        """-h and --help must display help text and exit 0 without mutating."""
-        for subcmd in ["prepare-host", "install-ros", "install-deps"]:
-            for flag in ["-h", "--help"]:
-                res = subprocess.run(
-                    [INSTALL_ROS2_BIN, subcmd, flag], capture_output=True, text=True
-                )
-                self.assertEqual(res.returncode, 0, f"Failed for {subcmd} {flag}")
-                self.assertIn(f"Usage: ./deploy.sh {subcmd}", res.stdout)
-
-    def test_unknown_options_fail(self):
-        """Unknown options must fail immediately with non-zero exit."""
-        for subcmd in ["prepare-host", "install-ros", "install-deps"]:
-            res = subprocess.run(
-                [INSTALL_ROS2_BIN, subcmd, "--invalid-flag-12345"],
-                capture_output=True,
-                text=True,
-            )
-            self.assertNotEqual(
-                res.returncode, 0, f"Expected failure for {subcmd} with unknown flag"
-            )
 
 
 class TestUpstreamInputsVerification(unittest.TestCase):

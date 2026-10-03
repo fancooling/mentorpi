@@ -18,7 +18,6 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -1114,72 +1113,6 @@ class TestSystemdServiceHardening(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Restricted Lifecycle Helper Service", result.stdout)
-
-    def test_systemd_analyze_verify_units(self):
-        """mentorpi-tank-web.service and mentorpi-tank-lifecycle.service pass systemd-analyze."""
-        systemd_analyze = shutil.which("systemd-analyze")
-        if not systemd_analyze:
-            self.skipTest("systemd-analyze unavailable")
-
-        web_unit = os.path.join(UBUNTU_TANK_DIR, "host/mentorpi-tank-web.service")
-        lc_unit = os.path.join(UBUNTU_TANK_DIR, "host/mentorpi-tank-lifecycle.service")
-        self.assertTrue(os.path.isfile(web_unit))
-        self.assertTrue(os.path.isfile(lc_unit))
-
-        with tempfile.TemporaryDirectory() as td:
-            for src_name in (
-                "mentorpi-tank-web.service",
-                "mentorpi-tank-lifecycle.service",
-            ):
-                src = os.path.join(UBUNTU_TANK_DIR, "host", src_name)
-                dst = os.path.join(td, src_name)
-                with open(src, "r", encoding="utf-8") as f:
-                    content = f.read()
-                # Substitute /bin/true for non-existent target paths on development host
-                mocked = content.replace(
-                    "/opt/ubuntu_tank/current/bin/mentorpi-tank-web", "/bin/true"
-                ).replace(
-                    "/opt/ubuntu_tank/current/bin/mentorpi-tank-lifecycle", "/bin/true"
-                )
-                with open(dst, "w", encoding="utf-8") as f:
-                    f.write(mocked)
-
-                res = subprocess.run(
-                    [systemd_analyze, "verify", dst],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                self.assertEqual(
-                    res.returncode,
-                    0,
-                    f"systemd-analyze verify failed for {src_name}:\n{res.stderr}\n{res.stdout}",
-                )
-
-    def test_systemd_analyze_rejects_malformed_directives(self):
-        """systemd-analyze verify rejects corrupted directives in service units."""
-        systemd_analyze = shutil.which("systemd-analyze")
-        if not systemd_analyze:
-            self.skipTest("systemd-analyze unavailable")
-
-        src = os.path.join(UBUNTU_TANK_DIR, "host/mentorpi-tank-web.service")
-        with tempfile.TemporaryDirectory() as td:
-            bad_unit = os.path.join(td, "bad.service")
-            with open(src, "r", encoding="utf-8") as f:
-                content = f.read()
-            corrupted = content.replace(
-                "ProtectSystem=strict", "ProtectSystem=bogus_value"
-            )
-            with open(bad_unit, "w", encoding="utf-8") as f:
-                f.write(corrupted)
-
-            res = subprocess.run(
-                [systemd_analyze, "verify", bad_unit],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertIn("Failed to parse", res.stderr + res.stdout)
 
 
 class TestFaultToleranceAndUnavailableSubsystems(unittest.TestCase):

@@ -18,7 +18,9 @@ API, device mount, or privileged capability.
 The clean Ubuntu 26.04 Pi 5 controller uses the paired runtime/web containers
 in [the container guide](docker/ubuntu_tank/README.md). C1–C4 implementation is
 present; C4 deployment, redeployment, reboot and power-on checks passed on the Pi.
-The owner waived other C4 fault tests; C5 physical acceptance remains pending. This
+The owner waived other C4 fault tests. M15 supplies owner-scoped C5 acceptance;
+physical timing remains waived. See the [operator guide](ubuntu_tank/docs/OPERATOR_GUIDE.md)
+and [M16 handoff](docs/M16_RELEASE_HANDOFF.md) for current evidence and recovery. This
 mode uses separate boot media and must never coexist with the factory stack,
 sidecar or replacement mode on a running robot.
 

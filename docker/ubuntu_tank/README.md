@@ -3,7 +3,8 @@
 Builds the controller runtime and ROS-free web service for Ubuntu 26.04 ARM64
 with ROS 2 Lyrical. This is separate from the factory `MentorPi` container and
 `docker/customization`. C4 Pi deployment, redeployment, reboot and power-on checks
-passed; the owner waived other C4 fault tests. C5 robot testing remains required. Do not start this Compose project beside the factory or native stack.
+passed; the owner waived other C4 fault tests. M15 supplies owner-scoped C5 evidence; physical timing remains waived. See the
+[M16 handoff](../../docs/M16_RELEASE_HANDOFF.md). Do not start this Compose project beside the factory or native stack.
 
 ## Build
 
@@ -144,12 +145,14 @@ configure certificate paths below the mounted `/var/opt/ubuntu_tank/web/certs`.
 The host CLI supplies verified immutable local Docker image IDs, the serial group,
 release identity and deployment generation to Compose. Do not invoke Compose
 `up` directly. Registry manifest digests remain bound in the release manifest.
-For terminal access after authorized deployment, source the installed environment:
+For terminal access, first follow the browser Release and disarmed controller
+startup steps in the [operator guide](../../ubuntu_tank/docs/OPERATOR_GUIDE.md#pi-recovery-and-terminal-handoff).
+The entrypoint sources the installed environment:
 
 ```bash
-docker exec -it "$(docker ps -q --filter label=com.docker.compose.project=ubuntu-tank --filter label=com.docker.compose.service=runtime)" \
+sudo docker exec -it "$(sudo docker ps -q --filter label=com.docker.compose.project=ubuntu-tank --filter label=com.docker.compose.service=runtime)" \
   runtime-entrypoint ros2 run ubuntu_tank_bringup operator_client --disarm
-docker exec -it "$(docker ps -q --filter label=com.docker.compose.project=ubuntu-tank --filter label=com.docker.compose.service=runtime)" \
+sudo docker exec -it "$(sudo docker ps -q --filter label=com.docker.compose.project=ubuntu-tank --filter label=com.docker.compose.service=runtime)" \
   runtime-entrypoint ros2 run ubuntu_tank_teleop teleop_key
 ```
 
@@ -276,10 +279,10 @@ After preparation, the installed host CLI is also available as
 application processes remain supervised inside runtime. A manual first deploy
 activates that unit, which verifies/redeploys the selected pair once more.
 Every boot or container restart leaves the controller stopped. Only explicit
-Take control (start if needed, then acquire) followed by explicit Arm can enable
-motion. M14.4 provides protocol-2 browser recovery and a single Take control
-flow; robot deployment and physical acceptance remain M15. See the
-[control contract and timeout configuration](../../ubuntu_tank/docs/WEB_DEPENDENCY_CLOSURE.md#m143-control-contract).
+Take control (start if needed, then acquire), Start and a fresh direction press
+can enable browser motion. Protocol 3 recovery and owner-scoped M15 acceptance
+are documented in the [operator guide](../../ubuntu_tank/docs/OPERATOR_GUIDE.md). See the
+[control contract and timeout configuration](../../ubuntu_tank/README.md#control-contract).
 
 The host keeps the original deployment-lock inode and a separate lifetime
 hardware-owner lock. Runtime holds the latter even when stopped. The bridge uses
@@ -306,9 +309,10 @@ image digests, configuration hashes, boot ID and run ID. Its PASS covers only th
 stopped integration checks. C4 was accepted for the owner-reduced scope of Pi
 deployment, redeployment, reboot and shutdown/power-on recovery. USB reconnect,
 competing-owner and interrupted-update tests were explicitly waived, not passed.
-C5 covers controller-running failure injection and physical timing;
-a container `web-acceptance` command is not implemented yet. Native acceptance
-does not certify Docker.
+M15 records controller-running faults and owner-observed stopping for C5. Physical
+timing remains waived and other exclusions remain explicit in the release handoff.
+A container `web-acceptance` command is not implemented. Native acceptance does
+not certify Docker.
 
 For serial reconnect, stop the pair, reconnect the same observed adapter/USB
 path, verify `/dev/rrc`, and redeploy the release. This recreates the device mapping.

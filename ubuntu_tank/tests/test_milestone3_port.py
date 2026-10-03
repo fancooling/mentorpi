@@ -14,7 +14,6 @@ Verifies:
 """
 
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -1288,19 +1287,6 @@ class TestPackageMetadataSynchronization(unittest.TestCase):
 
 class TestInstallRos2ClosureManifest(unittest.TestCase):
     """Verify generate_candidate_manifest_from_archives logic."""
-
-    def test_install_ros_rejects_live_candidate_override(self):
-        """Live installation must inspect its own downloaded artifacts."""
-        install_script = os.path.join(UBUNTU_TANK_DIR, "scripts", "install_ros2.sh")
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as candidate_file:
-            res = subprocess.run(
-                [install_script, "install-ros", "--candidates", candidate_file.name],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        self.assertNotEqual(res.returncode, 0)
-        self.assertIn("test-only", res.stderr)
 
     def test_verify_closure_requires_architecture_and_repository(self):
         """Candidate entries cannot omit exact architecture or repository identity."""

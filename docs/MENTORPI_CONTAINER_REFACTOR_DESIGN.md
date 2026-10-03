@@ -1,7 +1,7 @@
 # MentorPi Ubuntu Tank Container Refactor
 
-Status: C1–C4 implemented. C4 owner-scoped Pi deployment, redeployment, reboot and power-on verification passed; other C4 fault tests were waived, not passed. C5–C6 and container physical acceptance remain pending.
-Date: 2026-09-26.
+Status: C1–C4 implemented. C4 owner-scoped Pi deployment, redeployment, reboot and power-on verification passed; other C4 fault tests were waived, not passed. M15 supplies owner-scoped C5 evidence; instrumented physical acceptance remains waived. C6/M16 handoff and native-path cleanup are complete; current service and recovery restrictions remain in the handoff.
+Date: 2026-10-03.
 
 ## 1. Purpose and scope
 
@@ -442,8 +442,16 @@ These phases are local to this document; existing milestone numbering is intact.
 | C2 (complete) | Supervisor integration, lifecycle adapter, existing robot supervisor adaptation | Numeric monitor deadlines set; process tests cover each monitored failure, start/stop races, stopped boot |
 | C3 (complete) | Two final image targets and Compose definition | Both ARM64 images build under emulation; installed CLI/import checks, HTTPS/static assets, shared IPC permissions and server replacement pass; web has no ROS |
 | C4 (owner-scoped verification passed) | Host ownership and Docker deployment tooling | Pi deployment/redeployment, reboot and power-on passed; USB, competing-owner and interrupted-update tests waived by owner; manual Git fallback documented |
-| C5 | Container-specific failure and physical campaign | Real robot elevated-track observations and instrumented stop bounds pass |
-| C6 | Operator documentation and release handoff | Reproducible build/deploy/recovery commands and exact evidence identities recorded |
+| C5 (owner-scoped evidence recorded) | Container-specific failure and physical campaign | M15 owner-observed stopping and fault results recorded; original instrumented stop-bound gate remains uncertified |
+| C6 (complete) | Operator documentation and release handoff | M16 guide/evidence index, native-path cleanup, development checks and independent review complete |
+
+For the current owner-scoped release, M15 supplies C5 evidence under the
+[October 2 acceptance scope](M15_ACCEPTANCE_2026-10-02.md); the original C5
+instrumented exit remains uncertified. Coordinate C6 with
+[M16](MENTORPI_WEB_CONTROL_DESIGN.md#milestone-16--docker-operator-handoff-and-owner-scoped-release).
+Carry forward excluded tests and waived timing/distance measurements without
+requiring them again or marking them passed. Keep the boot-clock/TLS startup
+failure and network limitations explicit in the release handoff.
 
 C3 uses shared UID/GID 10001 and initially supports rootful Docker Engine 29.8
 and Compose 5.5 without user-namespace remapping. See the
@@ -452,9 +460,11 @@ set new fault-acceptance bounds before C5.
 
 C4 adds the host CLI, retained host-change record, lifetime device lock,
 boot-bound deployment admission and stopped-pair target checks. Native operations
-are removed from `ubuntu_tank/deploy.sh`; historical helper modules/fixtures remain
-for existing product tests and must be cleaned up before C6 release. The owner
+are removed from `ubuntu_tank/deploy.sh`; native host units, disposable-root tooling and installation CLI dispatch are
+removed. Historical imported helpers and the serial template remain only for
+regressions; Docker build/configuration helpers are preserved. The owner
 accepted a reduced C4 gate: deployment, redeployment, reboot and power-on recovery.
 USB reconnect, competing-owner and interrupted-update tests remain unverified. See the [host guide](../docker/ubuntu_tank/README.md).
 
-Complete C1–C6 and remove obsolete native deployment paths before release.
+C6/M16 record the release restrictions and evidence without restoring obsolete
+native deployment paths. See the [handoff](M16_RELEASE_HANDOFF.md).

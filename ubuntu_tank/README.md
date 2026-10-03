@@ -6,10 +6,10 @@ paired runtime and web containers. Use the
 [container guide](../docker/ubuntu_tank/README.md) for building, transferring,
 deploying and operating those images.
 
-Status as of 2026-09-29: M14.5 runtime/API and M14.6 simplified browser controls
-are implemented and locally validated. These changes have not been deployed to the Pi. M14.4
-stopped-controller integration passed on the Pi; M15 physical web acceptance
-also supplies the outstanding container C5 evidence.
+M15 is complete within the owner-approved Windows Chrome/Wi-Fi scope. Use the
+[operator guide](docs/OPERATOR_GUIDE.md) for everyday control and recovery and the
+[M16 release handoff](../docs/M16_RELEASE_HANDOFF.md) for accepted identities,
+evidence, exclusions and remaining limitations.
 
 ## Runtime structure
 
@@ -47,8 +47,8 @@ code lives separately in [`docker/ubuntu_tank/`](../docker/ubuntu_tank/).
 | `web/` | Vue/TypeScript PWA, Vite build and Playwright browser scenarios. |
 | `config/` | Controller defaults, Fast DDS, SROS2 and shared web settings. |
 | `bin/` | Installed runtime, operator, lifecycle and web entrypoint wrappers. |
-| `scripts/` | Acceptance tools, target checks and retained native build/install utilities. |
-| `host/` | Retained native service and host configuration assets; current host provisioning is under `docker/ubuntu_tank/`. |
+| `scripts/` | Shared Docker build/configuration helpers, read-only dependency checks and historical acceptance regression helpers. |
+| `host/` | Historical serial-rule template for identity regressions; native service assets are removed. |
 | `tests/` | Hardware-free behavior tests, source/dependency gates and target-test contracts. |
 | `docs/` | Dependency, protocol, supervision and historical release documentation. |
 | `debug/` | Historical diagnosis records. |

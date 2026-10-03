@@ -1,8 +1,34 @@
 # Web controls disable after brief movement; Arm does not recover
 
-Status: original binding fix deployed; M14.3 backend redesign implemented locally.
-M14.4 browser recovery is implemented locally; M15 robot validation remains pending.
-Reported and deployed 2026-09-26.
+Status: the recovery defect is resolved within the M15 Windows Chrome/Wi-Fi
+scope. Network stalls remain a reliability limitation. M16 handoff records the
+accepted release and waived physical timing; no instrumented stop bound is claimed.
+
+## Current outcome (October 3, 2026)
+
+M14.3–M14.6 deployed protocol 3.0.0 and the Take/Start/Stop/Release interface.
+The installed input lease is 1 second. Expiry commands zero and enters
+`INPUT_PAUSED` while healthy Arm and ownership remain. Release held controls,
+wait for fresh neutral acknowledgment and press again; an old held direction
+never resumes. Stop, focus loss and hard faults disarm and require explicit Start.
+Real connection loss or ownership expiry additionally requires Take control.
+
+[M15 acceptance](M15_ACCEPTANCE_2026-10-02.md) records ten injected input-gap
+recoveries with one Start, ten rejected stale replays, Stop during recovery,
+owner-observed stopping and Windows Chrome controls. Immediate Take after Release
+was separately fixed and passed twenty live cycles. The accepted release is
+identified in the [M16 handoff](M16_RELEASE_HANDOFF.md).
+
+The earlier approximately 409 ms network stalls are not proved fixed.
+`ERR_NETWORK_CHANGED` also appeared during the successful lifecycle repeat.
+Ethernet and actual Wi-Fi radio loss were outside the accepted scope. The proposed
+1.2-second physical-rest target and stopping distance were waived, not measured
+or passed. Recovery usability does not establish network reliability or measured
+physical stopping.
+
+The sections below preserve the September diagnosis and intermediate contracts.
+Their Arm labels, 150 ms lease and pending-deployment statements describe those
+historical snapshots, not the current operator procedure.
 
 ## Environment and impact
 

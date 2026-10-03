@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""
-Deployment, packaging, installation, activation, and recovery manager for Ubuntu Tank.
+"""Historical native deployment helpers retained for regression-test imports.
 
-Implements Milestone 5 requirements:
-- Checksummed RFC 822 packaging and immutable installation.
-- Detection and rejection of leaked build/checkout paths.
-- Provisioning and validation of dedicated service identities (ubuntu-tank:mentorpi-rrc).
-- Strict verification of service stoppage before asset changes.
-- Atomic 6-step activation transaction with write-ahead journal and fsync points.
-- Snapshot creation and verified offline rollback without network or checkout.
-- Rejection of recovery and rollback when baseline/snapshot cannot be verified.
-- Self-contained release-independent boot recovery runner in libexec/.
-- Deployment lock serialization via /run/lock/ubuntu_tank/deploy.lock.
-- Strict non-starting and disarmed-by-default operation.
+The native CLI always exits before host changes. Docker delivery uses
+docker/ubuntu_tank/install.py. Imported helpers support historical acceptance,
+configuration, identity and safety regressions; this module is not shipped in
+images or supported for provisioning. Restore native delivery from Git history
+only through the documented manual fallback procedure.
 """
 
-import argparse
 import fcntl
 import grp
 import hashlib
@@ -3161,179 +3153,9 @@ class ReleaseManager:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ubuntu Tank Deployment Manager CLI")
-    sub = parser.add_subparsers(dest="command")
-
-    attest = sub.add_parser(
-        "attest-build",
-        help="Record provenance after a successful production-prefix build",
-    )
-    attest.add_argument("--install-tree", required=True)
-    attest.add_argument("--prefix", required=True)
-    attest.add_argument("--source", required=True)
-    attest.add_argument(
-        "--synthetic",
-        action="store_true",
-        help="Mark hardware-free fixture output; never deploy as production",
-    )
-
-    # package
-    pkg_p = sub.add_parser("package")
-    pkg_p.add_argument(
-        "--workspace",
-        default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
-    )
-    pkg_p.add_argument("--output-dir", default=None)
-    pkg_p.add_argument("--release-id", default=None)
-    pkg_p.add_argument("--arch", default="arm64")
-    pkg_p.add_argument("--allow-staged-install", action="store_true")
-    pkg_p.add_argument(
-        "--install-tree", default=None, help="Path to built production install tree"
-    )
-    pkg_p.add_argument(
-        "--build-root", default=None, help="Disposable build root directory"
-    )
-
-    # install
-    inst_p = sub.add_parser("install")
-    inst_p.add_argument("archive")
-    inst_p.add_argument(
-        "--operator-user",
-        help="Login granted operator and status credentials; defaults to SUDO_USER",
-    )
-    inst_p.add_argument("--opt-dir", default=DEFAULT_OPT_DIR)
-    inst_p.add_argument("--etc-dir", default=DEFAULT_ETC_DIR)
-    inst_p.add_argument("--var-dir", default=DEFAULT_VAR_DIR)
-    inst_p.add_argument("--run-dir", default=DEFAULT_RUN_DIR)
-    inst_p.add_argument("--lock-path", default=DEFAULT_LOCK_PATH)
-    inst_p.add_argument("--no-require-root", action="store_true")
-    inst_p.add_argument("--no-enforce-arm64", action="store_true")
-
-    # activate
-    act_p = sub.add_parser("activate")
-    act_p.add_argument("release_id")
-    act_p.add_argument("--opt-dir", default=DEFAULT_OPT_DIR)
-    act_p.add_argument("--etc-dir", default=DEFAULT_ETC_DIR)
-    act_p.add_argument("--var-dir", default=DEFAULT_VAR_DIR)
-    act_p.add_argument("--systemd-dir", default=DEFAULT_SYSTEMD_DIR)
-    act_p.add_argument("--udev-dir", default=DEFAULT_UDEV_DIR)
-    act_p.add_argument("--lock-path", default=DEFAULT_LOCK_PATH)
-    act_p.add_argument("--no-require-root", action="store_true")
-
-    # rollback
-    rb_p = sub.add_parser("rollback")
-    rb_p.add_argument("--opt-dir", default=DEFAULT_OPT_DIR)
-    rb_p.add_argument("--etc-dir", default=DEFAULT_ETC_DIR)
-    rb_p.add_argument("--var-dir", default=DEFAULT_VAR_DIR)
-    rb_p.add_argument("--systemd-dir", default=DEFAULT_SYSTEMD_DIR)
-    rb_p.add_argument("--udev-dir", default=DEFAULT_UDEV_DIR)
-    rb_p.add_argument("--lock-path", default=DEFAULT_LOCK_PATH)
-    rb_p.add_argument("--no-require-root", action="store_true")
-
-    # recover
-    rec_p = sub.add_parser("recover")
-    rec_p.add_argument("--opt-dir", default=DEFAULT_OPT_DIR)
-    rec_p.add_argument("--etc-dir", default=DEFAULT_ETC_DIR)
-    rec_p.add_argument("--var-dir", default=DEFAULT_VAR_DIR)
-    rec_p.add_argument("--systemd-dir", default=DEFAULT_SYSTEMD_DIR)
-    rec_p.add_argument("--udev-dir", default=DEFAULT_UDEV_DIR)
-    rec_p.add_argument("--lock-path", default=DEFAULT_LOCK_PATH)
-
-    args = parser.parse_args()
-
-    if getattr(args, "no_require_root", False) or getattr(
-        args, "no_enforce_arm64", False
-    ):
-        parser.error(
-            "Live CLI deployment cannot bypass root or target validation; use isolated Python fixtures"
-        )
-
-    if args.command == "attest-build":
-        attest_build(
-            args.install_tree, args.prefix, args.source, synthetic=args.synthetic
-        )
-        return
-
-    if args.command == "package":
-        if args.release_id:
-            ReleaseManager.validate_release_id(args.release_id)
-        out_dir = args.output_dir or os.path.join(args.workspace, "dist")
-        mgr = ReleaseManager()
-        archive = mgr.package_release(
-            workspace_dir=args.workspace,
-            output_dir=out_dir,
-            release_id=args.release_id,
-            arch=args.arch,
-            allow_staged_install=args.allow_staged_install,
-            install_tree=args.install_tree,
-            build_root=args.build_root,
-        )
-        print(f"Packaged release archive: {archive}")
-        sys.exit(0)
-
-    elif args.command == "install":
-        mgr = ReleaseManager(
-            opt_dir=args.opt_dir,
-            etc_dir=args.etc_dir,
-            var_dir=args.var_dir,
-            run_dir=args.run_dir,
-            lock_path=args.lock_path,
-        )
-        rel_id = mgr.install_release(
-            archive_path=args.archive,
-            require_root=not args.no_require_root,
-            enforce_arm64=not args.no_enforce_arm64,
-            operator_user=args.operator_user,
-        )
-        print(f"Installed release: {rel_id}")
-        sys.exit(0)
-
-    elif args.command == "activate":
-        ReleaseManager.validate_release_id(args.release_id)
-        mgr = ReleaseManager(
-            opt_dir=args.opt_dir,
-            etc_dir=args.etc_dir,
-            var_dir=args.var_dir,
-            systemd_dir=args.systemd_dir,
-            udev_dir=args.udev_dir,
-            lock_path=args.lock_path,
-        )
-        rel_id = mgr.activate_release(
-            release_id=args.release_id, require_root=not args.no_require_root
-        )
-        print(f"Activated release: {rel_id}")
-        sys.exit(0)
-
-    elif args.command == "rollback":
-        mgr = ReleaseManager(
-            opt_dir=args.opt_dir,
-            etc_dir=args.etc_dir,
-            var_dir=args.var_dir,
-            systemd_dir=args.systemd_dir,
-            udev_dir=args.udev_dir,
-            lock_path=args.lock_path,
-        )
-        rel_id = mgr.rollback_release(require_root=not args.no_require_root)
-        print(f"Rolled back to release: {rel_id}")
-        sys.exit(0)
-
-    elif args.command == "recover":
-        mgr = ReleaseManager(
-            opt_dir=args.opt_dir,
-            etc_dir=args.etc_dir,
-            var_dir=args.var_dir,
-            systemd_dir=args.systemd_dir,
-            udev_dir=args.udev_dir,
-            lock_path=args.lock_path,
-        )
-        ok = mgr.recover_activation()
-        sys.exit(0 if ok else 1)
-
-    else:
-        parser.print_help()
-        sys.exit(1)
+    """Reject retired native deployment before any host changes."""
+    raise SystemExit("Native deployment is retired; use docker/ubuntu_tank/install.py")
 
 
 if __name__ == "__main__":
-    sys.exit("Native deployment is retired; use docker/ubuntu_tank/install.py")
     main()

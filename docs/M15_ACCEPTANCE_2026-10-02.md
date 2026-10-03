@@ -193,3 +193,11 @@ still unresolved at that point; the later certificate rotation and owner
 confirmation recorded above close it. No commit or push was made during live
 testing. The runtime fix and acceptance evidence were subsequently committed
 in `2c5bb5d`.
+
+## Release handoff index
+
+[M16 handoff](M16_RELEASE_HANDOFF.md) binds the fixed accepted artifact to committed
+source and [retained evidence checksums](M16_EVIDENCE_INDEX.json), documents current
+recovery and records the later read-only Pi status. It preserves all M15 exclusions
+and waivers. The later failed-service observation does not replace the historical
+acceptance results or claim a fresh stopped-integration pass.
