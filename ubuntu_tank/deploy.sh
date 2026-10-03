@@ -86,6 +86,7 @@ cmd_test() {
 
   echo ""
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_protocol.py" -v
+  "${py_bin}" "${SCRIPT_DIR}/tests/test_container_build.py" -v
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_supervision.py" -v
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_web.py" -v
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_admission.py" -v

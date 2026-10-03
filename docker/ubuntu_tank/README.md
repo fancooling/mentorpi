@@ -111,6 +111,19 @@ caches, factory sources, disk images, credentials and hardware configuration.
 Untracked application files are excluded; new C3 build definitions are included
 before commit. Inspect `context/build-identity.json` for exact input hashes.
 
+Buildx exporters can omit `containerimage.config.digest` from their metadata.
+The builder then exports the inspected immutable image ID and hashes the raw
+configuration with the same archive verifier used by deployment. It never treats
+a local manifest ID as a configuration digest. This fallback needs temporary
+space for one uncompressed image in the system temporary directory, allows up to
+15 minutes per export, and removes the archive afterward. Manifest extraction
+uses that same immutable image ID.
+
+After a failed build, retain its output for diagnosis and retry with a new
+`OUTPUT_DIR`. Docker can reuse cached layers; do not prune images or manually
+invent a missing digest in the metadata. A failed runtime post-build check means
+the runtime image may exist but the paired `release.json` is not complete.
+
 The multistage Dockerfile builds two final targets:
 
 - `runtime`: installed colcon workspace at `/opt/ubuntu_tank/current/install`,

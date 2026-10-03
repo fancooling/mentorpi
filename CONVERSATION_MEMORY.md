@@ -76,6 +76,14 @@ before relying on recorded observations.
 
 ## Current state
 
+- Buildx metadata compatibility: `build.py` now handles a missing
+  `containerimage.config.digest` by exporting the inspected immutable image and
+  hashing its raw configuration through `archive_config_digest`. Manifest
+  extraction uses the same ID. Five focused regressions, real scratch ARM64
+  build/export and two-target release-generation checks passed. Local Buildx
+  supplied the field, so those checks explicitly omitted it to exercise fallback.
+  Independent review passed. No full robot-image rebuild or Pi deployment was
+  run. Retry failed builds with a new output directory while retaining Docker cache.
 - New-host Python setup is declared in root `requirements-build.txt` (PyYAML)
   and `requirements-dev.txt` (local tests/tools plus pinned transitive libraries).
   Recreate one root `.venv` per host and install with its `python -m pip`; never

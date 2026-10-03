@@ -10,12 +10,15 @@ A failed build never writes release.json. Build output must be outside source tr
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
+from image_identity import archive_config_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTAINER = ROOT / "docker/ubuntu_tank"
@@ -34,6 +37,36 @@ WEB_ROOT = {
 def run(*args: str) -> str:
     """Run a command from the repository root and return stdout on success."""
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
+
+
+def configuration_digest(metadata: dict, local_image_id: str) -> str:
+    """Return the portable config digest even when Buildx omits that metadata.
+
+    Use a valid metadata digest when present. Otherwise export the inspected,
+    immutable local image ID and hash its raw config using the shared archive
+    verifier. Export needs temporary disk space for the uncompressed image,
+    times out after 15 minutes, and is removed on success or failure. Never
+    substitute Docker's local ID, which can identify a manifest instead.
+    Invalid metadata, export failures and malformed archives fail the build.
+    """
+    if "containerimage.config.digest" in metadata:
+        digest = metadata["containerimage.config.digest"]
+        if not isinstance(digest, str) or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", digest
+        ):
+            raise RuntimeError("Invalid Buildx image configuration digest")
+        return digest
+    print(
+        "Buildx omitted the configuration digest; verifying exported image.", flush=True
+    )
+    with tempfile.TemporaryDirectory(prefix="ubuntu-tank-build-image-") as directory:
+        archive = Path(directory) / "image.tar"
+        subprocess.run(
+            ["docker", "image", "save", "--output", str(archive), local_image_id],
+            check=True,
+            timeout=900,
+        )
+        return archive_config_digest(archive)
 
 
 def allowed(path: Path) -> bool:
@@ -190,9 +223,9 @@ def main() -> None:
             raise RuntimeError(f"{target} is not Linux ARM64")
         build_metadata = json.loads(metadata.read_text())
         digest = build_metadata["containerimage.digest"]
-        config_digest = build_metadata["containerimage.config.digest"]
+        config_digest = configuration_digest(build_metadata, image["Id"])
         # create/cp reads image files without executing code or attaching hardware.
-        container = run("docker", "create", "--entrypoint", "/bin/true", tag)
+        container = run("docker", "create", "--entrypoint", "/bin/true", image["Id"])
         manifest_dir = output / target
         try:
             run(
