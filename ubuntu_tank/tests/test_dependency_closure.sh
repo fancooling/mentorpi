@@ -103,6 +103,7 @@ internal_pkgs = {
     "ubuntu_tank_operator",
     "ubuntu_tank_protocol",
     "ubuntu_tank_web",
+    "ubuntu_tank_camera",
 }
 
 declared_deps = set()

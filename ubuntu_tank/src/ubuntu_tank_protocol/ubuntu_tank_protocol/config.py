@@ -12,6 +12,7 @@ from typing import Any
 
 from .constants import (
     CHALLENGE_INTERVAL_SEC,
+    DEFAULT_CAMERA_SOCKET_PATH,
     DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     DEFAULT_WEB_ANGULAR_SPEED,
     DEFAULT_WEB_LINEAR_SPEED,
@@ -46,6 +47,7 @@ class WebControlConfig:
     max_hold_duration_sec: float = MAX_CONTINUOUS_HOLD_SEC
     operator_socket_path: str = "/run/ubuntu_tank/operator.sock"
     lifecycle_socket_path: str = "/run/ubuntu_tank/lifecycle.sock"
+    camera_socket_path: str = DEFAULT_CAMERA_SOCKET_PATH
 
     def validate(self) -> None:
         """Validate all fields against security and safety bounds."""
@@ -170,6 +172,9 @@ class WebControlConfig:
             ),
             lifecycle_socket_path=data.get(
                 "lifecycle_socket_path", "/run/ubuntu_tank/lifecycle.sock"
+            ),
+            camera_socket_path=data.get(
+                "camera_socket_path", DEFAULT_CAMERA_SOCKET_PATH
             ),
         )
         cfg.validate()

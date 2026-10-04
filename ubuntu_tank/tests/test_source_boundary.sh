@@ -108,7 +108,8 @@ STDLIB = {
     'subprocess', 'tempfile', 'hashlib', 'ast', 'xml', 'json', 'secrets',
     'uuid', 'fcntl', 'pathlib', 're', 'logging', 'dataclasses', 'contextlib',
     'ipaddress', 'errno', 'collections', '__future__', 'argparse', 'io',
-    'grp', 'pwd', 'stat', 'datetime', 'asyncio', 'concurrent'
+    'grp', 'pwd', 'stat', 'datetime', 'asyncio', 'concurrent',
+    'base64', 'functools', 'mmap', 'shutil'
 }
 
 dep_tags = {'depend', 'build_depend', 'build_export_depend', 'exec_depend', 'test_depend'}
@@ -203,6 +204,7 @@ CONTROLLER_ALLOWLIST = {
     'ros_robot_controller_msgs', 'ros_robot_controller', 'controller',
     'ubuntu_tank_safety', 'ubuntu_tank_supervisor', 'ubuntu_tank_teleop',
     'ubuntu_tank_bringup', 'ubuntu_tank_operator', 'ubuntu_tank_protocol', 'ubuntu_tank_web',
+    'ubuntu_tank_camera',
     # Tooling / generators / test
     'ament_cmake', 'ament_copyright', 'ament_flake8', 'ament_lint_auto',
     'ament_lint_common', 'ament_pep257', 'python3-pytest', 'launch',

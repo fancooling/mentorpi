@@ -217,6 +217,166 @@
           }
         }
       }
+    },
+    "/camera/status": {
+      "get": {
+        "summary": "Live camera acquisition status and profile",
+        "responses": {
+          "200": {
+            "description": "Camera status response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/camera/stream": {
+      "get": {
+        "summary": "Bounded MJPEG live camera stream",
+        "responses": {
+          "200": {
+            "description": "Multipart MJPEG frame stream",
+            "content": {
+              "multipart/x-mixed-replace; boundary=frame": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/camera/captures": {
+      "post": {
+        "summary": "Capture fresh JPEG image frame",
+        "responses": {
+          "200": {
+            "description": "Captured image metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraCaptureResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature disabled in current milestone"
+          }
+        }
+      }
+    },
+    "/camera/recordings": {
+      "post": {
+        "summary": "Start video recording on robot",
+        "responses": {
+          "200": {
+            "description": "Recording started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraRecordingResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature disabled in current milestone"
+          }
+        }
+      }
+    },
+    "/camera/recordings/{id}/stop": {
+      "post": {
+        "summary": "Stop video recording on robot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recording stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraRecordingResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature disabled in current milestone"
+          }
+        }
+      }
+    },
+    "/camera/media": {
+      "get": {
+        "summary": "List saved media files",
+        "responses": {
+          "200": {
+            "description": "Saved media list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/camera/media/{id}": {
+      "get": {
+        "summary": "Download saved media file by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Media file content",
+            "content": {
+              "image/jpeg": {},
+              "video/mp4": {}
+            }
+          },
+          "404": {
+            "description": "Media item not found"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -762,6 +922,133 @@
           },
           "client_timestamp_ms": {
             "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "CameraState": {
+        "type": "string",
+        "enum": [
+          "live",
+          "connecting",
+          "stale",
+          "unavailable",
+          "finalizing",
+          "error"
+        ]
+      },
+      "CameraProfile": {
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "fps"
+        ],
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "fps": {
+            "type": "integer"
+          }
+        }
+      },
+      "CameraStatusResponse": {
+        "type": "object",
+        "required": [
+          "state",
+          "profile",
+          "recording_state",
+          "viewers_count"
+        ],
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CameraState"
+          },
+          "frame_age_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CameraProfile"
+          },
+          "recording_state": {
+            "type": "string"
+          },
+          "recording_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "elapsed_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "storage_available_bytes": {
+            "type": "integer",
+            "nullable": true
+          },
+          "viewers_count": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CameraCaptureResponse": {
+        "type": "object",
+        "required": [
+          "media_id",
+          "timestamp",
+          "url",
+          "width",
+          "height",
+          "bytes"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        }
+      },
+      "CameraRecordingResponse": {
+        "type": "object",
+        "required": [
+          "recording_id",
+          "state",
+          "elapsed_sec"
+        ],
+        "properties": {
+          "recording_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "elapsed_sec": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string",
             "nullable": true
           }
         }

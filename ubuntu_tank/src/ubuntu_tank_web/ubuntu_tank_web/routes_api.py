@@ -17,10 +17,13 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 
+from ubuntu_tank_protocol.camera_client import CameraIpcClient
 from ubuntu_tank_protocol.constants import (
     API_VERSION,
     PROTOCOL_VERSION,
@@ -29,6 +32,8 @@ from ubuntu_tank_protocol.constants import (
 )
 
 from .models import (
+    CameraProfileModel,
+    CameraStatusResponseModel,
     ControlAcquireRequestModel,
     ControlAcquireResponseModel,
     ControlReleaseRequestModel,
@@ -299,3 +304,160 @@ async def get_operation(
     }
     filtered = {k: v for k, v in result.items() if k in allowed_fields}
     return OperationStatusResponseModel(**filtered)
+
+
+@router.get(
+    "/camera/status",
+    response_model=CameraStatusResponseModel,
+    summary="Camera status and stream availability",
+)
+async def get_camera_status(request: Request) -> CameraStatusResponseModel:
+    """Query live camera acquisition status, profile, and recording availability."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        return CameraStatusResponseModel(
+            state="unavailable",
+            last_error="Camera service not configured",
+        )
+    st_dict = await asyncio.to_thread(camera_client.get_status)
+    raw_profile = st_dict.get("profile", {})
+    profile = (
+        CameraProfileModel(
+            width=int(raw_profile.get("width", 640)),
+            height=int(raw_profile.get("height", 480)),
+            fps=int(raw_profile.get("fps", 15)),
+        )
+        if isinstance(raw_profile, dict)
+        else CameraProfileModel()
+    )
+    raw_state = st_dict.get("state", "unavailable")
+    valid_states = {"live", "connecting", "stale", "unavailable", "finalizing", "error"}
+    state = raw_state if raw_state in valid_states else "unavailable"
+    return CameraStatusResponseModel(
+        state=state,
+        frame_age_sec=st_dict.get("frame_age_sec"),
+        profile=profile,
+        recording_state=st_dict.get("recording_state", "disabled"),
+        recording_id=st_dict.get("recording_id"),
+        elapsed_sec=st_dict.get("elapsed_sec"),
+        storage_available_bytes=st_dict.get("storage_available_bytes"),
+        viewers_count=int(st_dict.get("viewers_count", 0)),
+        last_error=st_dict.get("last_error"),
+    )
+
+
+# Dedicated thread pool for camera streaming to isolate frame retrieval
+# from safety-critical motion control calls running on the default executor.
+_camera_stream_executor = ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="camera_stream"
+)
+
+
+@router.get(
+    "/camera/stream",
+    summary="Bounded MJPEG live camera stream",
+)
+async def get_camera_stream(request: Request):
+    """Serve a bounded multipart MJPEG live camera stream over existing HTTPS origin."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camera service not configured",
+        )
+
+    async def frame_stream():
+        client = CameraIpcClient(camera_client.socket_path)
+        try:
+            loop = asyncio.get_running_loop()
+            iterator = client.stream_frames()
+            while True:
+                if await request.is_disconnected():
+                    break
+                frame = await loop.run_in_executor(
+                    _camera_stream_executor, next, iterator, None
+                )
+                if frame is None:
+                    break
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: "
+                    + str(len(frame)).encode("ascii")
+                    + b"\r\n\r\n"
+                    + frame
+                    + b"\r\n"
+                )
+        except Exception as exc:
+            logger.debug("Camera streaming closed: %s", exc)
+
+    return StreamingResponse(
+        frame_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@router.post(
+    "/camera/captures",
+    summary="Capture fresh JPEG image (disabled in CAM-2)",
+)
+async def post_camera_capture(request: Request):
+    """Enforce CAM-2 disabled state for Capture."""
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Image capture is unavailable in CAM-2 (pending CAM-3)",
+    )
+
+
+@router.post(
+    "/camera/recordings",
+    summary="Start video recording (disabled in CAM-2)",
+)
+async def post_camera_recording(request: Request):
+    """Enforce CAM-2 disabled state for Record."""
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Video recording is unavailable in CAM-2 (pending CAM-4)",
+    )
+
+
+@router.post(
+    "/camera/recordings/{id}/stop",
+    summary="Stop video recording (disabled in CAM-2)",
+)
+async def post_camera_recording_stop(id: str, request: Request):
+    """Enforce CAM-2 disabled state for Stop recording."""
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Video recording is unavailable in CAM-2 (pending CAM-4)",
+    )
+
+
+@router.get(
+    "/camera/media",
+    summary="List saved media (empty in CAM-2)",
+)
+async def get_camera_media(request: Request):
+    """Return paginated media list (empty in CAM-2)."""
+    return {"items": [], "total": 0}
+
+
+@router.get(
+    "/camera/media/{id}",
+    summary="Download saved media by ID (disabled in CAM-2)",
+)
+async def get_camera_media_download(id: str, request: Request):
+    """Reject media downloads in CAM-2."""
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Media item '{id}' not found",
+    )

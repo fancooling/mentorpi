@@ -257,4 +257,52 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     await expect(page.locator('.camera-feedback')).not.toContainText('Preview only — no image saved.');
     expect(apiCalls).toEqual([]);
   });
+
+  test('6. CAM-2 production mode: live status binding, stream image rendering, and disabled buttons', async ({ page }) => {
+    await page.route('**/api/v1/camera/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          state: 'live',
+          frame_age_sec: 0.05,
+          profile: { width: 640, height: 480, fps: 15 },
+          recording_state: 'disabled',
+          recording_id: null,
+          elapsed_sec: null,
+          storage_available_bytes: 1073741824,
+          viewers_count: 1,
+          last_error: null,
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    const cameraPanel = page.locator('.camera-panel');
+    await expect(cameraPanel).toBeVisible();
+
+    // Stream info tag is displayed with profile; review tag is not shown in production
+    await expect(cameraPanel.locator('.stream-info-tag')).toHaveText('640 × 480 @ 15 fps');
+    await expect(cameraPanel.locator('.preview-tag')).toHaveCount(0);
+
+    // Live status badge
+    await expect(cameraPanel.locator('.camera-status-indicator')).toContainText('Live');
+
+    // Live stream img is rendered
+    const streamImg = cameraPanel.locator('.camera-stream-img');
+    await expect(streamImg).toBeVisible();
+    await expect(streamImg).toHaveAttribute('src', '/api/v1/camera/stream');
+
+    // Capture and Record buttons are disabled in CAM-2
+    const captureBtn = cameraPanel.locator('.btn-capture');
+    const recordBtn = cameraPanel.locator('.camera-btn').nth(1);
+    await expect(captureBtn).toBeDisabled();
+    await expect(recordBtn).toBeDisabled();
+    await expect(captureBtn).toHaveAttribute('title', /disabled in CAM-2/i);
+    await expect(recordBtn).toHaveAttribute('title', /disabled in CAM-2/i);
+
+    // Review fixtures box is hidden in production mode
+    await expect(cameraPanel.locator('.review-fixtures-box')).toHaveCount(0);
+  });
 });

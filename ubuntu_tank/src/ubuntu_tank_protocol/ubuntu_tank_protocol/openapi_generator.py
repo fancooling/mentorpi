@@ -18,6 +18,7 @@ if __package__ is None or __package__ == "":
         SCHEMA_VERSION,
     )
     from ubuntu_tank_protocol.enums import (
+        CameraState,
         ControllerServiceState,
         MotionDirection,
         OperatorState,
@@ -26,6 +27,7 @@ if __package__ is None or __package__ == "":
 else:
     from .constants import API_VERSION, PROTOCOL_VERSION, SCHEMA_VERSION
     from .enums import (
+        CameraState,
         ControllerServiceState,
         MotionDirection,
         OperatorState,
@@ -266,6 +268,144 @@ def generate_openapi_spec() -> dict[str, Any]:
                                 }
                             },
                         }
+                    },
+                }
+            },
+            "/camera/status": {
+                "get": {
+                    "summary": "Live camera acquisition status and profile",
+                    "responses": {
+                        "200": {
+                            "description": "Camera status response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CameraStatusResponse"
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/camera/stream": {
+                "get": {
+                    "summary": "Bounded MJPEG live camera stream",
+                    "responses": {
+                        "200": {
+                            "description": "Multipart MJPEG frame stream",
+                            "content": {
+                                "multipart/x-mixed-replace; boundary=frame": {
+                                    "schema": {"type": "string", "format": "binary"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/camera/captures": {
+                "post": {
+                    "summary": "Capture fresh JPEG image frame",
+                    "responses": {
+                        "200": {
+                            "description": "Captured image metadata",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CameraCaptureResponse"
+                                    }
+                                }
+                            },
+                        },
+                        "503": {"description": "Feature disabled in current milestone"},
+                    },
+                }
+            },
+            "/camera/recordings": {
+                "post": {
+                    "summary": "Start video recording on robot",
+                    "responses": {
+                        "200": {
+                            "description": "Recording started",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CameraRecordingResponse"
+                                    }
+                                }
+                            },
+                        },
+                        "503": {"description": "Feature disabled in current milestone"},
+                    },
+                }
+            },
+            "/camera/recordings/{id}/stop": {
+                "post": {
+                    "summary": "Stop video recording on robot",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Recording stopped",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CameraRecordingResponse"
+                                    }
+                                }
+                            },
+                        },
+                        "503": {"description": "Feature disabled in current milestone"},
+                    },
+                }
+            },
+            "/camera/media": {
+                "get": {
+                    "summary": "List saved media files",
+                    "responses": {
+                        "200": {
+                            "description": "Saved media list",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {"type": "object"},
+                                            },
+                                            "total": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/camera/media/{id}": {
+                "get": {
+                    "summary": "Download saved media file by ID",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Media file content",
+                            "content": {"image/jpeg": {}, "video/mp4": {}},
+                        },
+                        "404": {"description": "Media item not found"},
                     },
                 }
             },
@@ -552,6 +692,71 @@ def generate_openapi_spec() -> dict[str, Any]:
                         },
                     },
                 },
+                "CameraState": {
+                    "type": "string",
+                    "enum": [s.value for s in CameraState],
+                },
+                "CameraProfile": {
+                    "type": "object",
+                    "required": ["width", "height", "fps"],
+                    "properties": {
+                        "width": {"type": "integer"},
+                        "height": {"type": "integer"},
+                        "fps": {"type": "integer"},
+                    },
+                },
+                "CameraStatusResponse": {
+                    "type": "object",
+                    "required": [
+                        "state",
+                        "profile",
+                        "recording_state",
+                        "viewers_count",
+                    ],
+                    "properties": {
+                        "state": {"$ref": "#/components/schemas/CameraState"},
+                        "frame_age_sec": {"type": "number", "nullable": True},
+                        "profile": {"$ref": "#/components/schemas/CameraProfile"},
+                        "recording_state": {"type": "string"},
+                        "recording_id": {"type": "string", "nullable": True},
+                        "elapsed_sec": {"type": "number", "nullable": True},
+                        "storage_available_bytes": {
+                            "type": "integer",
+                            "nullable": True,
+                        },
+                        "viewers_count": {"type": "integer"},
+                        "last_error": {"type": "string", "nullable": True},
+                    },
+                },
+                "CameraCaptureResponse": {
+                    "type": "object",
+                    "required": [
+                        "media_id",
+                        "timestamp",
+                        "url",
+                        "width",
+                        "height",
+                        "bytes",
+                    ],
+                    "properties": {
+                        "media_id": {"type": "string"},
+                        "timestamp": {"type": "number"},
+                        "url": {"type": "string"},
+                        "width": {"type": "integer"},
+                        "height": {"type": "integer"},
+                        "bytes": {"type": "integer"},
+                    },
+                },
+                "CameraRecordingResponse": {
+                    "type": "object",
+                    "required": ["recording_id", "state", "elapsed_sec"],
+                    "properties": {
+                        "recording_id": {"type": "string"},
+                        "state": {"type": "string"},
+                        "elapsed_sec": {"type": "number"},
+                        "url": {"type": "string", "nullable": True},
+                    },
+                },
             }
         },
     }
@@ -760,6 +965,49 @@ export type WsServerType = 'challenge' | 'state' | 'ack' | 'error';
 export interface WsServerMessage {{
   type: WsServerType;
   payload: Record<string, any>;
+}}
+
+// Camera types and models
+export type CameraState =
+  | 'live'
+  | 'connecting'
+  | 'stale'
+  | 'unavailable'
+  | 'finalizing'
+  | 'error';
+
+export interface CameraProfile {{
+  width: number;
+  height: number;
+  fps: number;
+}}
+
+export interface CameraStatusResponse {{
+  state: CameraState;
+  frame_age_sec: number | null;
+  profile: CameraProfile;
+  recording_state: string;
+  recording_id: string | null;
+  elapsed_sec: number | null;
+  storage_available_bytes: number | null;
+  viewers_count: number;
+  last_error: string | null;
+}}
+
+export interface CameraCaptureResponse {{
+  media_id: string;
+  timestamp: number;
+  url: string;
+  width: number;
+  height: number;
+  bytes: number;
+}}
+
+export interface CameraRecordingResponse {{
+  recording_id: string;
+  state: string;
+  elapsed_sec: number;
+  url: string | null;
 }}
 """
 

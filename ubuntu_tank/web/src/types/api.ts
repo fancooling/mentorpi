@@ -190,3 +190,46 @@ export interface WsServerMessage {
   type: WsServerType;
   payload: Record<string, any>;
 }
+
+// Camera types and models
+export type CameraState =
+  | 'live'
+  | 'connecting'
+  | 'stale'
+  | 'unavailable'
+  | 'finalizing'
+  | 'error';
+
+export interface CameraProfile {
+  width: number;
+  height: number;
+  fps: number;
+}
+
+export interface CameraStatusResponse {
+  state: CameraState;
+  frame_age_sec: number | null;
+  profile: CameraProfile;
+  recording_state: string;
+  recording_id: string | null;
+  elapsed_sec: number | null;
+  storage_available_bytes: number | null;
+  viewers_count: number;
+  last_error: string | null;
+}
+
+export interface CameraCaptureResponse {
+  media_id: string;
+  timestamp: number;
+  url: string;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+export interface CameraRecordingResponse {
+  recording_id: string;
+  state: string;
+  elapsed_sec: number;
+  url: string | null;
+}

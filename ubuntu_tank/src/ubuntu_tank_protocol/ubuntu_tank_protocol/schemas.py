@@ -12,6 +12,9 @@ from typing import Any
 from .constants import (
     API_VERSION,
     BATTERY_FRESHNESS_MAX_AGE_SEC,
+    DEFAULT_CAMERA_FPS,
+    DEFAULT_CAMERA_HEIGHT,
+    DEFAULT_CAMERA_WIDTH,
     DEFAULT_CONTROL_IDLE_TIMEOUT_SEC,
     GUARD_STATE_FRESHNESS_MAX_AGE_SEC,
     MAX_LOG_LINES_LIMIT,
@@ -21,6 +24,7 @@ from .constants import (
     SUPPORTED_PROTOCOL_VERSIONS,
 )
 from .enums import (
+    CameraState,
     ControllerServiceState,
     MotionDirection,
     OperatorState,
@@ -647,3 +651,99 @@ class WsServerFrame:
     def from_json(cls, text: str) -> "WsServerFrame":
         data = json.loads(text)
         return cls(type=data["type"], payload=data["payload"])
+
+
+@dataclass(frozen=True)
+class CameraProfile:
+    """Camera capture and preview profile settings."""
+
+    width: int = DEFAULT_CAMERA_WIDTH
+    height: int = DEFAULT_CAMERA_HEIGHT
+    fps: int = DEFAULT_CAMERA_FPS
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CameraProfile":
+        _check_no_extra_fields(data, {"width", "height", "fps"}, "CameraProfile")
+        return cls(
+            width=int(data.get("width", DEFAULT_CAMERA_WIDTH)),
+            height=int(data.get("height", DEFAULT_CAMERA_HEIGHT)),
+            fps=int(data.get("fps", DEFAULT_CAMERA_FPS)),
+        )
+
+
+@dataclass(frozen=True)
+class CameraStatusResponse:
+    """Camera state, frame age, and recording/storage availability status."""
+
+    state: CameraState
+    frame_age_sec: float | None = None
+    profile: CameraProfile = field(default_factory=CameraProfile)
+    recording_state: str = "disabled"
+    recording_id: str | None = None
+    elapsed_sec: float | None = None
+    storage_available_bytes: int | None = None
+    viewers_count: int = 0
+    last_error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        res = asdict(self)
+        res["state"] = (
+            self.state.value if isinstance(self.state, CameraState) else str(self.state)
+        )
+        return res
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CameraStatusResponse":
+        _check_no_extra_fields(
+            data,
+            {
+                "state",
+                "frame_age_sec",
+                "profile",
+                "recording_state",
+                "recording_id",
+                "elapsed_sec",
+                "storage_available_bytes",
+                "viewers_count",
+                "last_error",
+            },
+            "CameraStatusResponse",
+        )
+        raw_state = data.get("state", CameraState.UNAVAILABLE.value)
+        state = (
+            CameraState(raw_state)
+            if raw_state in [s.value for s in CameraState]
+            else CameraState.UNAVAILABLE
+        )
+        prof_data = data.get("profile", {})
+        profile = (
+            CameraProfile.from_dict(prof_data)
+            if isinstance(prof_data, dict)
+            else CameraProfile()
+        )
+        return cls(
+            state=state,
+            frame_age_sec=(
+                float(data["frame_age_sec"])
+                if data.get("frame_age_sec") is not None
+                else None
+            ),
+            profile=profile,
+            recording_state=str(data.get("recording_state", "disabled")),
+            recording_id=data.get("recording_id"),
+            elapsed_sec=(
+                float(data["elapsed_sec"])
+                if data.get("elapsed_sec") is not None
+                else None
+            ),
+            storage_available_bytes=(
+                int(data["storage_available_bytes"])
+                if data.get("storage_available_bytes") is not None
+                else None
+            ),
+            viewers_count=int(data.get("viewers_count", 0)),
+            last_error=data.get("last_error"),
+        )

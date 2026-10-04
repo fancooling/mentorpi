@@ -82,3 +82,15 @@ MAX_IPC_MESSAGE_BYTES: Final[int] = 65536
 # Lifecycle newline-delimited JSON requests share these limits across client/server.
 DEFAULT_LIFECYCLE_SOCKET_PATH: Final[str] = "/run/ubuntu_tank/lifecycle.sock"
 MAX_LIFECYCLE_MESSAGE_BYTES: Final[int] = 65536
+
+# Camera service and IPC constants
+DEFAULT_CAMERA_SOCKET_PATH: Final[str] = "/run/ubuntu_tank/camera.sock"
+ENV_CAMERA_SOCKET_PATH: Final[str] = "UBUNTU_TANK_CAMERA_SOCKET"
+DEFAULT_CAMERA_DEVICE: Final[str] = "/dev/video0"
+ENV_CAMERA_DEVICE: Final[str] = "UBUNTU_TANK_CAMERA_DEVICE"
+DEFAULT_CAMERA_WIDTH: Final[int] = 640
+DEFAULT_CAMERA_HEIGHT: Final[int] = 480
+DEFAULT_CAMERA_FPS: Final[int] = 15
+DEFAULT_CAMERA_FRESHNESS_TIMEOUT_SEC: Final[float] = 2.0
+DEFAULT_CAMERA_IDLE_TIMEOUT_SEC: Final[float] = 15.0
+MAX_CAMERA_MESSAGE_BYTES: Final[int] = 1048576  # 1 MiB for camera IPC frames

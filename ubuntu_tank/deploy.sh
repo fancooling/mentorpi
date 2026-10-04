@@ -91,6 +91,9 @@ cmd_test() {
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_web.py" -v
   "${py_bin}" "${SCRIPT_DIR}/tests/test_container_admission.py" -v
 
+  echo "--> Running Camera Worker and IPC Integration tests..."
+  PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_camera:${SCRIPT_DIR}/src/ubuntu_tank_protocol:${SCRIPT_DIR}/src/ubuntu_tank_web" "${py_bin}" "${SCRIPT_DIR}/tests/test_camera_worker.py" -v
+
   echo "--> Running Milestone 11 Shared Operator Agent & CLI Integration tests..."
   PYTHONPATH="${WORKSPACE_ROOT}:${SCRIPT_DIR}/src/ubuntu_tank_supervisor" "${py_bin}" "${SCRIPT_DIR}/tests/test_milestone11_operator_agent.py" -v
 

@@ -72,3 +72,24 @@ class ReleaseReason(str, Enum):
     CONTROL_IDLE_TIMEOUT = "CONTROL_IDLE_TIMEOUT"
     DISCONNECT = "DISCONNECT"
     SHUTDOWN_FAILED = "SHUTDOWN_FAILED"
+
+
+class CameraState(str, Enum):
+    """Camera device and frame acquisition states."""
+
+    LIVE = "live"
+    CONNECTING = "connecting"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+    FINALIZING = "finalizing"
+    ERROR = "error"
+
+
+class CameraErrorCode(str, Enum):
+    """Error codes for camera operations."""
+
+    CAMERA_UNAVAILABLE = "CAMERA_UNAVAILABLE"
+    STALE_FRAMES = "STALE_FRAMES"
+    FEATURE_DISABLED = "FEATURE_DISABLED"
+    WORKER_UNAVAILABLE = "WORKER_UNAVAILABLE"
+    MEDIA_NOT_FOUND = "MEDIA_NOT_FOUND"

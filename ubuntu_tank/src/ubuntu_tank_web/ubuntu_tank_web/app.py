@@ -22,8 +22,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from ubuntu_tank_protocol.camera_client import CameraIpcClient
 from ubuntu_tank_protocol.config import WebControlConfig
-from ubuntu_tank_protocol.constants import MAX_IPC_MESSAGE_BYTES
+from ubuntu_tank_protocol.constants import (
+    DEFAULT_CAMERA_SOCKET_PATH,
+    MAX_IPC_MESSAGE_BYTES,
+)
 
 from .lifecycle_client import LifecycleClient
 from .operator_relay import OperatorRelay
@@ -104,8 +108,10 @@ def create_app(
     static_dir: str | None = None,
     relay: OperatorRelay | None = None,
     lifecycle: LifecycleClient | None = None,
+    camera_client: CameraIpcClient | None = None,
     operator_socket_path: str | None = None,
     lifecycle_socket_path: str | None = None,
+    camera_socket_path: str | None = None,
 ) -> FastAPI:
     """Create and configure the production FastAPI web application."""
     if config is None:
@@ -121,6 +127,11 @@ def create_app(
         if lifecycle_socket_path is not None
         else config.lifecycle_socket_path
     )
+    cam_sock = (
+        camera_socket_path
+        if camera_socket_path is not None
+        else getattr(config, "camera_socket_path", DEFAULT_CAMERA_SOCKET_PATH)
+    )
 
     app = FastAPI(
         title="MentorPi Tank Web Control API",
@@ -134,11 +145,17 @@ def create_app(
     app.state.config = config
     app.state.operator_socket_path = op_sock
     app.state.lifecycle_socket_path = lc_sock
+    app.state.camera_socket_path = cam_sock
     app.state.operator_relay = (
         relay if relay is not None else OperatorRelay(socket_path=op_sock)
     )
     app.state.lifecycle_client = (
         lifecycle if lifecycle is not None else LifecycleClient(socket_path=lc_sock)
+    )
+    app.state.camera_client = (
+        camera_client
+        if camera_client is not None
+        else CameraIpcClient(socket_path=cam_sock)
     )
 
     # Middleware stack

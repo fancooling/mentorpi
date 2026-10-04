@@ -72,7 +72,7 @@ standard library and does not consume either host requirements file.
 
 ### Build and deploy
 
-For an already provisioned Pi, the development-host wrapper runs build, smoke,
+For a configured Pi, the development-host wrapper runs build, smoke,
 image export/SSH transfer and stopped deployment together:
 
 The wrapper uses `python` from `PATH`. Activate the repository `.venv` after
@@ -84,6 +84,12 @@ source .venv/bin/activate
 # Optional: --build-dir EXISTING_BUILD, --remote-dir PI_RELEASE_PARENT,
 # --builder NAME, --emulator /absolute/path/to/buildkit-qemu-aarch64.
 ```
+
+For first deployment, follow [manual host preparation](../../docs/PI5_HOST_SETUP.md),
+then use `--first-install --serial-device /dev/OBSERVED_TTY` with
+`--tls-hostname NAME` and/or `--tls-ip ADDRESS` (repeatable). First installation
+requires no previous container state; HTTPS setup precedes `prepare-host`.
+Existing invalid or partial TLS identities fail without replacement.
 
 It honors `~/.ssh/config` and defaults to unique release directories below
 `~/mentorpi-releases` on the Pi. Sudo may prompt during deployment. It preserves
@@ -239,6 +245,20 @@ The normal clients use the existing operator IPC authority. Do not select the
 
 ## Validation boundary
 
+Camera deployment regression checks remain pending on the real Pi. Use the production
+wrapper and `install.py target-test` for both cases:
+
+| Pi setup | Required behavior |
+| --- | --- |
+| No `/dev/video0`, mock flags unset | Both containers start stopped/disarmed; camera reports unavailable without frames. |
+| V4L2 camera mode 0660, video group different from serial group | Runtime UID 10001 can capture; web has no device access. |
+
+The runtime receives the camera's numeric group through `CAMERA_GID`; the installer
+selects it automatically. Its private tmpfs remains separate from device mappings.
+Synthetic frames require explicit `UBUNTU_TANK_CAMERA_MOCK=1` or
+`UBUNTU_TANK_SIMULATION=1` in the worker environment; they are test-only options.
+
+
 Development checks:
 
 ```bash
@@ -269,13 +289,10 @@ operation with ownership checks.
 
 ## Host preparation and deployment
 
-Use a real Ubuntu 26.04 ARM64 Pi 5 with local rootful Docker, Compose, udev,
-logrotate and system Python 3. The Pi does not need `.venv` for host operations;
-`prepare-host` installs no ROS or Docker packages. Install those host prerequisites
-explicitly before proceeding. Retain the existing controller calibration,
-web configuration, TLS certificate/key and signed SROS2 keystore at the paths
-above. First-time HTTPS provisioning uses `setup-tls` below; signed SROS2 provisioning
-remains separate.
+For first installation, follow [Pi host preparation](../../docs/PI5_HOST_SETUP.md).
+It covers host prerequisites, controller USB access, initial configuration, signed
+SROS2 keys, HTTPS provisioning, and `prepare-host`. Host ROS is not required.
+For updates, retain the existing configuration and keys.
 
 Load both images before staging, or pull their exact registry digest references.
 Staging verifies portable configuration digests and installed dependency/build manifests,
@@ -309,28 +326,10 @@ For an existing installation, use the transferred `install.py stop` before
 `prepare-host`, which installs the renamed CLI and updates systemd references.
 This also supports Pi hosts whose old installed CLI was named `deploy.py`.
 
-For an empty HTTPS certificate directory, after loading the images and stopping
-native/container applications, run from the directory containing `release.json`:
-
-```bash
-sudo /usr/bin/python3 docker/ubuntu_tank/install.py setup-tls \
-  --hostname rpitank --hostname rpitank.local --ip YOUR_PI_LAN_IP
-# Optional: --release /path/to/release.json; repeat --hostname/--ip as needed.
-```
-
-This uses the verified web image, without network or devices, to create the missing
-pair and append exact HTTPS origins on port 8443 to existing `web.yaml`. Pi Python
-needs no additional packages. The configured certificate/key paths must be below
-`/var/opt/ubuntu_tank/web/certs`. Both missing files are created as UID/GID 10001;
-existing valid pairs remain unchanged and must cover every requested name/IP.
-Partial, expired, mismatched or invalid identities fail without automatic rotation.
-The command requires applications to be stopped, does not deploy/start them, and
-closes any old admission before changing configuration. Interrupted installation
-can leave a partial pair; restore a complete pair before retrying. Trust the public
-certificate on browser devices separately; never distribute the private key.
-
-`prepare-host` may run before or after first-time TLS setup, but `stage` requires
-valid certificates. After setup, run `stage`, `deploy` and `target-test`.
+For initial HTTPS certificates and browser origins, use the
+[HTTPS setup commands](../../docs/PI5_HOST_SETUP.md#6-run-automated-deployment).
+Existing valid identities are retained; invalid or partial identities require
+explicit recovery. Run `stage` again after changing configuration or certificates.
 
 From the target repository checkout:
 

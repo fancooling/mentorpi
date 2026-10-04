@@ -5,11 +5,23 @@
     aria-label="Robot Camera Stream and Media Controls"
   >
     <!-- Header: Title, Preview Tag, and Live Status Badge -->
+    <!-- Header: Title, Preview Tag, and Live Status Badge -->
     <div class="camera-header">
       <div class="header-left">
         <h2 class="panel-title">Camera</h2>
-        <span class="preview-tag" title="No backend camera integration active in this milestone">
+        <span
+          v-if="isReviewMode"
+          class="preview-tag"
+          title="No backend camera integration active in this milestone"
+        >
           UI preview — camera disconnected
+        </span>
+        <span
+          v-else
+          class="stream-info-tag"
+          :title="`Camera stream: ${profileText}`"
+        >
+          {{ profileText }}
         </span>
       </div>
       <div
@@ -22,7 +34,7 @@
       </div>
     </div>
 
-    <!-- Live Preview Viewport (4:3 aspect ratio, bundled placeholder SVG) -->
+    <!-- Live Preview Viewport (4:3 aspect ratio, bundled placeholder SVG or live stream) -->
     <div class="camera-viewport-wrapper">
       <div
         class="camera-viewport"
@@ -30,7 +42,17 @@
         role="img"
         :aria-label="`Camera preview: ${statusLabel}`"
       >
+        <!-- Live MJPEG Stream Image -->
+        <img
+          v-if="showLiveStream"
+          class="camera-stream-img"
+          :src="streamUrl"
+          alt="Live camera preview stream"
+          @error="handleStreamError"
+        />
+
         <svg
+          v-if="!showLiveStream"
           class="preview-svg"
           viewBox="0 0 640 480"
           xmlns="http://www.w3.org/2000/svg"
@@ -131,13 +153,16 @@
           </template>
         </svg>
 
-        <!-- Viewport Overlays (REC badge and stream info) -->
+        <!-- Viewport Overlays (REC badge, stale overlay, and stream info) -->
         <div v-if="effectiveState === 'recording'" class="viewport-rec-badge" aria-hidden="true">
           <span class="rec-dot" />
           <span>REC {{ formattedElapsed }}</span>
         </div>
+        <div v-if="showLiveStream && effectiveState === 'stale'" class="viewport-stale-overlay" aria-hidden="true">
+          <span class="stale-badge">⏸ Stale frames</span>
+        </div>
         <div class="viewport-res-badge" aria-hidden="true">
-          640×480
+          {{ resolutionBadgeText }}
         </div>
       </div>
     </div>
@@ -150,6 +175,7 @@
         class="camera-btn btn-capture"
         :disabled="!canCapture"
         :aria-busy="pendingAction === 'capturing'"
+        :title="captureTitle"
         aria-label="Capture JPEG frame"
         @click="handleCapture"
       >
@@ -164,6 +190,7 @@
         :class="isRecording ? 'btn-stop-rec' : 'btn-record'"
         :disabled="!canRecord"
         :aria-busy="pendingAction === 'starting' || pendingAction === 'stopping'"
+        :title="recordTitle"
         :aria-label="isRecording ? 'Stop video recording' : 'Start video recording'"
         @click="handleRecordToggle"
       >
@@ -181,12 +208,12 @@
     <!-- Feedback Message Area -->
     <div
       class="camera-feedback"
-      :class="`feedback-${feedback.type}`"
+      :class="`feedback-${effectiveFeedback.type}`"
       role="status"
       aria-live="polite"
     >
       <span class="feedback-icon" aria-hidden="true">{{ feedbackIcon }}</span>
-      <span class="feedback-text">{{ feedback.text }}</span>
+      <span class="feedback-text">{{ effectiveFeedback.text }}</span>
     </div>
 
     <!-- Download Links: Link only, NOT action buttons -->
@@ -209,7 +236,12 @@
     </div>
 
     <!-- Review Fixtures: Interactive State Simulation Selector for Owner Review -->
-    <div class="review-fixtures-box" role="region" aria-label="Review Fixtures">
+    <div
+      v-if="isReviewMode"
+      class="review-fixtures-box"
+      role="region"
+      aria-label="Review Fixtures"
+    >
       <div class="fixtures-header">
         <span class="fixtures-title">Review fixtures:</span>
         <span class="fixtures-hint">Test component states</span>
@@ -237,6 +269,16 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
+import { apiClient } from '../services/apiClient';
+import type { CameraStatusResponse, CameraState } from '../types/api';
+
+interface Props {
+  isReviewMode?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isReviewMode: false,
+});
 
 type FixtureState =
   | 'interactive'
@@ -247,6 +289,8 @@ type FixtureState =
   | 'pending'
   | 'finalizing'
   | 'error';
+
+type DisplayState = CameraState | 'recording' | 'pending';
 
 type FeedbackType = 'info' | 'success' | 'warning' | 'error';
 
@@ -260,30 +304,142 @@ const selectedFixture = ref<FixtureState>('interactive');
 const isRecording = ref(false);
 const elapsedSeconds = ref(0);
 let timerId: ReturnType<typeof setInterval> | null = null;
+let pollTimerId: ReturnType<typeof setInterval> | null = null;
 
 const isPending = ref(false);
 const pendingAction = ref<'capturing' | 'starting' | 'stopping' | null>(null);
+
+// Production camera state from API
+const cameraStatus = ref<CameraStatusResponse | null>(null);
+const streamError = ref(false);
+const streamUrl = '/api/v1/camera/stream';
 
 const feedback = ref<{ text: string; type: FeedbackType }>({
   text: 'UI preview active — camera operations are simulated.',
   type: 'info',
 });
 
-// Default initial example download link per CAM-1 spec: disabled and identified as example
-const latestMedia = ref<MediaItem | null>({
-  filename: 'capture_preview.jpg (example)',
-  type: 'image',
-  timestamp: Date.now(),
+// Default initial example download link per CAM-1 spec in review mode
+const latestMedia = ref<MediaItem | null>(
+  props.isReviewMode
+    ? {
+        filename: 'capture_preview.jpg (example)',
+        type: 'image',
+        timestamp: Date.now(),
+      }
+    : null
+);
+
+async function fetchStatus() {
+  if (props.isReviewMode) return;
+  if (typeof document !== 'undefined' && document.hidden) return;
+  try {
+    const res = await apiClient.getCameraStatus();
+    cameraStatus.value = res;
+    if (res.state === 'live') {
+      streamError.value = false;
+    }
+  } catch (err) {
+    if (!cameraStatus.value) {
+      cameraStatus.value = {
+        state: 'unavailable',
+        frame_age_sec: null,
+        profile: { width: 640, height: 480, fps: 15 },
+        recording_state: 'idle',
+        recording_id: null,
+        elapsed_sec: null,
+        storage_available_bytes: null,
+        viewers_count: 0,
+        last_error: err instanceof Error ? err.message : 'Connection failed',
+      };
+    }
+  }
+}
+
+function onVisibilityChange() {
+  if (typeof document !== 'undefined' && !document.hidden && !props.isReviewMode) {
+    void fetchStatus();
+  }
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', onVisibilityChange);
+}
+
+// Watch review mode to start/stop polling
+watch(
+  () => props.isReviewMode,
+  (review) => {
+    if (review) {
+      latestMedia.value = {
+        filename: 'capture_preview.jpg (example)',
+        type: 'image',
+        timestamp: Date.now(),
+      };
+      if (pollTimerId) {
+        clearInterval(pollTimerId);
+        pollTimerId = null;
+      }
+    } else {
+      latestMedia.value = null;
+      fetchStatus();
+      if (!pollTimerId) {
+        pollTimerId = setInterval(fetchStatus, 1500);
+      }
+    }
+  },
+  { immediate: true }
+);
+
+function handleStreamError() {
+  streamError.value = true;
+}
+
+// Effective component state: accounts for review fixture or production API state
+const effectiveState = computed<DisplayState>(() => {
+  if (props.isReviewMode) {
+    if (selectedFixture.value === 'interactive') {
+      if (pendingAction.value === 'stopping') return 'finalizing';
+      if (isRecording.value) return 'recording';
+      return 'live';
+    }
+    return selectedFixture.value;
+  }
+  if (!cameraStatus.value) {
+    return 'connecting';
+  }
+  if (cameraStatus.value.recording_state === 'recording') {
+    return 'recording';
+  }
+  return cameraStatus.value.state;
 });
 
-// Effective component state: accounts for selected fixture and active recording
-const effectiveState = computed(() => {
-  if (selectedFixture.value === 'interactive') {
-    if (pendingAction.value === 'stopping') return 'finalizing';
-    if (isRecording.value) return 'recording';
-    return 'live';
+// Should show live MJPEG stream image in viewport
+const showLiveStream = computed(() => {
+  if (props.isReviewMode) return false;
+  if (streamError.value) return false;
+  return (
+    effectiveState.value === 'live' ||
+    effectiveState.value === 'stale' ||
+    effectiveState.value === 'recording'
+  );
+});
+
+// Profile tag text
+const profileText = computed(() => {
+  if (cameraStatus.value?.profile) {
+    const p = cameraStatus.value.profile;
+    return `${p.width} × ${p.height} @ ${p.fps} fps`;
   }
-  return selectedFixture.value;
+  return '640 × 480 @ 15 fps';
+});
+
+const resolutionBadgeText = computed(() => {
+  if (cameraStatus.value?.profile) {
+    const p = cameraStatus.value.profile;
+    return `${p.width}×${p.height}`;
+  }
+  return '640×480';
 });
 
 // Status badge label and dot color
@@ -311,6 +467,14 @@ const statusLabel = computed(() => {
 });
 
 const formattedElapsed = computed(() => {
+  if (!props.isReviewMode && cameraStatus.value?.elapsed_sec != null) {
+    const sec = Math.floor(cameraStatus.value.elapsed_sec);
+    const m = Math.floor(sec / 60)
+      .toString()
+      .padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
   const m = Math.floor(elapsedSeconds.value / 60)
     .toString()
     .padStart(2, '0');
@@ -318,8 +482,64 @@ const formattedElapsed = computed(() => {
   return `${m}:${s}`;
 });
 
+const effectiveFeedback = computed<{ text: string; type: FeedbackType }>(() => {
+  if (props.isReviewMode) {
+    return feedback.value;
+  }
+  if (!cameraStatus.value) {
+    return {
+      text: 'Connecting to camera service...',
+      type: 'info',
+    };
+  }
+  const s = cameraStatus.value;
+  switch (s.state) {
+    case 'live':
+      return {
+        text: 'Live preview active. Capture and Record are disabled in CAM-2.',
+        type: 'info',
+      };
+    case 'stale':
+      return {
+        text: `Camera frames stale (last frame ${
+          s.frame_age_sec !== null ? s.frame_age_sec.toFixed(1) : '?'
+        }s ago).`,
+        type: 'warning',
+      };
+    case 'unavailable':
+      return {
+        text: s.last_error
+          ? `Camera unavailable: ${s.last_error}`
+          : 'Camera unavailable — device disconnected or worker stopped.',
+        type: 'warning',
+      };
+    case 'error':
+      return {
+        text: s.last_error
+          ? `Camera error: ${s.last_error}`
+          : 'Camera communication failure.',
+        type: 'error',
+      };
+    case 'connecting':
+      return {
+        text: 'Connecting to camera worker...',
+        type: 'info',
+      };
+    case 'finalizing':
+      return {
+        text: 'Finalizing media...',
+        type: 'info',
+      };
+    default:
+      return {
+        text: 'Camera status updated.',
+        type: 'info',
+      };
+  }
+});
+
 const feedbackIcon = computed(() => {
-  switch (feedback.value.type) {
+  switch (effectiveFeedback.value.type) {
     case 'success':
       return '✓';
     case 'warning':
@@ -333,23 +553,36 @@ const feedbackIcon = computed(() => {
 });
 
 // Can Capture:
-// Enabled during live and recording. Disabled when frames are stale, unavailable, connecting, error, or pending.
+// In CAM-2 production: disabled with clear explanation.
+// In review mode: enabled during live and recording. Disabled when frames are stale, unavailable, connecting, error, or pending.
 const canCapture = computed(() => {
+  if (!props.isReviewMode) {
+    return false; // Disabled in CAM-2
+  }
   if (isPending.value || effectiveState.value === 'pending') return false;
   if (selectedFixture.value === 'interactive') return true;
   if (selectedFixture.value === 'live') return true;
   return false;
 });
 
+const captureTitle = computed(() => {
+  if (!props.isReviewMode) {
+    return 'Capture is disabled in CAM-2 (planned for CAM-3)';
+  }
+  return canCapture.value ? 'Capture JPEG frame' : 'Capture unavailable in current state';
+});
+
 // Can Record:
-// Disabled when frames are stale, connecting, unavailable, error, or pending.
-// Exception: Keep Stop recording available while a recording is active, even if frames become stale.
+// In CAM-2 production: disabled with clear explanation.
+// In review mode: enabled during interactive/live, or Stop recording during recording.
 const canRecord = computed(() => {
+  if (!props.isReviewMode) {
+    return false; // Disabled in CAM-2
+  }
   if (isPending.value || effectiveState.value === 'pending') return false;
   if (effectiveState.value === 'finalizing') return false;
 
   if (isRecording.value) {
-    // Stop recording is kept available even if frames are stale
     return true;
   }
 
@@ -358,13 +591,24 @@ const canRecord = computed(() => {
   return false;
 });
 
+const recordTitle = computed(() => {
+  if (!props.isReviewMode) {
+    return 'Recording is disabled in CAM-2 (planned for CAM-4)';
+  }
+  return canRecord.value
+    ? isRecording.value
+      ? 'Stop recording'
+      : 'Start video recording'
+    : 'Recording unavailable in current state';
+});
+
 function getTimestampStr(): string {
   const d = new Date();
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-// Action 1: Capture (works during recording as well)
+// Action 1: Capture (works during recording as well in review mode)
 function handleCapture() {
   if (!canCapture.value) return;
 
@@ -387,7 +631,7 @@ function handleCapture() {
   }, 250);
 }
 
-// Action 2: Record / Stop recording
+// Action 2: Record / Stop recording (in review mode)
 function handleRecordToggle() {
   if (!canRecord.value) return;
 
@@ -509,6 +753,13 @@ watch(selectedFixture, (newFix) => {
 });
 
 onUnmounted(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+  }
+  if (pollTimerId) {
+    clearInterval(pollTimerId);
+    pollTimerId = null;
+  }
   if (timerId) {
     clearInterval(timerId);
     timerId = null;
@@ -558,6 +809,16 @@ onUnmounted(() => {
   padding: 0.15rem 0.4rem;
   border-radius: 0.25rem;
   border: 1px solid #334155;
+}
+
+.stream-info-tag {
+  font-size: 0.7rem;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-weight: 500;
 }
 
 /* Status Indicator Dot and Label */
@@ -669,6 +930,36 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.camera-stream-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.viewport-stale-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.stale-badge {
+  background: rgba(249, 115, 22, 0.9);
+  color: #fff;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .svg-spin {

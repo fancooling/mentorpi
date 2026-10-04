@@ -28,8 +28,12 @@ services:
     <<: *common
     image: ${RUNTIME_IMAGE:?Set the runtime image digest from the release manifest}
     network_mode: none
-    group_add: ["${SERIAL_GID:?Set the verified numeric device group}"]
-    devices: [/dev/rrc:/dev/rrc:rw]
+    group_add:
+      - "${SERIAL_GID:?Set the verified numeric device group}"
+      - "${CAMERA_GID:-10001}"
+    devices:
+      - /dev/rrc:/dev/rrc:rw
+      - ${CAMERA_DEVICE:-/dev/null:/dev/null:rw}
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=1777
       - /run/ubuntu_tank-private:rw,nosuid,nodev,noexec,size=16m,uid=10001,gid=10001,mode=0700

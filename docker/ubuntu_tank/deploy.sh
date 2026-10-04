@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, verify, transfer and install a paired release on a provisioned Pi 5.
+# Build, verify, transfer and install a paired release on a configured Pi 5.
 # Uses python from PATH locally and system Python remotely. SSH honors the
 # user's config; sudo may prompt. Stops on failure, retaining artifacts without
 # rollback. Never starts or arms the controller or runs motor acceptance tests.
@@ -17,7 +17,7 @@ main() {
     cat <<'EOF'
 Usage: docker/ubuntu_tank/deploy.sh HOST [OPTIONS]
 
-Build, smoke-test, export and deploy to an already provisioned Pi 5.
+Build, smoke-test, export and deploy to a configured Pi 5.
 HOST is a hostname or alias from ~/.ssh/config. Finishes stopped and disarmed.
 
   --remote-dir PATH  Remote parent (default: ~/mentorpi-releases).
@@ -26,12 +26,18 @@ HOST is a hostname or alias from ~/.ssh/config. Finishes stopped and disarmed.
   --output PATH      New local build directory (default: unique .work directory).
   --builder NAME     ARM64 Buildx builder (default: mentorpi-c3).
   --emulator PATH    Trusted ARM64 emulator; otherwise copy from local builder.
+  --first-install   Fresh host only; require no previous container state.
+  --serial-device PATH  Controller tty for prepare-host (default: /dev/rrc).
+  --tls-hostname NAME    Provision HTTPS for this DNS name; repeatable.
+  --tls-ip ADDRESS       Provision HTTPS for this IP address; repeatable.
   -h, --help        Show help.
 
 Requires Docker and a configured Python development environment on PATH locally,
 and configured Docker, sudo,
-controller/web settings, TLS and signed SROS2 keys on the Pi. Each run retains
-its files in a unique directory. SSH failure may leave remote work running;
+controller/web settings and signed SROS2 keys on the Pi. TLS must exist unless
+--tls-hostname/--tls-ip is supplied. These options preserve valid existing keys
+and fail on invalid or partial identities. --first-install requires a TLS option.
+Each run retains its files in a unique directory. SSH failure may leave remote work running;
 check Pi status before retrying. Physical acceptance is separate.
 Output is also saved as deploy-<run ID>.log in the build directory on exit.
 EOF
@@ -55,13 +61,20 @@ EOF
   build_dir=""
   output=""
   emulator=""
+  first_install=false
+  serial_device="/dev/rrc"
+  tls_args=()
   while (($#)); do
     case "$1" in
       -h | --help)
         usage
         exit 0
         ;;
-      --remote-dir | --builder | --build-dir | --output | --emulator)
+      --first-install)
+        first_install=true
+        shift
+        ;;
+      --remote-dir | --builder | --build-dir | --output | --emulator | --serial-device | --tls-hostname | --tls-ip)
         (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || die "Missing value for $1"
         case "$1" in
           --remote-dir) remote_parent="$2" ;;
@@ -69,6 +82,9 @@ EOF
           --build-dir) build_dir="$2" ;;
           --output) output="$2" ;;
           --emulator) emulator="$2" ;;
+          --serial-device) serial_device="$2" ;;
+          --tls-hostname) tls_args+=(--hostname "$2") ;;
+          --tls-ip) tls_args+=(--ip "$2") ;;
         esac
         shift 2
         ;;
@@ -83,6 +99,9 @@ EOF
   [[ "$pi_host" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$ ]] || die "Provide an SSH hostname or alias"
   [[ "$remote_parent" != *$'\n'* ]] || die "Remote directory must not contain newlines"
   [[ -z "$build_dir" || -z "$output" ]] || die "Use either --build-dir or --output"
+  if $first_install && ((${#tls_args[@]} == 0)); then
+    die "--first-install requires --tls-hostname or --tls-ip"
+  fi
   command -v "$python" >/dev/null || die "Activate your Python development environment or put python on PATH"
   for command in docker ssh tar tee; do command -v "$command" >/dev/null || die "Missing command: $command"; done
   if [[ -n "$emulator" ]]; then
@@ -173,12 +192,24 @@ EOF
 
   # Stop through the transferred CLI so upgrading hosts with old deploy.py works.
   # prepare-host installs install.py and refreshes the systemd boot/stop commands.
+  stop_command="sudo /usr/bin/python3 host-tools/install.py stop"
+  if $first_install; then
+    # Fresh hosts have no admission directory or /dev/rrc for the stop command.
+    # setup-tls rejects running applications; prepare-host checks hardware owners.
+    stop_command="sudo test ! -e /var/lib/ubuntu_tank-container"
+  fi
+  tls_command=":"
+  if ((${#tls_args[@]})); then
+    tls_command="sudo /usr/bin/python3 host-tools/install.py setup-tls --release $(quote "$remote/release.json")"
+    for argument in "${tls_args[@]}"; do tls_command+=" $(quote "$argument")"; done
+  fi
   remote_commands="set -eu
 cd -- $(quote "$remote")
 test \"\$(uname -m)\" = aarch64
 sudo docker image load -i images.tar
-sudo /usr/bin/python3 host-tools/install.py stop
-sudo /usr/bin/python3 host-tools/install.py prepare-host
+$stop_command
+$tls_command
+sudo /usr/bin/python3 host-tools/install.py prepare-host --serial-device $(quote "$serial_device")
 sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py stage $(quote "$remote/release.json")
 sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py deploy $(quote "$remote/release.json")
 sudo /usr/bin/python3 /opt/ubuntu_tank-container/install.py target-test

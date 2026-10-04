@@ -24,6 +24,10 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
 
 ## 2. Key Operational Commands
 
+- Fresh-Pi preparation: [host guide](docs/PI5_HOST_SETUP.md). The workstation
+  wrapper supports `--first-install`, `--serial-device`, and repeatable
+  `--tls-hostname`/`--tls-ip`; fresh-Pi execution of this path remains pending.
+
 - **Local Validation:**
   ```bash
   .venv/bin/python ./ubuntu_tank/deploy.sh test
@@ -73,7 +77,24 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   and above on narrow screens, standalone review mode (`?review=camera`) with inert driving controls,
   bundled SVG placeholder, two action buttons (`Capture` and `Record` / `Stop recording`),
   simulated recording timer, feedback messages, example download link, and review fixtures.
-  Verified with 50 Playwright tests (`npm test` / `test_milestone13_browser_pwa.py`).
-  Owner UI approval is required before starting CAM-2 or backend/hardware integration.
-- CAM-2 through CAM-5 cover live preview, capture, recording/recovery, and real-Pi
-  integration and safety validation. Camera model/driver and resource limits remain unverified.
+- CAM-2 implemented:
+  - Runtime camera worker (`ubuntu_tank_camera`) implementing V4L2 device streaming (`/dev/video0`)
+    with explicit mock/simulation opt-in, JPEG frame validation, frame freshness tracking (`LIVE` -> `STALE`
+    after 2.0s without frames), idle timeout release after 30s with zero streaming clients, disconnect/reconnect
+    handling, and slow-viewer frame dropping.
+  - Dedicated Unix domain socket IPC at `/run/ubuntu_tank/camera.sock` (mode 0700) with binary MJPEG framing.
+  - Web API endpoints: `GET /api/v1/camera/status`, `GET /api/v1/camera/stream` (multipart/x-mixed-replace),
+    and 503 stubs for future CAM-3/CAM-4 endpoints (`POST /api/v1/camera/captures`, `POST /api/v1/camera/recordings`).
+  - Restricted device access: `/dev/video0` admitted alongside `/dev/rrc` for the `runtime` container in
+    `docker/ubuntu_tank/install.py`; `web` container retains zero hardware device access.
+  - Supervisor config: `[program:camera]` (`priority=25`, `autorestart=true`) decoupled from controller
+    runtime monitor so camera issues never fault the motion controller.
+  - Production UI in `CameraPanel.vue`: polls camera status every 1.5s, binds live `<img :src="streamUrl">`
+    on live/stale states, pauses status polling on `visibilitychange` (when document is hidden), and disables
+    Capture/Record with clear tooltips, while preserving 100% of CAM-1 review mode.
+  - Verified with 16 camera worker tests (`test_camera_worker.py`), 51 browser PWA Playwright tests
+    (`test_milestone13_browser_pwa.py`), container tests, and AST boundary/dependency closure gates.
+  - Missing V4L2 hardware reports unavailable and retries; it never silently generates preview frames.
+    Runtime camera mapping preserves writable `/dev/null` when absent and grants the observed video GID
+    when present. Real-Pi no-camera startup and mode-0660 camera capture remain pending.
+- CAM-3 through CAM-5 cover capture snapshot storage, recording/recovery, and real-Pi integration.

@@ -224,3 +224,45 @@ class WsServerMessageModel(BaseStrictModel):
 
     type: Literal["challenge", "state", "ack", "error"]
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CameraProfileModel(BaseStrictModel):
+    """Camera resolution and frame rate profile."""
+
+    width: int = Field(default=640, ge=1)
+    height: int = Field(default=480, ge=1)
+    fps: int = Field(default=15, ge=1)
+
+
+class CameraStatusResponseModel(BaseStrictModel):
+    """Live camera status, frame age, and recording/storage availability."""
+
+    state: Literal["live", "connecting", "stale", "unavailable", "finalizing", "error"]
+    frame_age_sec: float | None = None
+    profile: CameraProfileModel = Field(default_factory=CameraProfileModel)
+    recording_state: str = "disabled"
+    recording_id: str | None = None
+    elapsed_sec: float | None = None
+    storage_available_bytes: int | None = None
+    viewers_count: int = 0
+    last_error: str | None = None
+
+
+class CameraCaptureResponseModel(BaseStrictModel):
+    """Metadata response for a captured image."""
+
+    media_id: str
+    timestamp: float
+    url: str
+    width: int
+    height: int
+    bytes: int
+
+
+class CameraRecordingResponseModel(BaseStrictModel):
+    """Metadata response for video recording start/stop."""
+
+    recording_id: str
+    state: str
+    elapsed_sec: float = 0.0
+    url: str | None = None

@@ -474,8 +474,11 @@ def verify(release, env, images):
         if role == "web" and devices:
             raise RuntimeError("Web must not have any hardware mapping")
         if role == "runtime" and (
-            len(devices) != 1
-            or devices[0]["PathInContainer"] != "/dev/rrc"
+            not devices
+            or not {d.get("PathInContainer") for d in devices}.issubset(
+                {"/dev/rrc", "/dev/video0", "/dev/null"}
+            )
+            or not any(d.get("PathInContainer") == "/dev/rrc" for d in devices)
             or item["HostConfig"]["NetworkMode"] != "none"
         ):
             raise RuntimeError("Runtime device/network isolation differs")
@@ -538,6 +541,12 @@ def deploy(path):
             with (RUN / "owner/owner.lock").open() as owner:
                 fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
             config = hashes()
+            # Device mappings retain host ownership. Grant the camera's numeric
+            # group independently of the motor controller's serial group.
+            camera = Path("/dev/video0")
+            camera_info = camera.stat() if camera.exists() else None
+            if camera_info is not None and not stat.S_ISCHR(camera_info.st_mode):
+                raise RuntimeError("Camera must be a character device")
             env = {
                 "RUNTIME_IMAGE": images["runtime"],
                 "WEB_IMAGE": images["web"],
@@ -545,6 +554,12 @@ def deploy(path):
                 "RELEASE_ID": release["release_id"],
                 "CONTEXT_SHA256": release["context_sha256"],
                 "DEPLOYMENT_TOKEN": uuid.uuid4().hex,
+                "CAMERA_GID": str(camera_info.st_gid if camera_info else 10001),
+                "CAMERA_DEVICE": (
+                    "/dev/video0:/dev/video0:rw"
+                    if camera_info is not None
+                    else "/dev/null:/dev/null:rw"
+                ),
             }
             write(STATE / "release.json", release)
             write(STATE / "environment.json", env)

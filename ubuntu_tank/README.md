@@ -282,7 +282,7 @@ directories, build metadata or development-computer emulator.
 This update procedure assumes the Pi already has Ubuntu 26.04 ARM64, Docker,
 Compose, logrotate, `/dev/rrc`, controller/web configuration, TLS certificates
 and a signed SROS2 keystore. For a new Pi, complete the
-[host prerequisites and TLS setup](../docker/ubuntu_tank/README.md#host-preparation-and-deployment)
+[Pi host preparation](../docs/PI5_HOST_SETUP.md)
 first. Keep the installed calibration, browser origins, certificates and keys;
 do not overwrite them with development defaults.
 
