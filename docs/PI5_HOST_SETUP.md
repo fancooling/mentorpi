@@ -16,7 +16,7 @@ cat /etc/os-release
 uname -m                         # aarch64
 tr -d '\0' < /proc/device-tree/model  # Raspberry Pi 5
 sudo apt-get update
-sudo apt-get install -y openssh-server python3 openssl udev logrotate usbutils
+sudo apt-get install -y openssh-server python3 openssl udev logrotate usbutils curl
 sudo systemctl enable --now ssh docker
 sudo docker info
 sudo docker compose version
@@ -129,7 +129,7 @@ udevadm info --attribute-walk --name="$camera_usb"
 
 USB bus/device numbers and tty/video indexes can change after reconnecting.
 These commands identify sensors only; `--serial-device` selects the motor
-controller. Camera/LiDAR driver and container access setup are separate.
+controller. Aurora access is automated below; LiDAR runtime integration is separate.
 
 ### Aurora 930 host setup
 
@@ -137,37 +137,25 @@ Confirmed USB ID: `3251:1930`. This camera uses vendor-specific bulk USB;
 `Driver=[none]` is expected without a kernel driver. It does not expose a
 standard UVC video interface.
 
-The [Deptrum driver](../third_party_src/deptrum-ros-driver-aurora930/README.md)
-includes an ARM64 SDK. Install its USB permission rule on the host.
-From the workstation repository root:
+Connect one Aurora before running deployment:
 
 ```bash
-sdk_dir='third_party_src/deptrum-ros-driver-aurora930/ext/deptrum-stream-aurora900-linux-aarch64-v1.1.22-18.04'
-scp "$sdk_dir/scripts/99-deptrum-libusb.rules" "$pi_host:mentorpi-host-setup/"
-```
-
-On the Pi:
-
-```bash
-sudo install -m 644 "$prep_dir/99-deptrum-libusb.rules" \
-  /etc/udev/rules.d/99-deptrum-libusb.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger --action=change --subsystem-match=usb \
-  --attr-match=idVendor=3251 --attr-match=idProduct=1930
-sudo udevadm settle
 lsusb -d 3251:1930
-camera_usb='/dev/bus/usb/BBB/DDD'  # Use current Bus/Device numbers above
-stat -Lc '%a %U:%G %n' "$camera_usb"  # Vendor rule: mode 666
 ```
 
-The vendor rule grants all local users read/write access to all Deptrum devices
-(`3251`). Reconnect the camera if permissions have not updated.
+`prepare-host` enrolls its serial and installs the USB reconnect rule. Deployment
+publishes only that camera into runtime's private USB directory, mode 0660.
+The runtime image includes the Deptrum SDK and RGB JPEG helper; no host camera
+driver, ROS driver, or vendor mode-0666 permission rule is needed.
 
-Host setup ends here. The camera SDK/ROS driver belongs inside the runtime
-container, with explicit camera USB access; no host camera kernel module is
-required. Use `-DSTREAM_SDK_TYPE=AURORA930` when building the driver.
-These permissions alone do not enable streaming. Ubuntu 26.04/ROS Lyrical SDK
-compatibility and real image capture remain unverified.
+After deployment:
+
+```bash
+curl --cacert "$prep_dir/server.crt" https://PI_DNS_NAME:8443/api/v1/camera/status
+```
+
+Trust/export the certificate in step 7 first. Open the web console for 640x400
+live RGB preview. Capture and Record remain disabled until CAM-3/CAM-4.
 
 ## 4. Create initial configuration
 

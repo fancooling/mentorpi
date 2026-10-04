@@ -152,7 +152,7 @@ EOF
   # Retain a snapshot of the complete host bundle, including the renamed Pi CLI.
   bundle_dir="$repo_root/ubuntu_tank/.work/host-bundles/$run_name"
   mkdir -p -- "$bundle_dir"
-  cp -- "$script_dir"/{install.py,image_identity.py,tls_setup.py,compose.yaml,ubuntu-tank-container.service} "$bundle_dir/"
+  cp -- "$script_dir"/{install.py,image_identity.py,tls_setup.py,camera_devices.py,compose.yaml,ubuntu-tank-container.service} "$bundle_dir/"
   if [[ -z "$build_dir" ]]; then
     "$python" "$script_dir/build.py" --builder "$builder" --output "$output"
   fi

@@ -43,6 +43,15 @@ RUN rm -rf /build/ubuntu_tank/src/ubuntu_tank_web \
     && printf '%s\n' '{"build":{"cmake-args":["-DBUILD_TESTING=OFF"]}}' > /build/colcon-defaults.json \
     && COLCON_DEFAULTS_FILE=/build/colcon-defaults.json bash /build/ubuntu_tank/scripts/build_workspace.sh --production --merge-install --install-base /opt/ubuntu_tank/current/install --build-base /build/colcon
 
+COPY aurora-sdk/ /build/aurora-sdk/
+RUN mkdir -p /opt/ubuntu_tank/aurora \
+    && cp /build/aurora-sdk/RELEASE-AURORA900.md /opt/ubuntu_tank/aurora/ \
+    && cp /build/aurora-sdk/lib/libdeptrum_stream_aurora900.so.1.1.22 /opt/ubuntu_tank/aurora/ \
+    && g++ -std=c++11 -O2 -pthread -I/build/aurora-sdk/include \
+       /build/ubuntu_tank/src/ubuntu_tank_camera/src/aurora_capture.cpp \
+       /opt/ubuntu_tank/aurora/libdeptrum_stream_aurora900.so.1.1.22 \
+       -Wl,-rpath,'$ORIGIN' -o /opt/ubuntu_tank/aurora/aurora-capture
+
 FROM base AS web-deps
 RUN python3 /build/install_dependencies.py web
 FROM web-deps AS web-builder
@@ -57,6 +66,7 @@ FROM ros-base AS runtime
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 COPY build-identity.json /opt/ubuntu_tank/manifests/build-identity.json
+COPY --from=builder /opt/ubuntu_tank/aurora/ /opt/ubuntu_tank/aurora/
 COPY --from=builder /opt/ubuntu_tank/current/install/ /opt/ubuntu_tank/current/install/
 COPY --from=builder /opt/ubuntu_tank/manifests/builder.json /opt/ubuntu_tank/manifests/builder.json
 COPY ubuntu_tank/bin/ /opt/ubuntu_tank/current/bin/

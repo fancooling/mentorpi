@@ -51,3 +51,6 @@ observations.json
 # Temporary files
 *_review.md
 review.md
+
+# Temporary Pi test evidence
+/docs/*_PI_VALIDATION.md

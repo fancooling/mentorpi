@@ -118,6 +118,11 @@ def stage(destination: Path) -> dict:
     candidates.add(
         Path("ubuntu_tank/src/ubuntu_tank_protocol/ubuntu_tank_protocol/deployment.py")
     )
+    candidates.update(
+        p.relative_to(ROOT)
+        for p in (ROOT / "ubuntu_tank/src/ubuntu_tank_camera").rglob("*")
+        if p.is_file()
+    )
     hashes = {}
     for relative in sorted(candidates):
         if not allowed(relative):
@@ -125,6 +130,28 @@ def stage(destination: Path) -> dict:
         source = ROOT / relative
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"Build input must be a regular file: {relative}")
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        hashes[str(relative)] = hashlib.sha256(target.read_bytes()).hexdigest()
+    # Private vendor SDK remains outside Git. Include only headers and the pinned
+    # ARM64 shared library, retaining vendor notices and binding bytes to release.
+    sdk = (
+        ROOT
+        / "third_party_src/deptrum-ros-driver-aurora930/ext/deptrum-stream-aurora900-linux-aarch64-v1.1.22-18.04"
+    )
+    library = sdk / "lib/libdeptrum_stream_aurora900.so.1.1.22"
+    import struct
+
+    data = library.read_bytes()
+    if data[:4] != b"\x7fELF" or struct.unpack_from("<H", data, 18)[0] != 183:
+        raise ValueError("Aurora SDK must contain the ARM64 library")
+    for source in [
+        *sorted((sdk / "include").rglob("*.h")),
+        library,
+        sdk / "RELEASE-AURORA900.md",
+    ]:
+        relative = Path("aurora-sdk") / source.relative_to(sdk)
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)

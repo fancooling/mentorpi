@@ -37,10 +37,19 @@ class CameraIpcClient:
             )
         self.socket_path = socket_path
         self._lock = threading.Lock()
+        self._streams: set[socket.socket] = set()
+        self._closed = False
 
     def close(self) -> None:
-        """Close client resources."""
-        pass
+        """Cancel streaming reads, including a read running in another thread."""
+        with self._lock:
+            self._closed = True
+            for sock in self._streams:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                sock.close()
 
     def get_status(self, timeout_sec: float = 2.0) -> dict[str, Any]:
         """Query live camera status over a short-lived request/response connection."""
@@ -92,6 +101,11 @@ class CameraIpcClient:
         """
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(timeout_sec)
+        with self._lock:
+            if self._closed:
+                sock.close()
+                return
+            self._streams.add(sock)
         try:
             sock.connect(self.socket_path)
             req = json.dumps({"action": "stream"}) + "\n"
@@ -121,6 +135,8 @@ class CameraIpcClient:
         except Exception as exc:
             logger.debug("Camera stream ended: %s", exc)
         finally:
+            with self._lock:
+                self._streams.discard(sock)
             try:
                 sock.close()
             except Exception:

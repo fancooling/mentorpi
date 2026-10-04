@@ -1,6 +1,6 @@
 {
   "builder": ["build-essential", "cmake", "python3-colcon-common-extensions", "python3-setuptools", "python3-wheel", "ros-lyrical-ament-cmake", "ros-lyrical-rosidl-default-generators"],
-  "runtime": ["python3", "python3-yaml", "python3-serial", "python3-pydantic", "ros-lyrical-ros-base", "ros-lyrical-rmw-fastrtps-cpp", "ros-lyrical-geometry-msgs", "ros-lyrical-nav-msgs", "ros-lyrical-sensor-msgs", "ros-lyrical-std-msgs", "ros-lyrical-std-srvs", "ros-lyrical-launch", "ros-lyrical-launch-ros", "ros-lyrical-rosidl-default-runtime", "ros-lyrical-sros2", "supervisor"],
+  "runtime": ["libgomp1", "python3", "python3-yaml", "python3-serial", "python3-pydantic", "ros-lyrical-ros-base", "ros-lyrical-rmw-fastrtps-cpp", "ros-lyrical-geometry-msgs", "ros-lyrical-nav-msgs", "ros-lyrical-sensor-msgs", "ros-lyrical-std-msgs", "ros-lyrical-std-srvs", "ros-lyrical-launch", "ros-lyrical-launch-ros", "ros-lyrical-rosidl-default-runtime", "ros-lyrical-sros2", "supervisor"],
   "web": ["python3", "python3-yaml", "python3-fastapi", "python3-uvicorn", "python3-pydantic", "python3-websockets", "python3-cryptography"],
   "web-builder": ["python3-setuptools", "python3-wheel", "python3-pip"]
 }

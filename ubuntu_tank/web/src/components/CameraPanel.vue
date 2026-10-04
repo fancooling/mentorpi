@@ -312,7 +312,8 @@ const pendingAction = ref<'capturing' | 'starting' | 'stopping' | null>(null);
 // Production camera state from API
 const cameraStatus = ref<CameraStatusResponse | null>(null);
 const streamError = ref(false);
-const streamUrl = '/api/v1/camera/stream';
+const streamUrl = ref('/api/v1/camera/stream');
+let streamAttempt = 0;
 
 const feedback = ref<{ text: string; type: FeedbackType }>({
   text: 'UI preview active — camera operations are simulated.',
@@ -336,23 +337,22 @@ async function fetchStatus() {
   try {
     const res = await apiClient.getCameraStatus();
     cameraStatus.value = res;
-    if (res.state === 'live') {
+    if (res.state === 'live' || res.state === 'stale') {
       streamError.value = false;
     }
   } catch (err) {
-    if (!cameraStatus.value) {
-      cameraStatus.value = {
-        state: 'unavailable',
-        frame_age_sec: null,
-        profile: { width: 640, height: 480, fps: 15 },
-        recording_state: 'idle',
-        recording_id: null,
-        elapsed_sec: null,
-        storage_available_bytes: null,
-        viewers_count: 0,
-        last_error: err instanceof Error ? err.message : 'Connection failed',
-      };
-    }
+    cameraStatus.value = {
+      ...cameraStatus.value,
+      state: 'unavailable',
+      frame_age_sec: null,
+      profile: cameraStatus.value?.profile ?? { width: 640, height: 480, fps: 15 },
+      recording_state: cameraStatus.value?.recording_state ?? 'disabled',
+      recording_id: cameraStatus.value?.recording_id ?? null,
+      elapsed_sec: cameraStatus.value?.elapsed_sec ?? null,
+      storage_available_bytes: cameraStatus.value?.storage_available_bytes ?? null,
+      viewers_count: 0,
+      last_error: err instanceof Error ? err.message : 'Connection failed',
+    };
   }
 }
 
@@ -408,6 +408,7 @@ const effectiveState = computed<DisplayState>(() => {
   if (!cameraStatus.value) {
     return 'connecting';
   }
+  if (streamError.value) return 'unavailable';
   if (cameraStatus.value.recording_state === 'recording') {
     return 'recording';
   }
@@ -423,6 +424,13 @@ const showLiveStream = computed(() => {
     effectiveState.value === 'stale' ||
     effectiveState.value === 'recording'
   );
+});
+
+// A new URL prevents Chrome from reusing a completed image after reconnect.
+watch(showLiveStream, (visible) => {
+  if (visible) {
+    streamUrl.value = `/api/v1/camera/stream?attempt=${Date.now()}-${++streamAttempt}`;
+  }
 });
 
 // Profile tag text

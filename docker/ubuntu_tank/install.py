@@ -30,6 +30,7 @@ import time
 import uuid
 from pathlib import Path
 
+import camera_devices
 from image_identity import resolve_image
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +43,7 @@ HOST_FILES = (
     "install.py",
     "image_identity.py",
     "tls_setup.py",
+    "camera_devices.py",
     "compose.yaml",
     "ubuntu-tank-container.service",
 )
@@ -471,10 +473,14 @@ def verify(release, env, images):
         ] != (role == "runtime"):
             raise RuntimeError(f"Incorrect admission/IPC mount access: {role}")
         devices = item["HostConfig"].get("Devices") or []
-        if role == "web" and devices:
+        rules = item["HostConfig"].get("DeviceCgroupRules") or []
+        if role == "web" and (devices or rules or "/dev/bus/usb" in mounted):
             raise RuntimeError("Web must not have any hardware mapping")
         if role == "runtime" and (
-            not devices
+            rules != ["c 189:* rw"]
+            or mounted.get("/dev/bus/usb", {}).get("Source") != str(camera_devices.ROOT)
+            or mounted.get("/dev/bus/usb", {}).get("RW") is not False
+            or not devices
             or not {d.get("PathInContainer") for d in devices}.issubset(
                 {"/dev/rrc", "/dev/video0", "/dev/null"}
             )
@@ -540,6 +546,7 @@ def deploy(path):
             runtime_paths()
             with (RUN / "owner/owner.lock").open() as owner:
                 fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            camera_serial = camera_devices.refresh()
             config = hashes()
             # Device mappings retain host ownership. Grant the camera's numeric
             # group independently of the motor controller's serial group.
@@ -554,6 +561,8 @@ def deploy(path):
                 "RELEASE_ID": release["release_id"],
                 "CONTEXT_SHA256": release["context_sha256"],
                 "DEPLOYMENT_TOKEN": uuid.uuid4().hex,
+                "CAMERA_BACKEND": "aurora" if camera_serial else "v4l2",
+                "CAMERA_SERIAL": camera_serial,
                 "CAMERA_GID": str(camera_info.st_gid if camera_info else 10001),
                 "CAMERA_DEVICE": (
                     "/dev/video0:/dev/video0:rw"
@@ -750,6 +759,12 @@ def prepare(serial_device):
             "/var/opt/ubuntu_tank/ros-log/*/*.log {\n  daily\n  maxsize 10M\n  rotate 4\n  missingok\n  notifempty\n  copytruncate\n  su ubuntu-tank-container ubuntu-tank-container\n}\n",
         )
         run("systemctl", "daemon-reload")
+        camera_devices.refresh()
+        write(
+            Path("/etc/udev/rules.d/99-ubuntu-tank-camera.rules"),
+            'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/python3 /opt/ubuntu_tank-container/camera_devices.py"\n',
+        )
+        run("udevadm", "control", "--reload-rules")
         run("systemctl", "enable", "ubuntu-tank-container.service")
         print(
             f"Host prepared; retained identity/configuration. Manual undo record: {record_path}"

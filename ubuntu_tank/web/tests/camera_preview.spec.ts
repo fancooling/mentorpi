@@ -277,6 +277,11 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
       });
     });
 
+    await page.route('**/api/v1/camera/stream*', route => route.fulfill({
+      headers: { 'Cache-Control': 'no-store' }, contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"/>',
+    }));
+
     await page.goto('/');
 
     const cameraPanel = page.locator('.camera-panel');
@@ -292,7 +297,7 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     // Live stream img is rendered
     const streamImg = cameraPanel.locator('.camera-stream-img');
     await expect(streamImg).toBeVisible();
-    await expect(streamImg).toHaveAttribute('src', '/api/v1/camera/stream');
+    await expect(streamImg).toHaveAttribute('src', /\/api\/v1\/camera\/stream\?attempt=/);
 
     // Capture and Record buttons are disabled in CAM-2
     const captureBtn = cameraPanel.locator('.btn-capture');
@@ -305,4 +310,38 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     // Review fixtures box is hidden in production mode
     await expect(cameraPanel.locator('.review-fixtures-box')).toHaveCount(0);
   });
+  test('7. Production preview reports a status outage and recovers from idle', async ({ page }) => {
+    let state = 'live';
+    let offline = false;
+    let streams = 0;
+    await page.route('**/api/v1/camera/status', async route => {
+      if (offline) return route.abort('internetdisconnected');
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        state, frame_age_sec: state === 'live' ? 0.05 : 35,
+        profile: { width: 640, height: 400, fps: 10 },
+        recording_state: 'disabled', recording_id: null, elapsed_sec: null,
+        storage_available_bytes: null, viewers_count: 0, last_error: null,
+      }) });
+    });
+    await page.route('**/api/v1/camera/stream*', async route => {
+      streams += 1;
+      await route.fulfill({headers: { 'Cache-Control': 'no-store' }, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="blue"/></svg>'});
+    });
+    await page.goto('/');
+    const badge = page.locator('.camera-status-indicator');
+    await expect(badge).toContainText('Live');
+    await expect(page.locator('.camera-stream-img')).toBeVisible();
+    offline = true;
+    await expect(badge).toContainText('Unavailable');
+    await expect(page.locator('.camera-stream-img')).toHaveCount(0);
+    state = 'stale';
+    offline = false;
+    await expect(page.locator('.camera-stream-img')).toBeVisible();
+    await expect.poll(() => streams).toBeGreaterThan(1);
+    state = 'live';
+    await expect(badge).toContainText('Live');
+    await expect(page.locator('.btn-capture')).toBeDisabled();
+    await expect(page.locator('.btn-record')).toBeDisabled();
+  });
+
 });

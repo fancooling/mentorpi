@@ -1,6 +1,6 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 Keep this file concise. Read `AGENTS.md` for working rules, `GEMINI.md` for platform safety,
 and `docs/DESIGN.md` for architecture, control contracts, and deployment workflows.
@@ -9,7 +9,7 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
 
 - **Target & Packaging:** Raspberry Pi 5 ARM64 running Ubuntu 26.04 with ROS 2 Lyrical.
   Delivered as paired ARM64 Docker containers (`runtime` and `web`) managed via Docker Compose.
-- **Current Accepted Release:**
+- **Historical M16 Accepted Release:**
   - Release ID: `4b320e602524306678496ec7a008e0e454f6d81a66301984f6d7518df92928db`
   - Source Commit: `2c5bb5d`
   - Protocol Version: `3.0.0`
@@ -68,33 +68,31 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
 - **Workflow:** Never commit or push without explicit user direction. Format Python code with
   `ruff format`, shell scripts with `shfmt`, and verify with `shellcheck`.
 
-## 4. Planned Camera Feature
+## 4. Camera implementation and Pi deployment (2026-10-04)
 
-- All design documents belong in `docs/`.
-- [Camera design](docs/DESIGN_CAMERA.md) defines live preview, JPEG capture, and Pi-side
-  video recording in the existing web console.
-- CAM-1 implemented: delivers `CameraPanel.vue` integrated beside drive controls on desktop
-  and above on narrow screens, standalone review mode (`?review=camera`) with inert driving controls,
-  bundled SVG placeholder, two action buttons (`Capture` and `Record` / `Stop recording`),
-  simulated recording timer, feedback messages, example download link, and review fixtures.
-- CAM-2 implemented:
-  - Runtime camera worker (`ubuntu_tank_camera`) implementing V4L2 device streaming (`/dev/video0`)
-    with explicit mock/simulation opt-in, JPEG frame validation, frame freshness tracking (`LIVE` -> `STALE`
-    after 2.0s without frames), idle timeout release after 30s with zero streaming clients, disconnect/reconnect
-    handling, and slow-viewer frame dropping.
-  - Dedicated Unix domain socket IPC at `/run/ubuntu_tank/camera.sock` (mode 0700) with binary MJPEG framing.
-  - Web API endpoints: `GET /api/v1/camera/status`, `GET /api/v1/camera/stream` (multipart/x-mixed-replace),
-    and 503 stubs for future CAM-3/CAM-4 endpoints (`POST /api/v1/camera/captures`, `POST /api/v1/camera/recordings`).
-  - Restricted device access: `/dev/video0` admitted alongside `/dev/rrc` for the `runtime` container in
-    `docker/ubuntu_tank/install.py`; `web` container retains zero hardware device access.
-  - Supervisor config: `[program:camera]` (`priority=25`, `autorestart=true`) decoupled from controller
-    runtime monitor so camera issues never fault the motion controller.
-  - Production UI in `CameraPanel.vue`: polls camera status every 1.5s, binds live `<img :src="streamUrl">`
-    on live/stale states, pauses status polling on `visibilitychange` (when document is hidden), and disables
-    Capture/Record with clear tooltips, while preserving 100% of CAM-1 review mode.
-  - Verified with 16 camera worker tests (`test_camera_worker.py`), 51 browser PWA Playwright tests
-    (`test_milestone13_browser_pwa.py`), container tests, and AST boundary/dependency closure gates.
-  - Missing V4L2 hardware reports unavailable and retries; it never silently generates preview frames.
-    Runtime camera mapping preserves writable `/dev/null` when absent and grants the observed video GID
-    when present. Real-Pi no-camera startup and mode-0660 camera capture remain pending.
-- CAM-3 through CAM-5 cover capture snapshot storage, recording/recovery, and real-Pi integration.
+- [Camera design](docs/DESIGN_CAMERA.md). Pi test evidence is temporary local output;
+  `docs/*_PI_VALIDATION.md` is ignored. Keep durable outcomes in this checkpoint.
+- CAM-1 review UI remains available. CAM-2 live preview now supports the actual
+  Aurora 930 (`3251:1930`) through bundled ARM64 Deptrum SDK 1.1.22; RGB NV12
+  becomes JPEG at 640×400, nominal 10 fps. No host ROS or kernel camera driver.
+- Host preparation enrolls one camera by serial and maintains private USB nodes
+  under `/dev/ubuntu-tank-camera-usb`, mode 0660, group 10001. Runtime alone gets
+  this read-only USB mount; web has no hardware access. SDK runs in a bounded
+  subprocess; camera IPC stays separate from operator/lifecycle sockets.
+- Capture releases hardware after 30 seconds without viewers, retries failures,
+  and discovers late-arriving cameras even after idle timeout. Browser outages
+  show unavailable and reconnect using a fresh stream URL. Capture/Record remain
+  disabled until CAM-3/CAM-4.
+- Deployed release: `c1043ee01cf34a58eadc6e8ed23c5818fdd805bbb6a9cd042239e6c065fac66a`,
+  built from `bec2c892` plus uncommitted camera changes. Build directory:
+  `ubuntu_tank/.work/cam2-aurora-complete`; builder `mentorpi-c3`.
+- Pi service active; runtime/web healthy, stopped/disarmed/ownerless. Final stream:
+  150 JPEG frames at 640×400, 9.55 fps. Late camera arrival recovered in 1.145 s
+  without a viewer; Chrome reload and 35-second network outage/reconnect passed.
+  Earlier same-path checks passed helper hang recovery, USB authorization recovery,
+  installed udev node recreation and idle release. Owner confirmed live video
+  streaming works. No motors moved.
+- Software validation: full development run 587 Python cases (one native ROS skip),
+  latest focused camera suite 22 passed, browser suite 52 passed, independent review
+  PASS. Physical cable unplug/replug remains pending, as do motor-load checks,
+  V4L2 target validation and fresh-Pi first-install validation.

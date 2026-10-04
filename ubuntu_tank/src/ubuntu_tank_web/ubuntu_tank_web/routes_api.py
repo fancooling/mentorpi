@@ -394,6 +394,8 @@ async def get_camera_stream(request: Request):
                 )
         except Exception as exc:
             logger.debug("Camera streaming closed: %s", exc)
+        finally:
+            client.close()
 
     return StreamingResponse(
         frame_stream(),

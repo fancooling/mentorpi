@@ -349,5 +349,138 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 503)
 
 
+class TestAuroraProcess(unittest.TestCase):
+    """Exercise capture deadlines and recovery across a real child-process pipe."""
+
+    def wait_until(self, predicate, timeout=4.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.02)
+        self.fail("Capture did not reach expected state")
+
+    def capture(self, script, **kwargs):
+        import sys
+
+        from ubuntu_tank_camera.aurora_capture import AuroraCameraCapture
+
+        capture = AuroraCameraCapture(
+            "test-serial", helper=(sys.executable, "-c", script), **kwargs
+        )
+        self.addCleanup(capture.stop)
+        return capture
+
+    def test_child_hang_is_reaped_and_retried(self):
+        capture = self.capture(
+            "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)",
+            frame_timeout=0.2,
+        )
+        capture.add_viewer()
+        capture.start()
+        self.wait_until(lambda: capture._process is not None)
+        first = capture._process
+        self.wait_until(lambda: first.poll() is not None)
+        self.wait_until(
+            lambda: capture._process is not None and capture._process is not first
+        )
+        child = capture._process
+        started = time.monotonic()
+        capture.stop()
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertIsNotNone(child.poll())
+        self.assertIsNone(capture.get_latest_frame()[0])
+
+    def test_stream_idle_release_and_new_viewer_restart(self):
+        capture = self.capture(
+            "import os,struct,time; frame=b'\\xff\\xd8test\\xff\\xd9'; "
+            "packet=struct.pack('!4sI',b'MJPG',len(frame))+frame\n"
+            "while True: os.write(1,packet); time.sleep(0.02)",
+            idle_timeout_sec=0.2,
+            freshness_timeout_sec=0.1,
+        )
+        capture.start()
+        frame, timestamp = capture.wait_for_new_frame(None, 2)
+        self.assertEqual(frame, b"\xff\xd8test\xff\xd9")
+        self.wait_until(lambda: capture._process is None)
+        self.wait_until(lambda: capture.state == CameraState.STALE)
+        _, timestamp = capture.get_latest_frame()
+        capture.add_viewer()
+        frame, new_timestamp = capture.wait_for_new_frame(timestamp, 2)
+        self.assertGreater(new_timestamp, timestamp)
+        self.assertEqual(capture.state, CameraState.LIVE)
+
+    def test_camera_arriving_after_idle_timeout_is_discovered_without_viewer(self):
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / "ready"
+            capture = self.capture(
+                f"import pathlib,sys,os,struct,time; "
+                f"sys.exit(1) if not pathlib.Path({str(ready)!r}).exists() else None; "
+                "frame=b'\\xff\\xd8late\\xff\\xd9'; "
+                "packet=struct.pack('!4sI',b'MJPG',len(frame))+frame\n"
+                "while True: os.write(1,packet); time.sleep(0.02)",
+                idle_timeout_sec=0.2,
+            )
+            capture.start()
+            self.wait_until(lambda: capture.state == CameraState.UNAVAILABLE)
+            time.sleep(0.3)
+            ready.touch()
+            self.wait_until(lambda: capture.get_latest_frame()[0] is not None)
+            self.assertEqual(capture.viewers_count, 0)
+            self.assertEqual(capture.get_latest_frame()[0], b"\xff\xd8late\xff\xd9")
+
+    def test_invalid_child_output_reports_unavailable(self):
+        capture = self.capture("import os; os.write(1,b'BAD!0000')")
+        capture.start()
+        self.wait_until(lambda: capture.state == CameraState.UNAVAILABLE)
+        self.assertIsNone(capture.get_latest_frame()[0])
+        self.assertIn("framing", capture.last_error)
+
+    def test_slow_ipc_reader_does_not_block_fresh_viewer(self):
+        import socket
+
+        with tempfile.TemporaryDirectory() as directory:
+            capture = self.capture(
+                "import os,struct,time; frame=b'\\xff\\xd8'+b'x'*500000+b'\\xff\\xd9'; "
+                "packet=struct.pack('!4sI',b'MJPG',len(frame))+frame\n"
+                "while True: os.write(1,packet); time.sleep(0.02)"
+            )
+            capture.start()
+            server = CameraIpcServer(capture, os.path.join(directory, "camera.sock"))
+            server.start()
+            self.addCleanup(server.stop)
+            slow = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.addCleanup(slow.close)
+            slow.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
+            slow.connect(server.socket_path)
+            slow.sendall(b'{"action":"stream"}\n')
+            self.wait_until(lambda: capture.viewers_count == 1)
+            self.wait_until(lambda: capture.viewers_count == 0)
+            client = CameraIpcClient(server.socket_path)
+            self.addCleanup(client.close)
+            stream = client.stream_frames()
+            self.addCleanup(stream.close)
+            self.assertEqual(len(next(stream)), 500004)
+            self.assertEqual(len(next(stream)), 500004)
+
+    def test_ipc_cancel_releases_viewer_without_camera_frames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            capture = self.capture("import time; time.sleep(60)")
+            capture.start()
+            server = CameraIpcServer(capture, os.path.join(directory, "camera.sock"))
+            server.start()
+            self.addCleanup(server.stop)
+            client = CameraIpcClient(server.socket_path)
+            reader = threading.Thread(target=lambda: list(client.stream_frames()))
+            reader.start()
+            self.wait_until(lambda: capture.viewers_count == 1)
+            client.close()
+            reader.join(2)
+            self.assertFalse(reader.is_alive())
+            self.wait_until(lambda: capture.viewers_count == 0)
+
+
 if __name__ == "__main__":
     unittest.main()

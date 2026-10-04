@@ -167,6 +167,8 @@ class CameraIpcServer:
                 if not chunk:
                     return
                 buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    return
 
             line, _ = buf.split(b"\n", 1)
             req = json.loads(line.decode("utf-8"))
@@ -223,11 +225,15 @@ class CameraIpcServer:
         """Stream frames continuously to the client socket."""
         self.capture.add_viewer()
         last_ts: float | None = None
-        client_sock.settimeout(None)  # Use select for non-blocking send
+        client_sock.settimeout(0.5)  # Bound partial writes; disconnect blocked viewers.
         try:
             while self._running:
                 frame, ts = self.capture.wait_for_new_frame(last_ts, timeout_sec=1.0)
                 if not self._running:
+                    break
+                readable, _, _ = select.select([client_sock], [], [], 0)
+                if readable:
+                    # No further client messages are valid; EOF also releases idle USB.
                     break
                 if frame is None or ts == last_ts:
                     continue

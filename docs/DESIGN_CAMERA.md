@@ -52,9 +52,10 @@ finalizing, and error states without adding production action buttons.
 
 ## 2. Runtime architecture
 
-The current Ubuntu deployment has Vue/FastAPI web control but no camera service
-or camera device mapping. Vendor reference launch files contain several camera
-drivers; the installed camera model and compatible driver must be verified.
+CAM-2 adds a separate camera worker to the Ubuntu runtime. The installed Aurora
+930 (`3251:1930`) uses Deptrum SDK 1.1.22 bulk USB, with no host kernel driver or
+camera ROS graph. A bounded helper process converts RGB NV12 to JPEG.
+V4L2 remains a fallback for other cameras.
 
 ```mermaid
 flowchart LR
@@ -80,10 +81,10 @@ flowchart LR
   to Supervisor registration and failure handling must preserve existing motor
   safety responses.
 
-Use MJPEG over the existing HTTPS origin for the initial preview. Propose
-640 × 480 at 15 fps as the starting profile, subject to camera support and Pi
-measurements. Open the camera while preview clients or recording need frames;
-release it after an idle timeout. Share one acquisition pipeline across viewers.
+Use MJPEG over the existing HTTPS origin. Aurora supports 320×200, 480×300,
+and 640×400 RGB YUV; CAM-2 selects 640×400 at nominal 10 fps. The original
+640×480/15 fps proposal remains the V4L2 default. Sample on startup, share one
+acquisition pipeline across viewers, and release USB after 30 seconds idle.
 
 Use bounded latest-frame queues: slow viewers drop old frames instead of
 accumulating delayed video. Report frame freshness independently of whether the
@@ -192,6 +193,7 @@ Acceptance:
 - Record supported profiles and measured frame rate, latency, CPU, and memory.
 - Verify stale frames, unplug/reconnect behavior, slow viewers, and browser
   reconnect without unbounded queues or implicit robot startup.
+
 
 ### CAM-3 — Image capture and persistent downloads
 

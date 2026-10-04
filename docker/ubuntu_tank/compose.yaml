@@ -7,7 +7,7 @@ x-common: &common
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  environment:
+  environment: &common-environment
     UBUNTU_TANK_DEPLOYMENT_DIR: /run/ubuntu_tank-deployment
     UBUNTU_TANK_DEPLOYMENT_TOKEN: ${DEPLOYMENT_TOKEN:?Deploy through install.py}
     UBUNTU_TANK_RELEASE_ID: ${RELEASE_ID:?Set the verified release}
@@ -28,6 +28,11 @@ services:
     <<: *common
     image: ${RUNTIME_IMAGE:?Set the runtime image digest from the release manifest}
     network_mode: none
+    environment:
+      <<: *common-environment
+      UBUNTU_TANK_CAMERA_BACKEND: ${CAMERA_BACKEND:-v4l2}
+      UBUNTU_TANK_CAMERA_SERIAL: ${CAMERA_SERIAL:-}
+    device_cgroup_rules: ["c 189:* rw"]
     group_add:
       - "${SERIAL_GID:?Set the verified numeric device group}"
       - "${CAMERA_GID:-10001}"
@@ -38,6 +43,11 @@ services:
       - /tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=1777
       - /run/ubuntu_tank-private:rw,nosuid,nodev,noexec,size=16m,uid=10001,gid=10001,mode=0700
     volumes:
+      - type: bind
+        source: /dev/ubuntu-tank-camera-usb
+        target: /dev/bus/usb
+        read_only: true
+        bind: {create_host_path: false}
       - type: bind
         source: /var/lib/ubuntu_tank-container/control
         target: /run/ubuntu_tank-deployment

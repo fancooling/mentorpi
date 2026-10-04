@@ -243,9 +243,34 @@ sudo docker exec -it "$(sudo docker ps -q --filter label=com.docker.compose.proj
 The normal clients use the existing operator IPC authority. Do not select the
 `--direct-ros` diagnostic path for normal operation.
 
+## Aurora 930 camera
+
+Connect one USB `3251:1930` camera before deployment. `prepare-host` enrolls its
+serial in `/var/lib/ubuntu_tank-container/camera.json` and installs a USB event
+rule. Boot/deploy and USB events refresh `/dev/ubuntu-tank-camera-usb`.
+Only the enrolled camera node is published, mode 0660, group 10001. Runtime mounts
+this private tree read-only; its USB cgroup rule permits changing device numbers.
+Web receives no USB mount or device permission. No vendor host driver is needed.
+
+The build requires the private ARM64 Deptrum 1.1.22 SDK under
+`third_party_src/deptrum-ros-driver-aurora930/ext/deptrum-stream-aurora900-linux-aarch64-v1.1.22-18.04`.
+It stages headers, library and vendor release notes, with hashes in build identity.
+The runtime helper source is
+`ubuntu_tank/src/ubuntu_tank_camera/src/aurora_capture.cpp`. Docker builds it
+with the vendor SDK. It captures RGB NV12 at 640x400 and encodes JPEG with the SDK's
+TurboJPEG ABI. The Python worker bounds reads, reaps failed helpers, retries,
+and releases USB after 30 seconds without viewers. Preview uses existing HTTPS.
+Capture and recording remain disabled.
+
+Host-generated `CAMERA_BACKEND` and `CAMERA_SERIAL` select the backend/identity;
+runtime receives them as `UBUNTU_TANK_CAMERA_BACKEND` and
+`UBUNTU_TANK_CAMERA_SERIAL`. With no enrolled Aurora, V4L2 remains the fallback.
+To replace an enrolled camera, stop the application, disconnect the old camera,
+remove the enrollment file, connect one replacement and rerun deployment.
+
 ## Validation boundary
 
-Camera deployment regression checks remain pending on the real Pi. Use the production
+V4L2 fallback deployment checks remain pending on the real Pi. Use the production
 wrapper and `install.py target-test` for both cases:
 
 | Pi setup | Required behavior |
@@ -317,7 +342,7 @@ manifest digest and previously verified local IDs, so registry pulls and subsequ
 boots do not require the original build tag.
 
 For host-tool updates, transfer `install.py`, `image_identity.py`, `tls_setup.py`,
-`compose.yaml` and `ubuntu-tank-container.service` together. `prepare-host` rejects
+`camera_devices.py`, `compose.yaml` and `ubuntu-tank-container.service` together. `prepare-host` rejects
 incomplete bundles before cutover and refreshes installed copies. Existing C4
 release manifests and images remain valid.
 
