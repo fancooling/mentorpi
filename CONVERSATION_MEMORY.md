@@ -63,3 +63,17 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   - 300 s inactivity releases ownership and shuts down the controller.
 - **Workflow:** Never commit or push without explicit user direction. Format Python code with
   `ruff format`, shell scripts with `shfmt`, and verify with `shellcheck`.
+
+## 4. Planned Camera Feature
+
+- All design documents belong in `docs/`.
+- [Camera design](docs/DESIGN_CAMERA.md) defines live preview, JPEG capture, and Pi-side
+  video recording in the existing web console.
+- CAM-1 implemented: delivers `CameraPanel.vue` integrated beside drive controls on desktop
+  and above on narrow screens, standalone review mode (`?review=camera`) with inert driving controls,
+  bundled SVG placeholder, two action buttons (`Capture` and `Record` / `Stop recording`),
+  simulated recording timer, feedback messages, example download link, and review fixtures.
+  Verified with 50 Playwright tests (`npm test` / `test_milestone13_browser_pwa.py`).
+  Owner UI approval is required before starting CAM-2 or backend/hardware integration.
+- CAM-2 through CAM-5 cover live preview, capture, recording/recovery, and real-Pi
+  integration and safety validation. Camera model/driver and resource limits remain unverified.

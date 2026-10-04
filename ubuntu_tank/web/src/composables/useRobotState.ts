@@ -5,7 +5,7 @@ import type { StatusResponse, VersionResponse } from '../types/api';
 import type { UiTelemetryState } from '../types/ui';
 
 /** Poll visible telemetry; hidden pages retain ownership but require fresh status before driving. */
-export function useRobotState(myOperatorId: string) {
+export function useRobotState(myOperatorId: string, isReviewMode = false) {
   const telemetry = reactive<UiTelemetryState>({
     connectionStatus: 'disconnected',
     serviceState: 'unknown',
@@ -55,6 +55,11 @@ export function useRobotState(myOperatorId: string) {
   });
 
   async function checkVersion(): Promise<boolean> {
+    if (isReviewMode) {
+      telemetry.isProtocolCompatible = true;
+      telemetry.releaseId = 'cam-1-review';
+      return true;
+    }
     try {
       const v: VersionResponse = await apiClient.getVersion();
       telemetry.releaseId = v.release_id;
@@ -70,7 +75,7 @@ export function useRobotState(myOperatorId: string) {
   }
 
   async function pollStatus(): Promise<void> {
-    if (document.hidden) return;
+    if (isReviewMode || document.hidden) return;
     const sequence = ++requestSequence;
     const generation = visibilityGeneration;
     const started = performance.now();
@@ -141,7 +146,7 @@ export function useRobotState(myOperatorId: string) {
   }
 
   function startPolling(intervalMs: number = 1000) {
-    if (isPolling.value) return;
+    if (isReviewMode || isPolling.value) return;
     isPolling.value = true;
     pollStatus();
     pollTimer = setInterval(() => {
@@ -185,6 +190,13 @@ export function useRobotState(myOperatorId: string) {
   }
 
   onMounted(() => {
+    if (isReviewMode) {
+      telemetry.isProtocolCompatible = true;
+      telemetry.connectionStatus = 'disconnected';
+      telemetry.serviceState = 'inactive';
+      telemetry.releaseId = 'cam-1-review';
+      return;
+    }
     if (typeof window !== 'undefined') {
       window.addEventListener('online', onOnline);
       window.addEventListener('offline', onOffline);
