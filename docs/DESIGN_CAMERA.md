@@ -109,6 +109,15 @@ Camera loss, encoder failure, duration limits, or low storage end recording with
 an explicit reason. Preserve recoverable footage and identify interrupted files.
 After a process or Pi restart, never automatically resume recording.
 
+Encoder finalization checks the exit status and probes the MP4 before publishing
+it. Empty or invalid output is not offered as completed media. Recoverable footage
+from an encoder failure is downloadable with an `interrupted` filename and
+`completed: false`; status reports the recording error. Nonempty invalid output
+stays in its temporary file for owner diagnosis and counts against the quota.
+Startup reconciles orphaned MP4s as interrupted files without resuming recording.
+Publication requires a durable media index; videos sort by completion time.
+Recovery from real Pi power loss still needs target validation.
+
 Store files under `/var/opt/ubuntu_tank/media`, writable only by the runtime
 service. Web streams downloads through media IPC; it does not need a writable
 storage mount. Use opaque IDs rather than client-provided paths. Keep a bounded

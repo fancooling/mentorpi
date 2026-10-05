@@ -1111,7 +1111,6 @@ export interface CameraRecordingResponse {{
   elapsed_sec: number;
   url: string | null;
 }}
-
 """
 
 

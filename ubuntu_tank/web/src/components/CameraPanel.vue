@@ -349,9 +349,18 @@ async function fetchStatus() {
   if (typeof document !== 'undefined' && document.hidden) return;
   try {
     const res = await apiClient.getCameraStatus();
+    const previousRecording = cameraStatus.value?.recording_state;
     cameraStatus.value = res;
     if (res.state === 'live' || res.state === 'stale') {
       streamError.value = false;
+    }
+    isRecording.value = res.recording_state === 'recording';
+    if (['recording', 'finalizing'].includes(previousRecording ?? '') &&
+        !['recording', 'finalizing'].includes(res.recording_state)) {
+      await fetchLatestMedia();
+      feedback.value = res.recording_state === 'error'
+        ? { text: res.last_error || 'Recording failed.', type: 'error' }
+        : { text: 'Recording finished. Download is ready.', type: 'success' };
     }
   } catch (err) {
     cameraStatus.value = {
@@ -376,7 +385,7 @@ async function fetchLatestMedia() {
     if (res.items && res.items.length > 0) {
       const top = res.items[0];
       latestMedia.value = {
-        filename: top.filename,
+        filename: top.completed ? top.filename : `${top.filename} (interrupted)`,
         type: top.type === 'video' ? 'video' : 'image',
         timestamp: top.timestamp,
         url: top.url,
@@ -445,6 +454,7 @@ const effectiveState = computed<DisplayState>(() => {
   if (cameraStatus.value.recording_state === 'recording') {
     return 'recording';
   }
+  if (cameraStatus.value.recording_state === 'finalizing') return 'finalizing';
   return cameraStatus.value.state;
 });
 
@@ -455,7 +465,8 @@ const showLiveStream = computed(() => {
   return (
     effectiveState.value === 'live' ||
     effectiveState.value === 'stale' ||
-    effectiveState.value === 'recording'
+    effectiveState.value === 'recording' ||
+    effectiveState.value === 'finalizing'
   );
 });
 
@@ -534,6 +545,12 @@ const effectiveFeedback = computed<{ text: string; type: FeedbackType }>(() => {
     };
   }
   const s = cameraStatus.value;
+  if (s.recording_state === 'error') {
+    return { text: s.last_error || 'Recording failed.', type: 'error' };
+  }
+  if (s.recording_state === 'finalizing') {
+    return { text: 'Finalizing recording...', type: 'info' };
+  }
   if (s.state === 'unavailable') {
     return {
       text: s.last_error
@@ -556,7 +573,7 @@ const effectiveFeedback = computed<{ text: string; type: FeedbackType }>(() => {
   switch (s.state) {
     case 'live':
       return {
-        text: 'Live preview active. Video recording is disabled in CAM-3 (planned for CAM-4).',
+        text: 'Live preview active. Capture an image or record a video.',
         type: 'info',
       };
     case 'stale':
@@ -631,13 +648,7 @@ const captureTitle = computed(() => {
   return 'Capture unavailable in current state';
 });
 
-// Can Record:
-// In CAM-3 production: disabled with clear explanation (planned for CAM-4).
-// In review mode: enabled during interactive/live, or Stop recording during recording.
 const canRecord = computed(() => {
-  if (!props.isReviewMode) {
-    return false; // Disabled in CAM-3 (planned for CAM-4)
-  }
   if (isPending.value || effectiveState.value === 'pending') return false;
   if (effectiveState.value === 'finalizing') return false;
 
@@ -645,15 +656,16 @@ const canRecord = computed(() => {
     return true;
   }
 
-  if (selectedFixture.value === 'interactive') return true;
-  if (selectedFixture.value === 'live') return true;
-  return false;
+  if (props.isReviewMode) {
+    if (selectedFixture.value === 'interactive') return true;
+    if (selectedFixture.value === 'live') return true;
+    return false;
+  }
+
+  return effectiveState.value === 'live' || effectiveState.value === 'recording';
 });
 
 const recordTitle = computed(() => {
-  if (!props.isReviewMode) {
-    return 'Recording is disabled in CAM-3 (planned for CAM-4)';
-  }
   return canRecord.value
     ? isRecording.value
       ? 'Stop recording'
@@ -729,59 +741,83 @@ async function handleCapture() {
   }
 }
 
-// Action 2: Record / Stop recording (in review mode)
-function handleRecordToggle() {
+async function handleRecordToggle() {
   if (!canRecord.value) return;
 
   if (isRecording.value) {
-    // Request Stop recording -> enters finalizing transition -> returns download link
-    isPending.value = true;
-    pendingAction.value = 'stopping';
-    feedback.value = {
-      text: 'Finalizing recording...',
-      type: 'info',
-    };
-
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = null;
+    if (props.isReviewMode) {
+      isPending.value = true;
+      pendingAction.value = 'stopping';
+      feedback.value = { text: 'Finalizing recording...', type: 'info' };
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      setTimeout(() => {
+        isRecording.value = false;
+        isPending.value = false;
+        pendingAction.value = null;
+        feedback.value = { text: 'Simulated recording ended — no file created.', type: 'info' };
+        latestMedia.value = { filename: `recording_${getTimestampStr()}.mp4 (example)`, type: 'video', timestamp: Date.now() };
+        elapsedSeconds.value = 0;
+      }, 450);
+      return;
     }
 
-    setTimeout(() => {
-      isRecording.value = false;
+    isPending.value = true;
+    pendingAction.value = 'stopping';
+    feedback.value = { text: 'Finalizing recording...', type: 'info' };
+    try {
+      const recId = cameraStatus.value?.recording_id;
+      if (recId) {
+        await apiClient.stopRecording(recId);
+        isRecording.value = false;
+        if (cameraStatus.value) cameraStatus.value.recording_state = 'finalizing';
+      } else {
+        throw new Error("No active recording ID known");
+      }
+      // Status polling refreshes media once the server finishes finalization.
+    } catch (err: any) {
+      let msg = err?.detail || err?.message || 'Failed to stop recording';
+      feedback.value = { text: `Stop failed: ${msg}`, type: 'error' };
+    } finally {
       isPending.value = false;
       pendingAction.value = null;
-      feedback.value = {
-        text: 'Simulated recording ended — no file created.',
-        type: 'info',
-      };
-      latestMedia.value = {
-        filename: `recording_${getTimestampStr()}.mp4 (example)`,
-        type: 'video',
-        timestamp: Date.now(),
-      };
-      elapsedSeconds.value = 0;
-    }, 450);
+      if (timerId) { clearInterval(timerId); timerId = null; }
+    }
   } else {
-    // Request Start recording -> enters recording state, starts timer
+    if (props.isReviewMode) {
+      isPending.value = true;
+      pendingAction.value = 'starting';
+      setTimeout(() => {
+        isPending.value = false;
+        pendingAction.value = null;
+        isRecording.value = true;
+        elapsedSeconds.value = 0;
+        feedback.value = { text: 'Simulated recording active.', type: 'success' };
+        if (timerId) clearInterval(timerId);
+        timerId = setInterval(() => { elapsedSeconds.value++; }, 1000);
+      }, 200);
+      return;
+    }
+
     isPending.value = true;
     pendingAction.value = 'starting';
-
-    setTimeout(() => {
-      isPending.value = false;
-      pendingAction.value = null;
+    try {
+      const res = await apiClient.startRecording();
+      if (cameraStatus.value && res && res.recording_id) {
+        cameraStatus.value.recording_id = res.recording_id;
+        cameraStatus.value.recording_state = res.state;
+      }
       isRecording.value = true;
       elapsedSeconds.value = 0;
-      feedback.value = {
-        text: 'Simulated recording active.',
-        type: 'success',
-      };
-
+      feedback.value = { text: 'Recording started.', type: 'success' };
       if (timerId) clearInterval(timerId);
-      timerId = setInterval(() => {
-        elapsedSeconds.value++;
-      }, 1000);
-    }, 200);
+      timerId = setInterval(() => { elapsedSeconds.value++; }, 1000);
+    } catch (err: any) {
+      let msg = err?.detail || err?.message || 'Failed to start recording';
+      feedback.value = { text: `Start failed: ${msg}`, type: 'error' };
+    } finally {
+      isPending.value = false;
+      pendingAction.value = null;
+    }
   }
 }
 

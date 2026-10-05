@@ -23,7 +23,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-
 from ubuntu_tank_protocol.camera_client import CameraIpcClient
 from ubuntu_tank_protocol.constants import (
     API_VERSION,
@@ -38,6 +37,7 @@ from .models import (
     CameraMediaItemModel,
     CameraMediaListResponseModel,
     CameraProfileModel,
+    CameraRecordingResponseModel,
     CameraStatusResponseModel,
     ControlAcquireRequestModel,
     ControlAcquireResponseModel,
@@ -52,7 +52,6 @@ from .models import (
     StatusResponseModel,
     VersionResponseModel,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -485,25 +484,78 @@ async def post_camera_capture(
 
 @router.post(
     "/camera/recordings",
-    summary="Start video recording (disabled in CAM-2)",
+    response_model=CameraRecordingResponseModel,
+    summary="Start video recording",
 )
-async def post_camera_recording(request: Request):
-    """Enforce CAM-2 disabled state for Record."""
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Video recording is unavailable in CAM-2 (pending CAM-4)",
+async def post_camera_recording(
+    request: Request,
+    body: CameraCaptureRequestModel | None = None,
+) -> CameraRecordingResponseModel:
+    """Start recording a fragmented MP4."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camera service not configured",
+        )
+
+    request_id = None
+    idempotency_key = None
+    if body:
+        request_id = body.request_id
+        idempotency_key = body.idempotency_key
+
+    res = await asyncio.to_thread(
+        camera_client.record,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+    )
+    if not res.get("success"):
+        err = res.get("error", "START_FAILED")
+        detail = res.get("detail", "Recording start failed")
+        if err in ("LOW_STORAGE", "STORAGE_QUOTA_EXCEEDED"):
+            raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, detail)
+        elif err == "CONFLICT":
+            raise HTTPException(status.HTTP_409_CONFLICT, detail)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail)
+    return CameraRecordingResponseModel(
+        recording_id=res["recording_id"], state=res["state"]
     )
 
 
 @router.post(
     "/camera/recordings/{id}/stop",
-    summary="Stop video recording (disabled in CAM-2)",
+    response_model=CameraRecordingResponseModel,
+    summary="Stop video recording",
 )
-async def post_camera_recording_stop(id: str, request: Request):
-    """Enforce CAM-2 disabled state for Stop recording."""
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Video recording is unavailable in CAM-2 (pending CAM-4)",
+async def post_camera_recording_stop(
+    id: str, request: Request
+) -> CameraRecordingResponseModel:
+    """Idempotently request recording finalization."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camera service not configured",
+        )
+
+    res = await asyncio.to_thread(camera_client.stop_recording, id)
+    if not res.get("success"):
+        err = res.get("error", "STOP_FAILED")
+        detail = res.get("detail", "Recording stop failed")
+        if err == "NOT_RECORDING":
+            return CameraRecordingResponseModel(
+                recording_id=id, state="completed", elapsed_sec=0.0
+            )
+        elif err == "CONFLICT":
+            raise HTTPException(status.HTTP_409_CONFLICT, detail)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail)
+    return CameraRecordingResponseModel(
+        recording_id=res["recording_id"], state=res["state"], elapsed_sec=0.0
     )
 
 

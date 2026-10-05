@@ -10,11 +10,9 @@ import json
 import logging
 import os
 import select
-import shutil
 import socket
 import struct
 import threading
-import time
 from typing import Any
 
 from ubuntu_tank_protocol.constants import (
@@ -27,6 +25,7 @@ from ubuntu_tank_protocol.enums import CameraState
 
 from .media_storage import MediaManager, StorageError
 from .v4l2_capture import V4L2CameraCapture
+from .video_recorder import VideoRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +55,8 @@ class CameraIpcServer:
             self.media_manager = MediaManager(media_dir=media_storage_dir)
         else:
             self.media_manager = MediaManager()
+
+        self.recorder = VideoRecorder(self.capture, self.media_manager)
 
         self._server_sock: socket.socket | None = None
         self._running = False
@@ -104,6 +105,9 @@ class CameraIpcServer:
             sock = self._server_sock
             self._server_sock = None
 
+        if self.recorder:
+            self.recorder.shutdown()
+
         if sock:
             try:
                 sock.close()
@@ -133,12 +137,12 @@ class CameraIpcServer:
             "state": state.value if isinstance(state, CameraState) else str(state),
             "frame_age_sec": self.capture.frame_age_sec,
             "profile": profile,
-            "recording_state": "disabled",
-            "recording_id": None,
-            "elapsed_sec": None,
+            "recording_state": self.recorder.state,
+            "recording_id": self.recorder.recording_id,
+            "elapsed_sec": self.recorder.elapsed_sec,
             "storage_available_bytes": storage_available,
             "viewers_count": self.capture.viewers_count,
-            "last_error": self.capture.last_error,
+            "last_error": self.recorder.last_error or self.capture.last_error,
         }
 
     def _accept_loop(self) -> None:
@@ -299,13 +303,16 @@ class CameraIpcServer:
                     )
                     client_sock.sendall(resp.encode("utf-8"))
                     return
+                content_type = (
+                    "video/mp4" if item.get("type") == "video" else "image/jpeg"
+                )
                 header = (
                     json.dumps(
                         {
                             "success": True,
                             "media_id": media_id,
                             "filename": item["filename"],
-                            "content_type": "image/jpeg",
+                            "content_type": content_type,
                             "size": item["bytes"],
                         }
                     )
@@ -321,16 +328,19 @@ class CameraIpcServer:
                 return
 
             elif action == "record":
-                resp = (
-                    json.dumps(
-                        {
-                            "success": False,
-                            "error": "FEATURE_DISABLED",
-                            "detail": "Action 'record' is disabled in CAM-3 (pending CAM-4)",
-                        }
-                    )
-                    + "\n"
+                request_id = req.get("request_id")
+                idempotency_key = req.get("idempotency_key")
+                res = self.recorder.start_recording(
+                    request_id=request_id, idempotency_key=idempotency_key
                 )
+                resp = json.dumps(res) + "\n"
+                client_sock.sendall(resp.encode("utf-8"))
+                return
+
+            elif action == "stop_recording":
+                recording_id = req.get("recording_id")
+                res = self.recorder.stop_recording(recording_id)
+                resp = json.dumps(res) + "\n"
                 client_sock.sendall(resp.encode("utf-8"))
                 return
 

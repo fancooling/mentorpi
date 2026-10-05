@@ -3,6 +3,7 @@ import type {
   CameraCaptureRequest,
   CameraCaptureResponse,
   CameraMediaListResponse,
+  CameraRecordingResponse,
   CameraStatusResponse,
   ControlAcquireRequest,
   ControlAcquireResponse,
@@ -163,7 +164,20 @@ export class ApiClient {
       { method: 'GET' }
     );
   }
+
+  /** Start or retrieve the active server-owned recording; keys allow retries. */
+  async startRecording(req: CameraCaptureRequest = {}): Promise<CameraRecordingResponse> {
+    return this.request<CameraRecordingResponse>('/api/v1/camera/recordings', {
+      method: 'POST', body: JSON.stringify(req),
+    });
+  }
+
+  /** Request finalization of this recording without stopping a newer one. */
+  async stopRecording(id: string): Promise<CameraRecordingResponse> {
+    return this.request<CameraRecordingResponse>(
+      `/api/v1/camera/recordings/${encodeURIComponent(id)}/stop`, { method: 'POST' }
+    );
+  }
 }
 
 export const apiClient = new ApiClient();
-

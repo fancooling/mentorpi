@@ -5,13 +5,16 @@ from __future__ import annotations
 import os
 import stat
 import struct
+import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import Request
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 from ubuntu_tank_camera.ipc_server import CameraIpcServer
 from ubuntu_tank_camera.media_storage import MediaManager, StorageError
@@ -22,17 +25,16 @@ from ubuntu_tank_camera.v4l2_capture import (
     V4L2_PIX_FMT_MJPEG,
     V4L2CameraCapture,
 )
+from ubuntu_tank_camera.video_recorder import VideoRecorder
 from ubuntu_tank_protocol.camera_client import CameraIpcClient
 from ubuntu_tank_protocol.enums import CameraState
-from ubuntu_tank_web.models import CameraCaptureRequestModel
 from ubuntu_tank_web.routes_api import (
     get_camera_media,
     get_camera_media_download,
     get_camera_status,
     get_camera_stream,
     post_camera_capture,
-    post_camera_recording,
-    post_camera_recording_stop,
+    router,
 )
 
 
@@ -525,15 +527,6 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
             await get_camera_media_download("unknown-media-id", self.mock_request)
         self.assertEqual(ctx.exception.status_code, 404)
 
-        # 5. CAM-4 recording endpoints remain 503
-        with self.assertRaises(Exception) as ctx:
-            await post_camera_recording(self.mock_request)
-        self.assertEqual(ctx.exception.status_code, 503)
-
-        with self.assertRaises(Exception) as ctx:
-            await post_camera_recording_stop("rec_test", self.mock_request)
-        self.assertEqual(ctx.exception.status_code, 503)
-
     async def test_capture_does_not_mutate_robot_control(self):
         self.mock_app.state.active_owner = "test-owner"
         self.mock_app.state.guard_armed = False
@@ -544,6 +537,226 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
         # Confirm operator/control attributes remain untouched
         self.assertEqual(self.mock_app.state.active_owner, "test-owner")
         self.assertFalse(self.mock_app.state.guard_armed)
+
+
+class TestRecordingHttp(unittest.TestCase):
+    """Exercise FastAPI response validation for every successful start variant."""
+
+    def test_recording_responses_through_http(self):
+        app = FastAPI()
+        app.include_router(router)
+        camera = MagicMock()
+        app.state.camera_client = camera
+        with TestClient(app) as client:
+            for state in ("recording", "finalizing", "completed"):
+                with self.subTest(state=state):
+                    camera.record.return_value = {
+                        "success": True,
+                        "recording_id": "rec-123",
+                        "state": state,
+                    }
+                    response = client.post(
+                        "/api/v1/camera/recordings", json={"idempotency_key": "retry"}
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json()["recording_id"], "rec-123")
+                    self.assertEqual(response.json()["state"], state)
+                    camera.record.assert_called_with(
+                        request_id=None, idempotency_key="retry"
+                    )
+            camera.stop_recording.return_value = {
+                "success": True,
+                "recording_id": "rec-123",
+                "state": "finalizing",
+            }
+            response = client.post("/api/v1/camera/recordings/rec-123/stop")
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["state"], "finalizing")
+
+
+class TestVideoRecorder(unittest.TestCase):
+    """Check publication against real MP4 bytes with controlled encoder outcomes."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.video = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "mjpeg",
+                "-r",
+                "10",
+                "-i",
+                "-",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+frag_keyframe+empty_moov",
+                "-f",
+                "mp4",
+                "pipe:1",
+            ],
+            input=get_synthetic_jpeg_frame() * 20,
+            capture_output=True,
+            check=True,
+        ).stdout
+
+    def run_recording(
+        self,
+        output,
+        exit_code=0,
+        timeout=False,
+        capture_during=False,
+        fail_index=False,
+        camera_loss=False,
+    ):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        manager = MediaManager(media_dir=directory.name)
+        capture = MagicMock(width=640, height=480, fps=10)
+        capture.wait_for_new_frame.side_effect = lambda *args, **kwargs: (
+            time.sleep(0.01),
+            None,
+        )
+        recorder = VideoRecorder(capture, manager)
+        proc = MagicMock()
+        proc.stdin = self.enterContext(tempfile.TemporaryFile())
+        proc.wait.side_effect = (
+            [subprocess.TimeoutExpired("ffmpeg", 5), -9] if timeout else None
+        )
+        proc.wait.return_value = exit_code
+
+        def spawn(command, **kwargs):
+            with open(command[-1], "wb") as stream:
+                stream.write(output)
+            return proc
+
+        with patch(
+            "ubuntu_tank_camera.video_recorder.subprocess.Popen", side_effect=spawn
+        ):
+            response = recorder.start_recording(idempotency_key="record-key")
+        self.assertTrue(response["success"])
+        if capture_during:
+            manager.save_capture(get_synthetic_jpeg_frame())
+        replace = os.replace
+
+        def replace_with_index_failure(source, destination):
+            if destination == manager.index_path:
+                raise OSError("index storage unavailable")
+            return replace(source, destination)
+
+        failure = (
+            patch("os.replace", side_effect=replace_with_index_failure)
+            if fail_index
+            else nullcontext()
+        )
+        with failure:
+            if camera_loss:
+                with patch(
+                    "ubuntu_tank_camera.video_recorder.DEFAULT_CAMERA_FRESHNESS_TIMEOUT_SEC",
+                    0.05,
+                ):
+                    recorder._thread.join(timeout=2)
+                self.assertFalse(recorder._thread.is_alive())
+            else:
+                recorder.stop_recording(response["recording_id"])
+            recorder.shutdown()
+        self.assertFalse(recorder._thread.is_alive())
+        capture.remove_viewer.assert_called_once()
+        return recorder, manager, proc
+
+    def test_success_is_downloadable_and_cached(self):
+        recorder, manager, _ = self.run_recording(self.video)
+        items = manager.list_media()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0]["completed"])
+        self.assertIsNotNone(manager.get_media(items[0]["media_id"])[1])
+        self.assertEqual(
+            recorder.start_recording(idempotency_key="record-key")["state"], "completed"
+        )
+        self.assertIsNone(recorder.last_error)
+
+    def test_empty_and_invalid_outputs_are_not_completed_media(self):
+        for output, code in ((b"", 69), (b"invalid MP4", 0), (b"", 0)):
+            with self.subTest(code=code, output=output):
+                recorder, manager, _ = self.run_recording(output, exit_code=code)
+                self.assertEqual(manager.list_media()["items"], [])
+                self.assertEqual(recorder.state, "error")
+                self.assertTrue(recorder.last_error)
+
+    def test_failed_encoder_preserves_recoverable_footage_as_interrupted(self):
+        recorder, manager, proc = self.run_recording(self.video, exit_code=69)
+        item = manager.list_media()["items"][0]
+        self.assertFalse(item["completed"])
+        self.assertIn("interrupted", item["filename"])
+        self.assertEqual(recorder.state, "error")
+        self.assertIn("69", recorder.last_error)
+        proc.wait.assert_called_once()
+        recovered = MediaManager(media_dir=manager.media_dir).list_media()["items"][0]
+        self.assertFalse(recovered["completed"])
+
+    def test_finalization_timeout_kills_reaps_and_marks_interrupted(self):
+        recorder, manager, proc = self.run_recording(self.video, timeout=True)
+        proc.kill.assert_called_once()
+        self.assertEqual(proc.wait.call_count, 2)
+        self.assertFalse(manager.list_media()["items"][0]["completed"])
+        self.assertIn("timed out", recorder.last_error)
+
+    def test_video_sorts_after_photo_captured_during_recording(self):
+        _, manager, _ = self.run_recording(self.video, capture_during=True)
+        items = manager.list_media()["items"]
+        self.assertEqual([item["type"] for item in items], ["video", "image"])
+
+    def test_camera_loss_finishes_with_interrupted_footage(self):
+        recorder, manager, _ = self.run_recording(self.video, camera_loss=True)
+        self.assertEqual(recorder.state, "error")
+        self.assertIn("frames stopped", recorder.last_error)
+        self.assertFalse(manager.list_media()["items"][0]["completed"])
+
+    def test_index_failure_is_reported_and_restart_recovers_orphan(self):
+        recorder, manager, _ = self.run_recording(self.video, fail_index=True)
+        self.assertEqual(recorder.state, "error")
+        self.assertIn("index storage unavailable", recorder.last_error)
+        self.assertEqual(manager.list_media()["items"], [])
+        self.assertGreater(manager.get_total_used_bytes(), 0)
+        reloaded = MediaManager(media_dir=manager.media_dir)
+        recovered = VideoRecorder(recorder.capture, reloaded)
+        item = reloaded.list_media()["items"][0]
+        self.assertFalse(item["completed"])
+        self.assertEqual(recovered.state, "error")
+        self.assertEqual(
+            MediaManager(media_dir=manager.media_dir).list_media()["total"], 1
+        )
+
+    def test_restart_recovers_temporary_fragment_and_counts_orphan_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = os.path.join(directory, ".tmp.012345abcdef.mp4")
+            with open(temporary, "wb") as stream:
+                stream.write(self.video)
+            manager = MediaManager(media_dir=directory)
+            self.assertEqual(manager.get_total_used_bytes(), len(self.video))
+            capture = MagicMock(width=640, height=480, fps=10)
+            recorder = VideoRecorder(capture, manager)
+            self.assertIsNone(recorder.recording_id)
+            capture.add_viewer.assert_not_called()
+            item, path = manager.get_media("012345abcdef")
+            self.assertFalse(item["completed"])
+            self.assertTrue(os.path.exists(path))
+            self.assertFalse(os.path.exists(temporary))
+            self.assertEqual(manager.get_total_used_bytes(), len(self.video))
+
+    def test_status_reports_recording_failure(self):
+        recorder, manager, _ = self.run_recording(b"", exit_code=69)
+        server = CameraIpcServer(recorder.capture, media_storage_dir=manager.media_dir)
+        server.recorder = recorder
+        self.assertEqual(server.get_status_dict()["last_error"], recorder.last_error)
+        self.assertEqual(server.get_status_dict()["recording_state"], "error")
 
 
 class TestAuroraProcess(unittest.TestCase):

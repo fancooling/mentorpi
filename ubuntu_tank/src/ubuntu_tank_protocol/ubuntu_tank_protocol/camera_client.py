@@ -196,6 +196,89 @@ class CameraIpcClient:
             except Exception:
                 pass
 
+    def record(
+        self,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+        timeout_sec: float = 3.0,
+    ) -> dict[str, Any]:
+        """Request to start a video recording."""
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout_sec)
+        try:
+            sock.connect(self.socket_path)
+            payload: dict[str, Any] = {"action": "record"}
+            if request_id is not None:
+                payload["request_id"] = request_id
+            if idempotency_key is not None:
+                payload["idempotency_key"] = idempotency_key
+            req = json.dumps(payload) + "\n"
+            sock.sendall(req.encode("utf-8"))
+
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    break
+            if not buf:
+                raise ConnectionError("Empty response from camera service")
+            line, _ = buf.split(b"\n", 1)
+            return json.loads(line.decode("utf-8"))
+        except Exception as exc:
+            logger.debug("Failed to start recording at '%s': %s", self.socket_path, exc)
+            return {
+                "success": False,
+                "error": "CAMERA_UNAVAILABLE",
+                "detail": f"Camera unreachable: {exc}",
+            }
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def stop_recording(
+        self,
+        recording_id: str,
+        timeout_sec: float = 3.0,
+    ) -> dict[str, Any]:
+        """Request to stop a video recording."""
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout_sec)
+        try:
+            sock.connect(self.socket_path)
+            payload = {"action": "stop_recording", "recording_id": recording_id}
+            req = json.dumps(payload) + "\n"
+            sock.sendall(req.encode("utf-8"))
+
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    break
+            if not buf:
+                raise ConnectionError("Empty response from camera service")
+            line, _ = buf.split(b"\n", 1)
+            return json.loads(line.decode("utf-8"))
+        except Exception as exc:
+            logger.debug("Failed to stop recording at '%s': %s", self.socket_path, exc)
+            return {
+                "success": False,
+                "error": "CAMERA_UNAVAILABLE",
+                "detail": f"Camera unreachable: {exc}",
+            }
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
     def list_media(
         self,
         limit: int = 50,

@@ -258,7 +258,7 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     expect(apiCalls).toEqual([]);
   });
 
-  test('6. CAM-3 production mode: live status binding, stream image rendering, capture enabled and record disabled', async ({ page }) => {
+  test('6. CAM-4 production mode: live preview and media controls enabled', async ({ page }) => {
     await page.route('**/api/v1/camera/status', async (route) => {
       await route.fulfill({
         status: 200,
@@ -299,13 +299,13 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     await expect(streamImg).toBeVisible();
     await expect(streamImg).toHaveAttribute('src', /\/api\/v1\/camera\/stream\?attempt=/);
 
-    // In CAM-3: Capture is enabled during live stream; Record remains disabled (planned for CAM-4)
+    // Production media controls are available while frames are fresh.
     const captureBtn = cameraPanel.locator('.btn-capture');
     const recordBtn = cameraPanel.locator('.camera-btn').nth(1);
     await expect(captureBtn).toBeEnabled();
-    await expect(recordBtn).toBeDisabled();
+    await expect(recordBtn).toBeEnabled();
     await expect(captureBtn).toHaveAttribute('title', 'Capture JPEG frame');
-    await expect(recordBtn).toHaveAttribute('title', /disabled in CAM-3/i);
+    await expect(recordBtn).toHaveAttribute('title', 'Start video recording');
 
     // Review fixtures box is hidden in production mode
     await expect(cameraPanel.locator('.review-fixtures-box')).toHaveCount(0);
@@ -345,9 +345,9 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     await expect(page.locator('.btn-capture')).toBeDisabled();
     state = 'live';
     await expect(badge).toContainText('Live');
-    // When live again, capture is enabled, record remains disabled
+    // When frames return, both media actions become available.
     await expect(page.locator('.btn-capture')).toBeEnabled();
-    await expect(page.locator('.btn-record')).toBeDisabled();
+    await expect(page.locator('.btn-record')).toBeEnabled();
   });
 
   test('8. CAM-3 production capture saves image and displays persistent download link', async ({ page }) => {
@@ -418,3 +418,67 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
   });
 
 });
+
+for (const completion of ['manual', 'automatic', 'failure']) {
+  test(`Production recording ${completion}: requests and download refresh`, async ({ page }) => {
+    let recordingState = 'disabled';
+    let media: object[] = [];
+    let starts = 0;
+    let stops = 0;
+    await page.route('**/api/v1/camera/status', route => route.fulfill({ json: {
+      state: 'live', frame_age_sec: 0.05,
+      profile: { width: 640, height: 400, fps: 10 },
+      recording_state: recordingState,
+      recording_id: ['recording', 'finalizing'].includes(recordingState) ? 'rec-test' : null,
+      elapsed_sec: 3, storage_available_bytes: 1073741824, viewers_count: 1,
+      last_error: recordingState === 'error' ? 'Recording encoder exited with status 69' : null,
+    } }));
+    await page.route('**/api/v1/camera/stream*', route => route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"/>',
+    }));
+    await page.route('**/api/v1/camera/media?*', route => route.fulfill({
+      json: { items: media, total: media.length, limit: 1, offset: 0 },
+    }));
+    await page.route('**/api/v1/camera/recordings', route => {
+      expect(route.request().method()).toBe('POST');
+      expect(route.request().postDataJSON()).toEqual({});
+      starts++;
+      recordingState = 'recording';
+      return route.fulfill({ json: { recording_id: 'rec-test', state: recordingState, elapsed_sec: 0, url: null } });
+    });
+    await page.route('**/api/v1/camera/recordings/rec-test/stop', route => {
+      expect(route.request().method()).toBe('POST');
+      stops++;
+      recordingState = 'finalizing';
+      return route.fulfill({ json: { recording_id: 'rec-test', state: recordingState, elapsed_sec: 3, url: null } });
+    });
+    await page.goto('/');
+    const panel = page.locator('.camera-panel');
+    const button = panel.locator('.camera-btn').nth(1);
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect(button).toContainText('Stop recording');
+    expect(starts).toBe(1);
+    if (completion === 'manual') {
+      await button.click();
+      await expect(button).toBeDisabled();
+      await expect(panel.locator('.camera-feedback')).toContainText('Finalizing');
+      await expect(panel.locator('.camera-stream-img')).toBeVisible();
+      expect(stops).toBe(1);
+    }
+    media = [{ media_id: 'rec-test', type: 'video', filename: 'record_test.mp4',
+      timestamp: 1, url: '/api/v1/camera/media/rec-test', width: 640, height: 400,
+      bytes: 1234, completed: completion !== 'failure' }];
+    recordingState = completion === 'failure' ? 'error' : 'disabled';
+    await expect(panel.locator('.media-download-link')).toHaveAttribute('href', '/api/v1/camera/media/rec-test');
+    await expect(panel.locator('.camera-feedback')).toContainText(
+      completion === 'failure' ? 'encoder exited' : 'Download is ready'
+    );
+    if (completion === 'failure') {
+      await expect(panel.locator('.media-download-link')).toContainText('interrupted');
+    }
+    await expect(button).toBeEnabled();
+    if (completion !== 'manual') expect(stops).toBe(0);
+  });
+}

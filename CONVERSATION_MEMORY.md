@@ -1,6 +1,6 @@
 # MentorPi Conversation Memory
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 Keep this file concise. Read `AGENTS.md` for working rules, `GEMINI.md` for platform safety,
 and `docs/DESIGN.md` for architecture, control contracts, and deployment workflows.
@@ -105,3 +105,16 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   live capture downloaded real JPEGs successfully, media survived container
   restart, storage limits and error conditions were correctly handled, and
   capturing images did not interfere with or change the robot's motion state.
+
+- CAM-4 ("Recording and recovery") implemented with server-owned fragmented MP4,
+  typed recording controls, and download refresh after manual/automatic completion.
+  Encoder failure, missing frames, and finalization timeout report errors; playable
+  partial files are marked interrupted. Startup reconciles orphaned MP4s, which
+  count against the quota. Publication requires durable media-index persistence.
+  Videos sort by completion time, including when a photo was captured mid-recording.
+- CAM-4 independent critical review passed after remediation. Full local validation
+  (`./ubuntu_tank/deploy.sh test`): 609 Python tests passed, one native ROS test
+  skipped, and 56 browser tests passed, including 43 camera tests in the Python total.
+  Source/dependency gates passed; no new Ruff diagnostics (eight existing remain).
+  Real Pi recording/playback, power-loss recovery, and concurrent motor operation
+  remain unvalidated; no CAM-4 deployment or motor movement was performed.

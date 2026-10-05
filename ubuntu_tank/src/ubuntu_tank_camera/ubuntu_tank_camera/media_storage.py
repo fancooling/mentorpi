@@ -117,9 +117,11 @@ class MediaManager:
             self._index = valid_entries
             self._save_index_locked()
 
-    def _save_index_locked(self) -> None:
+    def _save_index_locked(self, *, strict: bool = False) -> None:
         """Persist current index atomically to disk while holding lock."""
         if not os.path.isdir(self.media_dir):
+            if strict:
+                raise FileNotFoundError(self.media_dir)
             return
         temp_path = os.path.join(self.media_dir, f".index.tmp.{uuid.uuid4().hex[:8]}")
         try:
@@ -138,11 +140,52 @@ class MediaManager:
                     os.remove(temp_path)
                 except OSError:
                     pass
+            if strict:
+                raise
+
+    def register_recording(
+        self, item: dict[str, Any], idempotency_key: str | None = None
+    ) -> None:
+        """Publish video metadata only after durable index replacement.
+
+        Raise OSError on persistence failure, leaving the file for startup recovery.
+        Idempotency entries are installed only after the index is saved.
+        """
+        with self._lock:
+            media_id = item["media_id"]
+            previous = self._index.get(media_id)
+            self._index[media_id] = item
+            try:
+                self._save_index_locked(strict=True)
+            except OSError:
+                if previous is None:
+                    del self._index[media_id]
+                else:
+                    self._index[media_id] = previous
+                raise
+            if idempotency_key:
+                self._idempotency_cache[idempotency_key] = item
 
     def get_total_used_bytes(self) -> int:
-        """Calculate total storage space currently occupied by saved media."""
+        """Count indexed media plus active and orphaned MP4s against the quota."""
         with self._lock:
-            return sum(item.get("bytes", 0) for item in self._index.values())
+            used = sum(item.get("bytes", 0) for item in self._index.values())
+            indexed = {item["filename"] for item in self._index.values()}
+            try:
+                with os.scandir(self.media_dir) as entries:
+                    for entry in entries:
+                        if (
+                            entry.name not in indexed
+                            and entry.name.endswith(".mp4")
+                            and entry.name.startswith((".tmp.", "record_"))
+                        ):
+                            try:
+                                used += entry.stat().st_size
+                            except FileNotFoundError:
+                                continue
+            except FileNotFoundError:
+                pass
+            return used
 
     def get_available_storage_bytes(self) -> int:
         """Return minimum of remaining quota and actual filesystem free space."""
