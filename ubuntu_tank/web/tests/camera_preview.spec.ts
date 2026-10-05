@@ -258,7 +258,7 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     expect(apiCalls).toEqual([]);
   });
 
-  test('6. CAM-2 production mode: live status binding, stream image rendering, and disabled buttons', async ({ page }) => {
+  test('6. CAM-3 production mode: live status binding, stream image rendering, capture enabled and record disabled', async ({ page }) => {
     await page.route('**/api/v1/camera/status', async (route) => {
       await route.fulfill({
         status: 200,
@@ -299,17 +299,18 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     await expect(streamImg).toBeVisible();
     await expect(streamImg).toHaveAttribute('src', /\/api\/v1\/camera\/stream\?attempt=/);
 
-    // Capture and Record buttons are disabled in CAM-2
+    // In CAM-3: Capture is enabled during live stream; Record remains disabled (planned for CAM-4)
     const captureBtn = cameraPanel.locator('.btn-capture');
     const recordBtn = cameraPanel.locator('.camera-btn').nth(1);
-    await expect(captureBtn).toBeDisabled();
+    await expect(captureBtn).toBeEnabled();
     await expect(recordBtn).toBeDisabled();
-    await expect(captureBtn).toHaveAttribute('title', /disabled in CAM-2/i);
-    await expect(recordBtn).toHaveAttribute('title', /disabled in CAM-2/i);
+    await expect(captureBtn).toHaveAttribute('title', 'Capture JPEG frame');
+    await expect(recordBtn).toHaveAttribute('title', /disabled in CAM-3/i);
 
     // Review fixtures box is hidden in production mode
     await expect(cameraPanel.locator('.review-fixtures-box')).toHaveCount(0);
   });
+
   test('7. Production preview reports a status outage and recovers from idle', async ({ page }) => {
     let state = 'live';
     let offline = false;
@@ -334,14 +335,86 @@ test.describe('CAM-1 Camera UI Preview and Standalone Review Mode', () => {
     offline = true;
     await expect(badge).toContainText('Unavailable');
     await expect(page.locator('.camera-stream-img')).toHaveCount(0);
+    // When offline/unavailable, capture is disabled
+    await expect(page.locator('.btn-capture')).toBeDisabled();
     state = 'stale';
     offline = false;
     await expect(page.locator('.camera-stream-img')).toBeVisible();
     await expect.poll(() => streams).toBeGreaterThan(1);
+    // When stale, capture is disabled
+    await expect(page.locator('.btn-capture')).toBeDisabled();
     state = 'live';
     await expect(badge).toContainText('Live');
-    await expect(page.locator('.btn-capture')).toBeDisabled();
+    // When live again, capture is enabled, record remains disabled
+    await expect(page.locator('.btn-capture')).toBeEnabled();
     await expect(page.locator('.btn-record')).toBeDisabled();
+  });
+
+  test('8. CAM-3 production capture saves image and displays persistent download link', async ({ page }) => {
+    await page.route('**/api/v1/camera/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          state: 'live',
+          frame_age_sec: 0.05,
+          profile: { width: 640, height: 480, fps: 15 },
+          recording_state: 'disabled',
+          recording_id: null,
+          elapsed_sec: null,
+          storage_available_bytes: 1073741824,
+          viewers_count: 1,
+          last_error: null,
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/camera/stream*', route => route.fulfill({
+      headers: { 'Cache-Control': 'no-store' }, contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"/>',
+    }));
+
+    await page.route('**/api/v1/camera/media*', async route => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, limit: 1, offset: 0 }),
+      });
+    });
+
+    await page.route('**/api/v1/camera/captures', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          media_id: 'img123',
+          filename: 'capture_20261005_120000_img123.jpg',
+          type: 'image',
+          timestamp: Date.now() / 1000,
+          url: '/api/v1/camera/media/img123',
+          width: 640,
+          height: 480,
+          bytes: 12345,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    const cameraPanel = page.locator('.camera-panel');
+    const captureBtn = cameraPanel.locator('.btn-capture');
+    await expect(captureBtn).toBeEnabled();
+
+    // Click capture
+    await captureBtn.click();
+
+    // Feedback shows capture success
+    await expect(page.locator('.camera-feedback')).toContainText('capture_20261005_120000_img123.jpg');
+
+    // Download link appears
+    const link = cameraPanel.locator('.media-download-link');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveText('capture_20261005_120000_img123.jpg');
+    await expect(link).toHaveAttribute('href', '/api/v1/camera/media/img123');
+    await expect(link).toHaveAttribute('download', 'capture_20261005_120000_img123.jpg');
   });
 
 });

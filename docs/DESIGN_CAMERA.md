@@ -200,12 +200,38 @@ Acceptance:
 Implement fresh-frame capture, atomic JPEG storage, media listing, and download
 links. Add quota/free-space enforcement and documented cleanup procedures.
 
+Storage policy and enforcement:
+- Dedicated host directory `/var/opt/ubuntu_tank/media` (mode 0700, UID 10001:10001) mounted read-write only into the `runtime` container. Web service streams downloads over IPC without filesystem access.
+- Quota: Default 1 GiB (`DEFAULT_MEDIA_QUOTA_BYTES`).
+- Free-space reserve: Default 100 MiB (`DEFAULT_MIN_FREE_BYTES`).
+- Bounded capture freshness: Default 3.0 seconds (`DEFAULT_CAPTURE_TIMEOUT_SEC`).
+- Structured errors: `LOW_STORAGE` (HTTP 507), `STORAGE_QUOTA_EXCEEDED` (HTTP 507), `STALE_FRAMES` (HTTP 503), `CAMERA_UNAVAILABLE` (HTTP 503).
+- Atomicity: Images are written to `.tmp.<id>` files, flushed to disk (`fsync`), atomically renamed (`os.replace`), and indexed in `index.json`.
+
+Owner storage inspection and cleanup procedures:
+```bash
+# Check current media storage footprint on the Pi host:
+du -sh /var/opt/ubuntu_tank/media
+ls -la /var/opt/ubuntu_tank/media
+
+# Query saved media metadata through public REST API:
+curl -k https://<ROBOT_IP>:8443/api/v1/camera/media
+
+# Clean up older captures to free quota (e.g., captures older than 7 days):
+sudo find /var/opt/ubuntu_tank/media -name "capture_*.jpg" -mtime +7 -delete
+
+# Manually purge all image captures:
+sudo rm -f /var/opt/ubuntu_tank/media/*.jpg
+# The runtime worker automatically heals missing entries upon next scan or restart.
+```
+
 Acceptance:
 
 - Open downloaded JPEGs from the real camera; verify saved media survives restart.
 - Test stale-camera rejection, repeated requests, concurrent captures, write
   failures, unknown media IDs, and low-storage errors through public behavior.
 - Confirm Capture never changes robot ownership, arming, or motion state.
+
 
 ### CAM-4 — Recording and recovery
 

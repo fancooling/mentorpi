@@ -221,6 +221,7 @@
       <span class="media-label">Latest image / video:</span>
       <div v-if="latestMedia" class="media-link-wrapper">
         <a
+          v-if="isReviewMode || !latestMedia.url"
           href="#"
           class="media-download-link disabled-example"
           aria-disabled="true"
@@ -228,6 +229,16 @@
           role="link"
           title="Download link disabled — UI preview example"
           @click.prevent
+        >
+          {{ latestMedia.filename }}
+        </a>
+        <a
+          v-else
+          :href="latestMedia.url"
+          :download="latestMedia.filename"
+          class="media-download-link"
+          role="link"
+          :title="`Download ${latestMedia.filename}`"
         >
           {{ latestMedia.filename }}
         </a>
@@ -298,6 +309,8 @@ interface MediaItem {
   filename: string;
   type: 'image' | 'video';
   timestamp: number;
+  url?: string;
+  id?: string;
 }
 
 const selectedFixture = ref<FixtureState>('interactive');
@@ -356,6 +369,25 @@ async function fetchStatus() {
   }
 }
 
+async function fetchLatestMedia() {
+  if (props.isReviewMode) return;
+  try {
+    const res = await apiClient.getCameraMedia(1, 0);
+    if (res.items && res.items.length > 0) {
+      const top = res.items[0];
+      latestMedia.value = {
+        filename: top.filename,
+        type: top.type === 'video' ? 'video' : 'image',
+        timestamp: top.timestamp,
+        url: top.url,
+        id: top.media_id,
+      };
+    }
+  } catch {
+    // Non-fatal if media fetch fails
+  }
+}
+
 function onVisibilityChange() {
   if (typeof document !== 'undefined' && !document.hidden && !props.isReviewMode) {
     void fetchStatus();
@@ -382,7 +414,8 @@ watch(
       }
     } else {
       latestMedia.value = null;
-      fetchStatus();
+      void fetchStatus();
+      void fetchLatestMedia();
       if (!pollTimerId) {
         pollTimerId = setInterval(fetchStatus, 1500);
       }
@@ -501,10 +534,29 @@ const effectiveFeedback = computed<{ text: string; type: FeedbackType }>(() => {
     };
   }
   const s = cameraStatus.value;
+  if (s.state === 'unavailable') {
+    return {
+      text: s.last_error
+        ? `Camera unavailable: ${s.last_error}`
+        : 'Camera unavailable — device disconnected or worker stopped.',
+      type: 'warning',
+    };
+  }
+  if (s.state === 'error') {
+    return {
+      text: s.last_error
+        ? `Camera error: ${s.last_error}`
+        : 'Camera communication failure.',
+      type: 'error',
+    };
+  }
+  if (pendingAction.value || feedback.value.type === 'success' || feedback.value.type === 'error') {
+    return feedback.value;
+  }
   switch (s.state) {
     case 'live':
       return {
-        text: 'Live preview active. Capture and Record are disabled in CAM-2.',
+        text: 'Live preview active. Video recording is disabled in CAM-3 (planned for CAM-4).',
         type: 'info',
       };
     case 'stale':
@@ -513,20 +565,6 @@ const effectiveFeedback = computed<{ text: string; type: FeedbackType }>(() => {
           s.frame_age_sec !== null ? s.frame_age_sec.toFixed(1) : '?'
         }s ago).`,
         type: 'warning',
-      };
-    case 'unavailable':
-      return {
-        text: s.last_error
-          ? `Camera unavailable: ${s.last_error}`
-          : 'Camera unavailable — device disconnected or worker stopped.',
-        type: 'warning',
-      };
-    case 'error':
-      return {
-        text: s.last_error
-          ? `Camera error: ${s.last_error}`
-          : 'Camera communication failure.',
-        type: 'error',
       };
     case 'connecting':
       return {
@@ -561,31 +599,44 @@ const feedbackIcon = computed(() => {
 });
 
 // Can Capture:
-// In CAM-2 production: disabled with clear explanation.
-// In review mode: enabled during live and recording. Disabled when frames are stale, unavailable, connecting, error, or pending.
+// In CAM-3 production: enabled during live and recording. Disabled when frames are stale, unavailable, connecting, error, or pending.
+// In review mode: enabled during interactive and live fixtures. Disabled when frames are stale, unavailable, connecting, error, or pending.
 const canCapture = computed(() => {
-  if (!props.isReviewMode) {
-    return false; // Disabled in CAM-2
+  if (isPending.value || pendingAction.value !== null) return false;
+  if (props.isReviewMode) {
+    if (effectiveState.value === 'pending') return false;
+    if (selectedFixture.value === 'interactive') return true;
+    if (selectedFixture.value === 'live') return true;
+    return false;
   }
-  if (isPending.value || effectiveState.value === 'pending') return false;
-  if (selectedFixture.value === 'interactive') return true;
-  if (selectedFixture.value === 'live') return true;
-  return false;
+  return effectiveState.value === 'live' || effectiveState.value === 'recording';
 });
 
 const captureTitle = computed(() => {
-  if (!props.isReviewMode) {
-    return 'Capture is disabled in CAM-2 (planned for CAM-3)';
+  if (props.isReviewMode) {
+    return canCapture.value ? 'Capture JPEG frame' : 'Capture unavailable in current state';
   }
-  return canCapture.value ? 'Capture JPEG frame' : 'Capture unavailable in current state';
+  if (canCapture.value) {
+    return 'Capture JPEG frame';
+  }
+  if (effectiveState.value === 'stale') {
+    return 'Capture unavailable: camera frames are stale';
+  }
+  if (effectiveState.value === 'unavailable') {
+    return 'Capture unavailable: camera is disconnected';
+  }
+  if (effectiveState.value === 'connecting') {
+    return 'Capture unavailable: camera connecting';
+  }
+  return 'Capture unavailable in current state';
 });
 
 // Can Record:
-// In CAM-2 production: disabled with clear explanation.
+// In CAM-3 production: disabled with clear explanation (planned for CAM-4).
 // In review mode: enabled during interactive/live, or Stop recording during recording.
 const canRecord = computed(() => {
   if (!props.isReviewMode) {
-    return false; // Disabled in CAM-2
+    return false; // Disabled in CAM-3 (planned for CAM-4)
   }
   if (isPending.value || effectiveState.value === 'pending') return false;
   if (effectiveState.value === 'finalizing') return false;
@@ -601,7 +652,7 @@ const canRecord = computed(() => {
 
 const recordTitle = computed(() => {
   if (!props.isReviewMode) {
-    return 'Recording is disabled in CAM-2 (planned for CAM-4)';
+    return 'Recording is disabled in CAM-3 (planned for CAM-4)';
   }
   return canRecord.value
     ? isRecording.value
@@ -616,27 +667,66 @@ function getTimestampStr(): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-// Action 1: Capture (works during recording as well in review mode)
-function handleCapture() {
+// Action 1: Capture (works during recording as well in review mode and production)
+async function handleCapture() {
   if (!canCapture.value) return;
+
+  if (props.isReviewMode) {
+    isPending.value = true;
+    pendingAction.value = 'capturing';
+
+    // Simulate short capture latency
+    setTimeout(() => {
+      isPending.value = false;
+      pendingAction.value = null;
+      feedback.value = {
+        text: 'Preview only — no image saved.',
+        type: 'info',
+      };
+      latestMedia.value = {
+        filename: `capture_${getTimestampStr()}.jpg (example)`,
+        type: 'image',
+        timestamp: Date.now(),
+      };
+    }, 250);
+    return;
+  }
 
   isPending.value = true;
   pendingAction.value = 'capturing';
+  feedback.value = {
+    text: 'Capturing fresh camera frame...',
+    type: 'info',
+  };
 
-  // Simulate short capture latency
-  setTimeout(() => {
+  try {
+    const res = await apiClient.captureCamera();
+    latestMedia.value = {
+      filename: res.filename || `${res.media_id}.jpg`,
+      type: 'image',
+      timestamp: res.timestamp,
+      url: res.url,
+      id: res.media_id,
+    };
+    feedback.value = {
+      text: `Captured ${latestMedia.value.filename} (${(res.bytes / 1024).toFixed(0)} KB).`,
+      type: 'success',
+    };
+  } catch (err: any) {
+    let msg = 'Failed to capture image';
+    if (err && err.detail) {
+      msg = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+    } else if (err && err.message) {
+      msg = err.message;
+    }
+    feedback.value = {
+      text: `Capture failed: ${msg}`,
+      type: 'error',
+    };
+  } finally {
     isPending.value = false;
     pendingAction.value = null;
-    feedback.value = {
-      text: 'Preview only — no image saved.',
-      type: 'info',
-    };
-    latestMedia.value = {
-      filename: `capture_${getTimestampStr()}.jpg (example)`,
-      type: 'image',
-      timestamp: Date.now(),
-    };
-  }, 250);
+  }
 }
 
 // Action 2: Record / Stop recording (in review mode)

@@ -81,6 +81,10 @@ services:
         source: /var/opt/ubuntu_tank/ros-log
         target: /var/opt/ubuntu_tank/ros-log
         bind: {create_host_path: false}
+      - type: bind
+        source: /var/opt/ubuntu_tank/media
+        target: /var/opt/ubuntu_tank/media
+        bind: {create_host_path: false}
   web:
     <<: *common
     image: ${WEB_IMAGE:?Set the web image digest from the release manifest}

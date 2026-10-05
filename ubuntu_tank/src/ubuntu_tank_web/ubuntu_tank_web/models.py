@@ -248,15 +248,46 @@ class CameraStatusResponseModel(BaseStrictModel):
     last_error: str | None = None
 
 
+class CameraCaptureRequestModel(BaseStrictModel):
+    """Optional parameters for camera capture request."""
+
+    request_id: str | None = None
+    idempotency_key: str | None = None
+
+
 class CameraCaptureResponseModel(BaseStrictModel):
     """Metadata response for a captured image."""
 
     media_id: str
+    filename: str
     timestamp: float
     url: str
     width: int
     height: int
     bytes: int
+
+
+class CameraMediaItemModel(BaseStrictModel):
+    """Metadata for a saved media file."""
+
+    media_id: str
+    type: Literal["image", "video"] = "image"
+    filename: str
+    timestamp: float
+    url: str
+    width: int
+    height: int
+    bytes: int
+    completed: bool = True
+
+
+class CameraMediaListResponseModel(BaseStrictModel):
+    """Paginated list of saved media files."""
+
+    items: list[CameraMediaItemModel] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
 
 
 class CameraRecordingResponseModel(BaseStrictModel):

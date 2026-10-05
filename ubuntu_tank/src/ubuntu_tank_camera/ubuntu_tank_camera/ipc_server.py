@@ -18,19 +18,21 @@ import time
 from typing import Any
 
 from ubuntu_tank_protocol.constants import (
+    DEFAULT_CAMERA_CAPTURE_TIMEOUT_SEC,
     DEFAULT_CAMERA_SOCKET_PATH,
     ENV_CAMERA_SOCKET_PATH,
     MAX_CAMERA_MESSAGE_BYTES,
 )
 from ubuntu_tank_protocol.enums import CameraState
 
+from .media_storage import MediaManager, StorageError
 from .v4l2_capture import V4L2CameraCapture
 
 logger = logging.getLogger(__name__)
 
 
 class CameraIpcServer:
-    """Unix domain socket server for camera status and streaming."""
+    """Unix domain socket server for camera status, streaming, and media storage."""
 
     STREAM_MAGIC = b"MJPG"
     HEADER_STRUCT = struct.Struct("!4sI")
@@ -39,6 +41,8 @@ class CameraIpcServer:
         self,
         capture: V4L2CameraCapture,
         socket_path: str | None = None,
+        media_manager: MediaManager | None = None,
+        media_storage_dir: str | None = None,
     ) -> None:
         if socket_path is None:
             socket_path = os.environ.get(
@@ -46,6 +50,12 @@ class CameraIpcServer:
             )
         self.socket_path = socket_path
         self.capture = capture
+        if media_manager is not None:
+            self.media_manager = media_manager
+        elif media_storage_dir is not None:
+            self.media_manager = MediaManager(media_dir=media_storage_dir)
+        else:
+            self.media_manager = MediaManager()
 
         self._server_sock: socket.socket | None = None
         self._running = False
@@ -117,15 +127,7 @@ class CameraIpcServer:
             "height": self.capture.height,
             "fps": self.capture.fps,
         }
-        # Measure available storage under media directory or root
-        storage_available = None
-        try:
-            media_dir = "/var/opt/ubuntu_tank/media"
-            target_path = media_dir if os.path.exists(media_dir) else "/"
-            usage = shutil.disk_usage(target_path)
-            storage_available = usage.free
-        except Exception:
-            pass
+        storage_available = self.media_manager.get_available_storage_bytes()
 
         return {
             "state": state.value if isinstance(state, CameraState) else str(state),
@@ -184,14 +186,147 @@ class CameraIpcServer:
                 self._handle_stream(client_sock)
                 return
 
-            elif action in ("capture", "record"):
-                # Disabled in CAM-2
+            elif action == "capture":
+                request_id = req.get("request_id") or req.get("idempotency_key")
+                if request_id and self.media_manager.has_idempotent(request_id):
+                    cached = self.media_manager.get_idempotent(request_id)
+                    if cached:
+                        resp = json.dumps({"success": True, "media": cached}) + "\n"
+                        client_sock.sendall(resp.encode("utf-8"))
+                        return
+
+                if self.capture.state in (
+                    CameraState.UNAVAILABLE,
+                    CameraState.ERROR,
+                ):
+                    resp = (
+                        json.dumps(
+                            {
+                                "success": False,
+                                "error": "CAMERA_UNAVAILABLE",
+                                "detail": f"Camera is unavailable: {self.capture.last_error or 'device not ready'}",
+                            }
+                        )
+                        + "\n"
+                    )
+                    client_sock.sendall(resp.encode("utf-8"))
+                    return
+
+                self.capture.add_viewer()
+                try:
+                    _, last_ts = self.capture.get_latest_frame()
+                    frame, new_ts = self.capture.wait_for_new_frame(
+                        last_ts, timeout_sec=DEFAULT_CAMERA_CAPTURE_TIMEOUT_SEC
+                    )
+                    if (
+                        frame is None
+                        or new_ts is None
+                        or (last_ts is not None and new_ts <= last_ts)
+                    ):
+                        resp = (
+                            json.dumps(
+                                {
+                                    "success": False,
+                                    "error": "STALE_FRAMES",
+                                    "detail": "Failed to acquire fresh camera frame within timeout",
+                                }
+                            )
+                            + "\n"
+                        )
+                        client_sock.sendall(resp.encode("utf-8"))
+                        return
+
+                    item = self.media_manager.save_capture(
+                        frame,
+                        width=self.capture.width,
+                        height=self.capture.height,
+                        request_id=request_id,
+                    )
+                    resp = json.dumps({"success": True, "media": item}) + "\n"
+                    client_sock.sendall(resp.encode("utf-8"))
+                    return
+                except StorageError as exc:
+                    resp = (
+                        json.dumps(
+                            {
+                                "success": False,
+                                "error": exc.code,
+                                "detail": exc.message,
+                            }
+                        )
+                        + "\n"
+                    )
+                    client_sock.sendall(resp.encode("utf-8"))
+                    return
+                except Exception as exc:
+                    logger.exception("Capture execution failure: %s", exc)
+                    resp = (
+                        json.dumps(
+                            {
+                                "success": False,
+                                "error": "CAPTURE_FAILED",
+                                "detail": str(exc),
+                            }
+                        )
+                        + "\n"
+                    )
+                    client_sock.sendall(resp.encode("utf-8"))
+                    return
+                finally:
+                    self.capture.remove_viewer()
+
+            elif action == "list_media":
+                limit = min(max(1, int(req.get("limit", 50))), 100)
+                offset = max(0, int(req.get("offset", 0)))
+                data = self.media_manager.list_media(limit=limit, offset=offset)
+                resp = json.dumps({"success": True, **data}) + "\n"
+                client_sock.sendall(resp.encode("utf-8"))
+                return
+
+            elif action == "get_media":
+                media_id = str(req.get("media_id", ""))
+                item, file_path = self.media_manager.get_media(media_id)
+                if not item or not file_path:
+                    resp = (
+                        json.dumps(
+                            {
+                                "success": False,
+                                "error": "NOT_FOUND",
+                                "detail": f"Media item '{media_id}' not found",
+                            }
+                        )
+                        + "\n"
+                    )
+                    client_sock.sendall(resp.encode("utf-8"))
+                    return
+                header = (
+                    json.dumps(
+                        {
+                            "success": True,
+                            "media_id": media_id,
+                            "filename": item["filename"],
+                            "content_type": "image/jpeg",
+                            "size": item["bytes"],
+                        }
+                    )
+                    + "\n"
+                )
+                client_sock.sendall(header.encode("utf-8"))
+                with open(file_path, "rb") as f:
+                    while True:
+                        chunk = f.read(65536)
+                        if not chunk:
+                            break
+                        client_sock.sendall(chunk)
+                return
+
+            elif action == "record":
                 resp = (
                     json.dumps(
                         {
                             "success": False,
                             "error": "FEATURE_DISABLED",
-                            "detail": f"Action '{action}' is disabled in CAM-2",
+                            "detail": "Action 'record' is disabled in CAM-3 (pending CAM-4)",
                         }
                     )
                     + "\n"

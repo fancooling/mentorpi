@@ -92,7 +92,16 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   Earlier same-path checks passed helper hang recovery, USB authorization recovery,
   installed udev node recreation and idle release. Owner confirmed live video
   streaming works. No motors moved.
-- Software validation: full development run 587 Python cases (one native ROS skip),
-  latest focused camera suite 22 passed, browser suite 52 passed, independent review
-  PASS. Physical cable unplug/replug remains pending, as do motor-load checks,
-  V4L2 target validation and fresh-Pi first-install validation.
+- CAM-3 ("Image capture and persistent downloads") implemented and verified.
+  Media stored atomically in `/var/opt/ubuntu_tank/media` (1 GiB quota, 100 MiB free space reserve),
+  persisted via dedicated runtime container bind mount. Web UI client and REST endpoints
+  support JPEG capture (`POST /api/v1/camera/captures`), media listing (`GET /api/v1/camera/media`),
+  and binary download streaming (`GET /api/v1/camera/media/{id}`).
+- Code review remediation complete: all 7 review findings resolved and tested.
+  Full development regression test suite (`./ubuntu_tank/deploy.sh test`) passed 100%
+  (including unit, integration, camera worker, Playwright browser/PWA, and source-boundary gates).
+  Zero formatting/linting/whitespace errors. `review.md` certified PASS.
+- CAM-3 deployed to physical Pi 5. Owner physical acceptance testing complete:
+  live capture downloaded real JPEGs successfully, media survived container
+  restart, storage limits and error conditions were correctly handled, and
+  capturing images did not interfere with or change the robot's motion state.

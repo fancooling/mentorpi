@@ -218,13 +218,38 @@ export interface CameraStatusResponse {
   last_error: string | null;
 }
 
+export interface CameraCaptureRequest {
+  request_id?: string | null;
+  idempotency_key?: string | null;
+}
+
 export interface CameraCaptureResponse {
   media_id: string;
+  filename: string;
   timestamp: number;
   url: string;
   width: number;
   height: number;
   bytes: number;
+}
+
+export interface CameraMediaItem {
+  media_id: string;
+  type: string;
+  filename: string;
+  timestamp: number;
+  url: string;
+  width: number;
+  height: number;
+  bytes: number;
+  completed: boolean;
+}
+
+export interface CameraMediaListResponse {
+  items: CameraMediaItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface CameraRecordingResponse {

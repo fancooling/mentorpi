@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import Request
 from starlette.responses import StreamingResponse
 from ubuntu_tank_camera.ipc_server import CameraIpcServer
+from ubuntu_tank_camera.media_storage import MediaManager, StorageError
 from ubuntu_tank_camera.synthetic import get_synthetic_jpeg_frame
 from ubuntu_tank_camera.v4l2_capture import (
     V4L2_BUF_TYPE_VIDEO_CAPTURE,
@@ -23,7 +24,10 @@ from ubuntu_tank_camera.v4l2_capture import (
 )
 from ubuntu_tank_protocol.camera_client import CameraIpcClient
 from ubuntu_tank_protocol.enums import CameraState
+from ubuntu_tank_web.models import CameraCaptureRequestModel
 from ubuntu_tank_web.routes_api import (
+    get_camera_media,
+    get_camera_media_download,
     get_camera_status,
     get_camera_stream,
     post_camera_capture,
@@ -234,10 +238,109 @@ class TestV4L2CameraCapture(unittest.TestCase):
         capture.stop()
 
 
+class TestMediaManager(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.media_mgr = MediaManager(storage_dir=self.tmp_dir.name)
+        self.test_frame = get_synthetic_jpeg_frame()
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def test_atomic_write_and_recovery(self):
+        item = self.media_mgr.save_capture(self.test_frame, width=640, height=480)
+        self.assertTrue(item["media_id"])
+        self.assertTrue(item["filename"].endswith(".jpg"))
+        self.assertEqual(item["bytes"], len(self.test_frame))
+        self.assertEqual(item["width"], 640)
+        self.assertEqual(item["height"], 480)
+
+        # Check no temporary files remain
+        files = os.listdir(self.tmp_dir.name)
+        self.assertFalse(any(f.startswith(".tmp") for f in files))
+        self.assertIn(item["filename"], files)
+        self.assertIn("index.json", files)
+
+        # Re-initialize MediaManager to verify persistence across restarts
+        mgr2 = MediaManager(storage_dir=self.tmp_dir.name)
+        listing = mgr2.list_media()
+        items = listing["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], item["media_id"])
+
+    def test_idempotency_key(self):
+        item1 = self.media_mgr.save_capture(
+            self.test_frame, width=640, height=480, idempotency_key="key-test-1"
+        )
+        self.assertTrue(item1["media_id"])
+        item2 = self.media_mgr.save_capture(
+            self.test_frame, width=640, height=480, idempotency_key="key-test-1"
+        )
+        self.assertTrue(item2["media_id"])
+        self.assertEqual(item1["media_id"], item2["media_id"])
+        self.assertEqual(item1["filename"], item2["filename"])
+        self.assertEqual(len(self.media_mgr.list_media()["items"]), 1)
+
+    def test_quota_exceeded(self):
+        small_mgr = MediaManager(
+            storage_dir=self.tmp_dir.name,
+            quota_bytes=len(self.test_frame) + 50,
+        )
+        item1 = small_mgr.save_capture(self.test_frame, width=640, height=480)
+        self.assertTrue(item1["media_id"])
+        with self.assertRaises(StorageError) as ctx:
+            small_mgr.save_capture(self.test_frame, width=640, height=480)
+        self.assertEqual(ctx.exception.code, "STORAGE_QUOTA_EXCEEDED")
+
+    def test_low_storage_free_space(self):
+        with patch("shutil.disk_usage") as mock_usage:
+            mock_usage.return_value = MagicMock(total=10**9, used=10**9 - 50, free=50)
+            with self.assertRaises(StorageError) as ctx:
+                self.media_mgr.save_capture(self.test_frame, width=640, height=480)
+            self.assertEqual(ctx.exception.code, "LOW_STORAGE")
+
+    def test_reconciliation_on_deleted_file(self):
+        item = self.media_mgr.save_capture(self.test_frame, width=640, height=480)
+        self.assertTrue(item["media_id"])
+        filepath = os.path.join(self.tmp_dir.name, item["filename"])
+        os.remove(filepath)
+
+        items = self.media_mgr.list_media()["items"]
+        self.assertEqual(len(items), 0)
+
+    def test_list_media_pagination_and_sorting(self):
+        for _ in range(5):
+            self.media_mgr.save_capture(self.test_frame, width=640, height=480)
+            time.sleep(0.01)
+
+        p1 = self.media_mgr.list_media(limit=2, offset=0)
+        self.assertEqual(len(p1["items"]), 2)
+        p2 = self.media_mgr.list_media(limit=2, offset=2)
+        self.assertEqual(len(p2["items"]), 2)
+        self.assertNotEqual(p1["items"][0]["id"], p2["items"][0]["id"])
+        self.assertGreaterEqual(
+            p1["items"][0]["timestamp"], p1["items"][1]["timestamp"]
+        )
+
+    def test_get_media(self):
+        item = self.media_mgr.save_capture(self.test_frame, width=640, height=480)
+        media_id = item["media_id"]
+        found_item, found_path = self.media_mgr.get_media(media_id)
+        self.assertIsNotNone(found_item)
+        self.assertEqual(found_item["media_id"], media_id)
+        self.assertIsNotNone(found_path)
+        self.assertTrue(os.path.exists(found_path))
+
+        missing_item, missing_path = self.media_mgr.get_media("nonexistent-id")
+        self.assertIsNone(missing_item)
+        self.assertIsNone(missing_path)
+
+
 class TestCameraIpcServerAndClient(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.sock_path = os.path.join(self.tmp_dir.name, "camera.sock")
+        self.media_dir = os.path.join(self.tmp_dir.name, "media")
         self.capture = V4L2CameraCapture(
             device_path="/dev/nonexistent_video_device_test",
             width=640,
@@ -246,7 +349,11 @@ class TestCameraIpcServerAndClient(unittest.TestCase):
             is_simulation=True,
         )
         self.capture.start()
-        self.server = CameraIpcServer(capture=self.capture, socket_path=self.sock_path)
+        self.server = CameraIpcServer(
+            capture=self.capture,
+            socket_path=self.sock_path,
+            media_storage_dir=self.media_dir,
+        )
         self.server.start()
         time.sleep(0.1)
         self.client = CameraIpcClient(socket_path=self.sock_path)
@@ -283,11 +390,47 @@ class TestCameraIpcServerAndClient(unittest.TestCase):
             self.assertTrue(f.startswith(b"\xff\xd8"))
             self.assertTrue(f.endswith(b"\xff\xd9"))
 
+    def test_ipc_capture_and_stream(self):
+        res = self.client.capture()
+        self.assertTrue(res.get("success"), res)
+        media = res["media"]
+        self.assertTrue(media["media_id"])
+        self.assertTrue(media["filename"].endswith(".jpg"))
+
+        # Verify listed via IPC
+        list_res = self.client.list_media()
+        self.assertTrue(list_res["success"])
+        self.assertGreaterEqual(list_res["total"], 1)
+        self.assertEqual(list_res["items"][0]["media_id"], media["media_id"])
+
+        # Stream via IPC
+        header, stream = self.client.get_media_stream(media["media_id"])
+        self.assertTrue(header.get("success"), header)
+        self.assertIsNotNone(stream)
+        data = b"".join(list(stream))
+        self.assertEqual(len(data), media["bytes"])
+        self.assertTrue(data.startswith(b"\xff\xd8"))
+        self.assertTrue(data.endswith(b"\xff\xd9"))
+
+    def test_ipc_capture_idempotency(self):
+        res1 = self.client.capture(idempotency_key="client-key-1")
+        self.assertTrue(res1.get("success"), res1)
+        res2 = self.client.capture(idempotency_key="client-key-1")
+        self.assertTrue(res2.get("success"), res2)
+        self.assertEqual(res1["media"]["media_id"], res2["media"]["media_id"])
+
+    def test_ipc_stream_unknown_media(self):
+        header, stream = self.client.get_media_stream("unknown-id-12345")
+        self.assertFalse(header.get("success"))
+        self.assertEqual(header.get("error"), "NOT_FOUND")
+        self.assertIsNone(stream)
+
 
 class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.sock_path = os.path.join(self.tmp_dir.name, "camera.sock")
+        self.media_dir = os.path.join(self.tmp_dir.name, "media")
         self.capture = V4L2CameraCapture(
             device_path="/dev/nonexistent_video_device_test",
             width=640,
@@ -296,13 +439,19 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
             is_simulation=True,
         )
         self.capture.start()
-        self.server = CameraIpcServer(capture=self.capture, socket_path=self.sock_path)
+        self.server = CameraIpcServer(
+            capture=self.capture,
+            socket_path=self.sock_path,
+            media_storage_dir=self.media_dir,
+        )
         self.server.start()
         time.sleep(0.1)
         self.client = CameraIpcClient(socket_path=self.sock_path)
 
         self.mock_app = MagicMock()
         self.mock_app.state.camera_client = self.client
+        self.mock_app.state.active_owner = None
+        self.mock_app.state.guard_armed = False
 
         self.mock_request = AsyncMock(spec=Request)
         self.mock_request.app = self.mock_app
@@ -335,11 +484,48 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(chunks), 2)
         self.assertTrue(any(b"--frame\r\n" in c for c in chunks))
 
-    async def test_cam2_disabled_endpoints(self):
-        with self.assertRaises(Exception) as ctx:
-            await post_camera_capture(self.mock_request)
-        self.assertEqual(ctx.exception.status_code, 503)
+    async def test_cam3_capture_and_media_endpoints(self):
+        # 1. Capture image
+        capture_resp = await post_camera_capture(self.mock_request)
+        self.assertTrue(capture_resp.media_id)
+        self.assertTrue(capture_resp.filename.endswith(".jpg"))
+        self.assertEqual(capture_resp.width, 640)
+        self.assertEqual(capture_resp.height, 480)
+        self.assertGreater(capture_resp.bytes, 100)
+        self.assertEqual(
+            capture_resp.url, f"/api/v1/camera/media/{capture_resp.media_id}"
+        )
 
+        # 2. List media
+        media_list = await get_camera_media(self.mock_request)
+        self.assertGreaterEqual(media_list.total, 1)
+        self.assertEqual(media_list.items[0].media_id, capture_resp.media_id)
+        self.assertEqual(media_list.items[0].filename, capture_resp.filename)
+
+        # 3. Download media stream over IPC
+        dl_resp = await get_camera_media_download(
+            capture_resp.media_id, self.mock_request
+        )
+        self.assertIsInstance(dl_resp, StreamingResponse)
+        self.assertEqual(dl_resp.media_type, "image/jpeg")
+        self.assertIn(
+            f'attachment; filename="{capture_resp.filename}"',
+            dl_resp.headers.get("Content-Disposition", ""),
+        )
+
+        dl_bytes = bytearray()
+        async for chunk in dl_resp.body_iterator:
+            dl_bytes.extend(chunk)
+        self.assertEqual(len(dl_bytes), capture_resp.bytes)
+        self.assertTrue(dl_bytes.startswith(b"\xff\xd8"))
+        self.assertTrue(dl_bytes.endswith(b"\xff\xd9"))
+
+        # 4. Unknown media download returns 404
+        with self.assertRaises(Exception) as ctx:
+            await get_camera_media_download("unknown-media-id", self.mock_request)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+        # 5. CAM-4 recording endpoints remain 503
         with self.assertRaises(Exception) as ctx:
             await post_camera_recording(self.mock_request)
         self.assertEqual(ctx.exception.status_code, 503)
@@ -347,6 +533,17 @@ class TestCameraWebRoutes(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception) as ctx:
             await post_camera_recording_stop("rec_test", self.mock_request)
         self.assertEqual(ctx.exception.status_code, 503)
+
+    async def test_capture_does_not_mutate_robot_control(self):
+        self.mock_app.state.active_owner = "test-owner"
+        self.mock_app.state.guard_armed = False
+
+        capture_resp = await post_camera_capture(self.mock_request)
+        self.assertTrue(capture_resp.media_id)
+
+        # Confirm operator/control attributes remain untouched
+        self.assertEqual(self.mock_app.state.active_owner, "test-owner")
+        self.assertFalse(self.mock_app.state.guard_armed)
 
 
 class TestAuroraProcess(unittest.TestCase):
@@ -448,7 +645,11 @@ class TestAuroraProcess(unittest.TestCase):
                 "while True: os.write(1,packet); time.sleep(0.02)"
             )
             capture.start()
-            server = CameraIpcServer(capture, os.path.join(directory, "camera.sock"))
+            server = CameraIpcServer(
+                capture,
+                os.path.join(directory, "camera.sock"),
+                media_storage_dir=os.path.join(directory, "media"),
+            )
             server.start()
             self.addCleanup(server.stop)
             slow = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -469,7 +670,11 @@ class TestAuroraProcess(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             capture = self.capture("import time; time.sleep(60)")
             capture.start()
-            server = CameraIpcServer(capture, os.path.join(directory, "camera.sock"))
+            server = CameraIpcServer(
+                capture,
+                os.path.join(directory, "camera.sock"),
+                media_storage_dir=os.path.join(directory, "media"),
+            )
             server.start()
             self.addCleanup(server.stop)
             client = CameraIpcClient(server.socket_path)

@@ -306,6 +306,16 @@ def generate_openapi_spec() -> dict[str, Any]:
             "/camera/captures": {
                 "post": {
                     "summary": "Capture fresh JPEG image frame",
+                    "requestBody": {
+                        "required": False,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CameraCaptureRequest"
+                                }
+                            }
+                        },
+                    },
                     "responses": {
                         "200": {
                             "description": "Captured image metadata",
@@ -317,7 +327,11 @@ def generate_openapi_spec() -> dict[str, Any]:
                                 }
                             },
                         },
-                        "503": {"description": "Feature disabled in current milestone"},
+                        "400": {"description": "Invalid payload"},
+                        "503": {"description": "Camera unavailable or stale frames"},
+                        "507": {
+                            "description": "Insufficient storage or quota exceeded"
+                        },
                     },
                 }
             },
@@ -368,20 +382,36 @@ def generate_openapi_spec() -> dict[str, Any]:
             "/camera/media": {
                 "get": {
                     "summary": "List saved media files",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "integer",
+                                "default": 50,
+                                "minimum": 1,
+                                "maximum": 100,
+                            },
+                        },
+                        {
+                            "name": "offset",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "integer",
+                                "default": 0,
+                                "minimum": 0,
+                            },
+                        },
+                    ],
                     "responses": {
                         "200": {
                             "description": "Saved media list",
                             "content": {
                                 "application/json": {
                                     "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "items": {
-                                                "type": "array",
-                                                "items": {"type": "object"},
-                                            },
-                                            "total": {"type": "integer"},
-                                        },
+                                        "$ref": "#/components/schemas/CameraMediaListResponse"
                                     }
                                 }
                             },
@@ -728,10 +758,18 @@ def generate_openapi_spec() -> dict[str, Any]:
                         "last_error": {"type": "string", "nullable": True},
                     },
                 },
+                "CameraCaptureRequest": {
+                    "type": "object",
+                    "properties": {
+                        "request_id": {"type": "string", "nullable": True},
+                        "idempotency_key": {"type": "string", "nullable": True},
+                    },
+                },
                 "CameraCaptureResponse": {
                     "type": "object",
                     "required": [
                         "media_id",
+                        "filename",
                         "timestamp",
                         "url",
                         "width",
@@ -740,11 +778,50 @@ def generate_openapi_spec() -> dict[str, Any]:
                     ],
                     "properties": {
                         "media_id": {"type": "string"},
+                        "filename": {"type": "string"},
                         "timestamp": {"type": "number"},
                         "url": {"type": "string"},
                         "width": {"type": "integer"},
                         "height": {"type": "integer"},
                         "bytes": {"type": "integer"},
+                    },
+                },
+                "CameraMediaItem": {
+                    "type": "object",
+                    "required": [
+                        "media_id",
+                        "type",
+                        "filename",
+                        "timestamp",
+                        "url",
+                        "width",
+                        "height",
+                        "bytes",
+                        "completed",
+                    ],
+                    "properties": {
+                        "media_id": {"type": "string"},
+                        "type": {"type": "string"},
+                        "filename": {"type": "string"},
+                        "timestamp": {"type": "number"},
+                        "url": {"type": "string"},
+                        "width": {"type": "integer"},
+                        "height": {"type": "integer"},
+                        "bytes": {"type": "integer"},
+                        "completed": {"type": "boolean"},
+                    },
+                },
+                "CameraMediaListResponse": {
+                    "type": "object",
+                    "required": ["items", "total", "limit", "offset"],
+                    "properties": {
+                        "items": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/CameraMediaItem"},
+                        },
+                        "total": {"type": "integer"},
+                        "limit": {"type": "integer"},
+                        "offset": {"type": "integer"},
                     },
                 },
                 "CameraRecordingResponse": {
@@ -994,13 +1071,38 @@ export interface CameraStatusResponse {{
   last_error: string | null;
 }}
 
+export interface CameraCaptureRequest {{
+  request_id?: string | null;
+  idempotency_key?: string | null;
+}}
+
 export interface CameraCaptureResponse {{
   media_id: string;
+  filename: string;
   timestamp: number;
   url: string;
   width: number;
   height: number;
   bytes: number;
+}}
+
+export interface CameraMediaItem {{
+  media_id: string;
+  type: string;
+  filename: string;
+  timestamp: number;
+  url: string;
+  width: number;
+  height: number;
+  bytes: number;
+  completed: boolean;
+}}
+
+export interface CameraMediaListResponse {{
+  items: CameraMediaItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }}
 
 export interface CameraRecordingResponse {{
@@ -1009,6 +1111,7 @@ export interface CameraRecordingResponse {{
   elapsed_sec: number;
   url: string | null;
 }}
+
 """
 
 

@@ -726,6 +726,10 @@ def prepare(serial_device):
         logs.mkdir(parents=True, exist_ok=True)
         os.chown(logs, 10001, 10001)
         os.chmod(logs, 0o700)
+        media = Path("/var/opt/ubuntu_tank/media")
+        media.mkdir(parents=True, exist_ok=True)
+        os.chown(media, 10001, 10001)
+        os.chmod(media, 0o700)
         write(STATE / "device.json", identity)
         group = grp.getgrgid(info.st_gid).gr_name
         write(
@@ -752,7 +756,8 @@ def prepare(serial_device):
         )
         write(
             Path("/etc/tmpfiles.d/ubuntu-tank-container.conf"),
-            "d /var/opt/ubuntu_tank/ros-log 0700 10001 10001 14d\n",
+            "d /var/opt/ubuntu_tank/ros-log 0700 10001 10001 14d\n"
+            "d /var/opt/ubuntu_tank/media 0700 10001 10001 -\n",
         )
         write(
             Path("/etc/logrotate.d/ubuntu-tank-container"),

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
@@ -32,6 +33,10 @@ from ubuntu_tank_protocol.constants import (
 )
 
 from .models import (
+    CameraCaptureRequestModel,
+    CameraCaptureResponseModel,
+    CameraMediaItemModel,
+    CameraMediaListResponseModel,
     CameraProfileModel,
     CameraStatusResponseModel,
     ControlAcquireRequestModel,
@@ -47,6 +52,7 @@ from .models import (
     StatusResponseModel,
     VersionResponseModel,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -410,13 +416,70 @@ async def get_camera_stream(request: Request):
 
 @router.post(
     "/camera/captures",
-    summary="Capture fresh JPEG image (disabled in CAM-2)",
+    response_model=CameraCaptureResponseModel,
+    summary="Capture fresh JPEG image frame",
 )
-async def post_camera_capture(request: Request):
-    """Enforce CAM-2 disabled state for Capture."""
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Image capture is unavailable in CAM-2 (pending CAM-3)",
+async def post_camera_capture(
+    request: Request,
+    body: CameraCaptureRequestModel | None = None,
+) -> CameraCaptureResponseModel:
+    """Capture a fresh JPEG image frame and persist it atomically on the Pi."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camera service not configured",
+        )
+
+    request_id = None
+    idempotency_key = None
+    if body:
+        request_id = body.request_id
+        idempotency_key = body.idempotency_key
+
+    if not request_id and not idempotency_key:
+        request_id = str(uuid.uuid4())
+
+    res = await asyncio.to_thread(
+        camera_client.capture,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+    )
+    if not res.get("success"):
+        err_code = res.get("error", "CAPTURE_FAILED")
+        detail = res.get("detail", "Image capture failed")
+        if err_code in ("LOW_STORAGE", "STORAGE_QUOTA_EXCEEDED"):
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail=detail,
+            )
+        elif err_code in ("CAMERA_UNAVAILABLE", "STALE_FRAMES", "WORKER_UNAVAILABLE"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=detail,
+            )
+        elif err_code == "INVALID_PAYLOAD":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=detail,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=detail,
+            )
+
+    media = res["media"]
+    return CameraCaptureResponseModel(
+        media_id=media["media_id"],
+        filename=media.get("filename", f"{media['media_id']}.jpg"),
+        timestamp=media["timestamp"],
+        url=media["url"],
+        width=int(media["width"]),
+        height=int(media["height"]),
+        bytes=int(media["bytes"]),
     )
 
 
@@ -446,20 +509,89 @@ async def post_camera_recording_stop(id: str, request: Request):
 
 @router.get(
     "/camera/media",
-    summary="List saved media (empty in CAM-2)",
+    response_model=CameraMediaListResponseModel,
+    summary="List saved media files",
 )
-async def get_camera_media(request: Request):
-    """Return paginated media list (empty in CAM-2)."""
-    return {"items": [], "total": 0}
+async def get_camera_media(
+    request: Request,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CameraMediaListResponseModel:
+    """Retrieve paginated list of saved camera media files."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        return CameraMediaListResponseModel(
+            items=[], total=0, limit=limit, offset=offset
+        )
+
+    res = await asyncio.to_thread(camera_client.list_media, limit=limit, offset=offset)
+    if not res.get("success"):
+        return CameraMediaListResponseModel(
+            items=[], total=0, limit=limit, offset=offset
+        )
+
+    items = [
+        CameraMediaItemModel(
+            media_id=it["media_id"],
+            type=it.get("type", "image"),
+            filename=it["filename"],
+            timestamp=float(it["timestamp"]),
+            url=it["url"],
+            width=int(it["width"]),
+            height=int(it["height"]),
+            bytes=int(it["bytes"]),
+            completed=bool(it.get("completed", True)),
+        )
+        for it in res.get("items", [])
+    ]
+    return CameraMediaListResponseModel(
+        items=items,
+        total=int(res.get("total", len(items))),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(
     "/camera/media/{id}",
-    summary="Download saved media by ID (disabled in CAM-2)",
+    summary="Download saved media file by ID",
 )
 async def get_camera_media_download(id: str, request: Request):
-    """Reject media downloads in CAM-2."""
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Media item '{id}' not found",
+    """Download saved media file by ID over IPC without web container direct disk access."""
+    camera_client: CameraIpcClient | None = getattr(
+        request.app.state, "camera_client", None
+    )
+    if not camera_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camera client not configured",
+        )
+
+    header, stream = await asyncio.to_thread(camera_client.get_media_stream, id)
+    if not header.get("success") or stream is None:
+        err = header.get("error", "")
+        if err in ("NOT_FOUND", "INVALID_ID", "MEDIA_NOT_FOUND"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media item '{id}' not found",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=header.get("detail", "Camera service unavailable"),
+        )
+
+    media_type = header.get("content_type", "image/jpeg")
+    filename = header.get("filename", f"{id}.jpg")
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+    }
+    if "bytes" in header:
+        headers["Content-Length"] = str(header["bytes"])
+
+    return StreamingResponse(
+        stream,
+        media_type=media_type,
+        headers=headers,
     )

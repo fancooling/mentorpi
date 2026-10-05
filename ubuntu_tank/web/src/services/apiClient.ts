@@ -1,5 +1,8 @@
 // Typed REST API Client for MentorPi Pi 5 Web Control
 import type {
+  CameraCaptureRequest,
+  CameraCaptureResponse,
+  CameraMediaListResponse,
   CameraStatusResponse,
   ControlAcquireRequest,
   ControlAcquireResponse,
@@ -145,6 +148,20 @@ export class ApiClient {
     return this.request<CameraStatusResponse>('/api/v1/camera/status', {
       method: 'GET',
     });
+  }
+
+  async captureCamera(req?: CameraCaptureRequest): Promise<CameraCaptureResponse> {
+    return this.request<CameraCaptureResponse>('/api/v1/camera/captures', {
+      method: 'POST',
+      body: req ? JSON.stringify(req) : JSON.stringify({}),
+    });
+  }
+
+  async getCameraMedia(limit: number = 50, offset: number = 0): Promise<CameraMediaListResponse> {
+    return this.request<CameraMediaListResponse>(
+      `/api/v1/camera/media?limit=${limit}&offset=${offset}`,
+      { method: 'GET' }
+    );
   }
 }
 

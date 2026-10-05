@@ -256,6 +256,16 @@
     "/camera/captures": {
       "post": {
         "summary": "Capture fresh JPEG image frame",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraCaptureRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Captured image metadata",
@@ -267,8 +277,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid payload"
+          },
           "503": {
-            "description": "Feature disabled in current milestone"
+            "description": "Camera unavailable or stale frames"
+          },
+          "507": {
+            "description": "Insufficient storage or quota exceeded"
           }
         }
       }
@@ -326,24 +342,36 @@
     "/camera/media": {
       "get": {
         "summary": "List saved media files",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Saved media list",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "total": {
-                      "type": "integer"
-                    }
-                  }
+                  "$ref": "#/components/schemas/CameraMediaListResponse"
                 }
               }
             }
@@ -999,10 +1027,24 @@
           }
         }
       },
+      "CameraCaptureRequest": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotency_key": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "CameraCaptureResponse": {
         "type": "object",
         "required": [
           "media_id",
+          "filename",
           "timestamp",
           "url",
           "width",
@@ -1011,6 +1053,9 @@
         ],
         "properties": {
           "media_id": {
+            "type": "string"
+          },
+          "filename": {
             "type": "string"
           },
           "timestamp": {
@@ -1026,6 +1071,75 @@
             "type": "integer"
           },
           "bytes": {
+            "type": "integer"
+          }
+        }
+      },
+      "CameraMediaItem": {
+        "type": "object",
+        "required": [
+          "media_id",
+          "type",
+          "filename",
+          "timestamp",
+          "url",
+          "width",
+          "height",
+          "bytes",
+          "completed"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CameraMediaListResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CameraMediaItem"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
             "type": "integer"
           }
         }

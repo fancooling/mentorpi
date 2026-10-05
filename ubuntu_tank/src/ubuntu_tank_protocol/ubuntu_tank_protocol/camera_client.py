@@ -151,3 +151,167 @@ class CameraIpcClient:
                 return None
             buf.extend(chunk)
         return buf
+
+    def capture(
+        self,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+        timeout_sec: float = 6.0,
+    ) -> dict[str, Any]:
+        """Request a fresh JPEG image capture from the runtime camera worker."""
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout_sec)
+        try:
+            sock.connect(self.socket_path)
+            payload: dict[str, Any] = {"action": "capture"}
+            if request_id is not None:
+                payload["request_id"] = request_id
+            if idempotency_key is not None:
+                payload["idempotency_key"] = idempotency_key
+            req = json.dumps(payload) + "\n"
+            sock.sendall(req.encode("utf-8"))
+
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    break
+            if not buf:
+                raise ConnectionError("Empty response from camera service")
+            line, _ = buf.split(b"\n", 1)
+            return json.loads(line.decode("utf-8"))
+        except Exception as exc:
+            logger.debug("Failed to capture image at '%s': %s", self.socket_path, exc)
+            return {
+                "success": False,
+                "error": "CAMERA_UNAVAILABLE",
+                "detail": f"Camera capture unreachable: {exc}",
+            }
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def list_media(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        timeout_sec: float = 3.0,
+    ) -> dict[str, Any]:
+        """Retrieve paginated saved media metadata from the camera worker."""
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout_sec)
+        try:
+            sock.connect(self.socket_path)
+            req = (
+                json.dumps(
+                    {
+                        "action": "list_media",
+                        "limit": limit,
+                        "offset": offset,
+                    }
+                )
+                + "\n"
+            )
+            sock.sendall(req.encode("utf-8"))
+
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    break
+            if not buf:
+                raise ConnectionError("Empty response from camera service")
+            line, _ = buf.split(b"\n", 1)
+            return json.loads(line.decode("utf-8"))
+        except Exception as exc:
+            logger.debug(
+                "Failed to list camera media at '%s': %s", self.socket_path, exc
+            )
+            return {
+                "success": False,
+                "items": [],
+                "total": 0,
+                "limit": limit,
+                "offset": offset,
+                "error": "WORKER_UNAVAILABLE",
+                "detail": str(exc),
+            }
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def get_media_stream(
+        self,
+        media_id: str,
+        timeout_sec: float = 5.0,
+    ) -> tuple[dict[str, Any], Generator[bytes, None, None] | None]:
+        """Stream a saved media file over media IPC without direct disk access.
+
+        Returns (header_dict, generator_yielding_chunks). The socket is closed
+        when the generator is exhausted or closed.
+        """
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout_sec)
+        try:
+            sock.connect(self.socket_path)
+            req = json.dumps({"action": "get_media", "media_id": media_id}) + "\n"
+            sock.sendall(req.encode("utf-8"))
+
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) > MAX_CAMERA_MESSAGE_BYTES:
+                    break
+            if not buf:
+                sock.close()
+                return {
+                    "success": False,
+                    "error": "WORKER_UNAVAILABLE",
+                    "detail": "Empty response from camera service",
+                }, None
+
+            line, remaining = buf.split(b"\n", 1)
+            header = json.loads(line.decode("utf-8"))
+            if not header.get("success"):
+                sock.close()
+                return header, None
+
+            def chunk_generator() -> Generator[bytes, None, None]:
+                try:
+                    if remaining:
+                        yield bytes(remaining)
+                    while True:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            break
+                        yield bytes(chunk)
+                finally:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+
+            return header, chunk_generator()
+        except Exception as exc:
+            try:
+                sock.close()
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "error": "WORKER_UNAVAILABLE",
+                "detail": str(exc),
+            }, None
