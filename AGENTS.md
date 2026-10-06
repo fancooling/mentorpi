@@ -76,3 +76,21 @@ Keep `CONVERSATION_MEMORY.md` concise and update it after material project decis
 - If behavior depends on unavailable target hardware or platform services,
   record that validation as pending instead of replacing it with source-text
   assertions.
+
+## Code review context
+
+Use the user-level `$code-review` skill for independent, diff-scoped reviews and
+`review.md` output. The reusable workflow is installed at
+`~/.codex/skills/code-review/SKILL.md` and exposed through `~/.agents/skills`.
+Keep these MentorPi-specific policies in this repository:
+
+- Apply the personal, single-owner trust model in `GEMINI.md`. Missing authentication
+  or enterprise hardening alone is not a critical defect. Report concrete workflow
+  failures and exploitable issues with material impact within the actual exposure.
+- Motion safety, ineffective stops, stale commands, serial loss, destructive
+  rollback, consequential software races, and data loss remain strictly in scope.
+- Do not flag merely theoretical human-timing races when normal owner input is slow
+  and retry is harmless. Credible irreversible harm or safety failures still qualify;
+  races between processes, callbacks or threads must be assessed at machine speed.
+- Security design discrepancies qualify when they meet this practical impact bar,
+  rather than solely because a stricter checklist exists.

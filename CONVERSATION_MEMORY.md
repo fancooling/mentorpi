@@ -118,3 +118,12 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   Source/dependency gates passed; no new Ruff diagnostics (eight existing remain).
   Real Pi recording/playback, power-loss recovery, and concurrent motor operation
   remain unvalidated; no CAM-4 deployment or motor movement was performed.
+
+## 5. Shared code-review skill
+
+The reusable `$code-review` workflow now lives at
+`~/.codex/skills/code-review/SKILL.md`, exposed through the user-level
+`~/.agents/skills/code-review` discovery link. The repository-local duplicate was
+removed. MentorPi's trusted-owner, human-timing, and physical-safety review policies
+remain in `AGENTS.md`; the global skill derives project assumptions from each
+repository. `ack-review` remains repository-specific and unchanged.
