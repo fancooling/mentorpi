@@ -244,6 +244,9 @@ Acceptance:
 
 ### CAM-4 — Recording and recovery
 
+Status: **Complete.** Owner confirmed all CAM-4 acceptance checks verified on
+the real Pi. Concurrent camera-and-motor safety validation remains CAM-5.
+
 Implement the encoder, server-owned recording state, timer, Stop recording,
 finalization, and MP4 downloads. Enforce duration and storage limits.
 

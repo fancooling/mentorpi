@@ -116,8 +116,12 @@ and `docs/DESIGN.md` for architecture, control contracts, and deployment workflo
   (`./ubuntu_tank/deploy.sh test`): 609 Python tests passed, one native ROS test
   skipped, and 56 browser tests passed, including 43 camera tests in the Python total.
   Source/dependency gates passed; no new Ruff diagnostics (eight existing remain).
-  Real Pi recording/playback, power-loss recovery, and concurrent motor operation
-  remain unvalidated; no CAM-4 deployment or motor movement was performed.
+- CAM-4 complete: owner confirmed all CAM-4 acceptance checks verified on the
+  real Pi, including recording/playback, capture during recording, browser
+  continuity, request/error handling, limits, and interrupted-file recovery.
+  This is owner-reported acceptance; no new test run or deployment was performed
+  by the agent when recording it. Concurrent camera-and-motor safety validation
+  remains CAM-5.
 
 ## 5. Shared code-review skill
 
